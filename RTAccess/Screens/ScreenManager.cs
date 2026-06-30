@@ -137,8 +137,13 @@ namespace RTAccess.Screens
             // in-game context. Subsume the console-era DialogCuePatch as the cue reader in mouse mode.
             Register(new DialogueScreen());
             Register(new BookEventScreen());
-            // TODO: InventoryScreen + the remaining CurrentServiceWindow-driven service windows
-            // (Journal, CharacterInfo, …), per docs/plans/mirrored-surfacing-engelbart.md.
+            // Service windows (CurrentServiceWindow-driven, Surface OR Space) — layer 10, above the in-game
+            // base context. Each reads the live game VM / unit; ServiceWindowAnnounce speaks the window name.
+            Register(new InventoryScreen());
+            Register(new JournalScreen());
+            Register(new CharacterInfoScreen());
+            // TODO: Vendor, Loot, EscMenu, SaveLoad, Encyclopedia + the long tail, per
+            // docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }
     }

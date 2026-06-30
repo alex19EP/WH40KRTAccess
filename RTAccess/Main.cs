@@ -84,6 +84,10 @@ public static class Main {
         // never interrupt). WarningReader is reactive (no tick).
         CombatEvents.Instance.Tick();
 
+        // Announce the post-load "press any key to continue" prompt (a silent barrier for blind players on
+        // every area transition). Edge-detected; any key dismisses it.
+        LoadingScreenAnnounce.Update();
+
         // ---- Parallel accessible-UI framework (Phase 2) ----
         // Engage focus mode once the keyboard exists (suppresses the game's own KeyboardAccess hotkeys so
         // our navigator owns the keys), and re-assert it across scene reloads.
