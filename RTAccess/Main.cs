@@ -38,6 +38,14 @@ public static class Main {
             // Voice barks — overhead speech bubbles + subtitles (see BarkEvents / [[rt-bark-system]]). Also a
             // persistent session subscriber; unsubscribed in OnUnload.
             EventBus.Subscribe(BarkEvents.Instance);
+            // Voice combat events (damage / heal / death / buffs) + refusal toasts ("not enough action points").
+            // Passive event streams → queued speech, flushed once per frame by CombatEvents.Tick (see CombatEvents
+            // / WarningReader). Persistent session subscribers; unsubscribed in OnUnload.
+            EventBus.Subscribe(CombatEvents.Instance);
+            EventBus.Subscribe(WarningReader.Instance);
+            // Build the review-buffer set (Alt+arrows query a unit's live HP/AP/defenses/buffs without losing
+            // UI focus); resolvers read the live selected unit / combat target each refresh.
+            Buffers.BufferManager.Instance.RegisterDefaults();
 #if DEBUG
             // Dev-only loopback driver (REPL + speech tap + load-save). Inert unless RTACCESS_DEV=1 or the
             // marker file is present; compiled out entirely in Release. See RTAccess/Dev/DevServer.cs.
@@ -71,6 +79,10 @@ public static class Main {
 
         // Pick up a mid-session game-language change so our framework strings follow it.
         Localization.LocalizationManager.Tick();
+
+        // Reconcile this frame's buff churn, then flush queued combat-event lines in arrival order (passive →
+        // never interrupt). WarningReader is reactive (no tick).
+        CombatEvents.Instance.Tick();
 
         // ---- Parallel accessible-UI framework (Phase 2) ----
         // Engage focus mode once the keyboard exists (suppresses the game's own KeyboardAccess hotkeys so
@@ -143,6 +155,8 @@ public static class Main {
     private static bool OnUnload(UnityModManager.ModEntry modEntry) {
         EventBus.Unsubscribe(ExplorationEvents.Instance);
         EventBus.Unsubscribe(BarkEvents.Instance);
+        EventBus.Unsubscribe(CombatEvents.Instance);
+        EventBus.Unsubscribe(WarningReader.Instance);
         Speaker.Stop();
         Speaker.Shutdown();
         HarmonyInstance?.UnpatchAll(HarmonyInstance.Id);

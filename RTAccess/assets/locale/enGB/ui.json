@@ -285,6 +285,7 @@
   "event.buff_gained": "{name} gained {buff}",
   "event.buff_lost": "{name} lost {buff}",
   "event.death": "{name} died",
+  "event.downed": "{name} is down",
   "event.ability_damage": "{name} takes {amount} {stat} damage",
   "event.ability_drain": "{name} takes {amount} {stat} drain",
   "tooltip.view": "View tooltip",

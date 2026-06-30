@@ -32,12 +32,10 @@ internal static class TileExplorer
 
     public static void Update()
     {
-        var game = Game.Instance;
-        // Console mode + an on-foot surface. Default covers BOTH exploration and surface tactical combat, and
-        // excludes dialog / full-screen windows / cutscene / global & space maps. If we were active and the mode
-        // slips away, auto-exit.
-        if (game == null || game.ControllerMode != Game.ControllerModeType.Gamepad ||
-            game.CurrentMode != GameModeType.Default)
+        // Re-gated for mouse mode (was ControllerMode == Gamepad). ExplorationActive already requires an
+        // on-foot surface (GameModeType.Default = exploration AND surface tactical combat). If we were active
+        // and the gate slips away, auto-exit.
+        if (!RTAccess.Screens.InGameScreen.ExplorationActive)
         {
             if (_active) Deactivate();
             return;
@@ -47,6 +45,10 @@ internal static class TileExplorer
         bool ctrl = UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl);
         if (ctrl && UnityEngine.Input.GetKeyDown(KeyCode.T)) { Toggle(); return; }
         if (!_active) return;
+
+        // The cursor's arrow/Enter keys collide with HUD navigation — only consume them while exploration owns
+        // the keys (HUD unfocused). When the player Tabs into the HUD, the navigator wins the arrows.
+        if (RTAccess.UI.Navigation.HasFocus) return;
 
         if (UnityEngine.Input.GetKeyDown(KeyCode.UpArrow)) Move(0, 1);          // north (+Z)
         else if (UnityEngine.Input.GetKeyDown(KeyCode.DownArrow)) Move(0, -1);  // south (-Z)

@@ -23,8 +23,10 @@ internal static class PartyHotkeys
 {
     public static void Update()
     {
-        var game = Game.Instance;
-        if (game == null || game.ControllerMode != Game.ControllerModeType.Gamepad) return;
+        // Re-gated for the mouse-mode parallel UI: live whenever the InGameScreen owns the world (was
+        // ControllerMode == Gamepad). Shift+D/A + Alt+1-6 don't collide with UI nav, so this runs whether or
+        // not the HUD is focused; the game's own duplicate keys are suppressed by FocusMode (Keyboard.Disabled).
+        if (!RTAccess.Screens.InGameScreen.ExplorationActive) return;
 
         bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
         bool alt = UnityEngine.Input.GetKey(KeyCode.LeftAlt) || UnityEngine.Input.GetKey(KeyCode.RightAlt);

@@ -28,9 +28,11 @@ internal static class LandmarkNav
 
     public static void Update()
     {
+        // Re-gated for mouse mode (was ControllerMode == Gamepad). ExplorationActive already requires
+        // GameModeType.Default; landmark cycling is exploration-only, so keep the not-in-combat check.
+        // Brackets/backslash don't collide with UI nav, so this runs focused or unfocused.
+        if (!RTAccess.Screens.InGameScreen.ExplorationActive) return;
         var game = Game.Instance;
-        if (game == null || game.ControllerMode != Game.ControllerModeType.Gamepad) return;
-        if (game.CurrentMode != GameModeType.Default) return;
         if (game.Player != null && game.Player.IsInCombat) return;
 
         if (UnityEngine.Input.GetKeyDown(KeyCode.LeftBracket)) Cycle(prev: true);

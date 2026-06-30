@@ -65,6 +65,10 @@
 		<PackageReference Include="Mono.CSharp" Version="4.0.0.143" />
 	</ItemGroup>
 	<ItemGroup>
+		<!-- NAudio 1.10.0: net35 single-DLL managed audio mixer behind the (deferred, off-by-default)
+		     spatial-audio / UI-earcon engine (RTAccess/Audio/). Copy-local lands NAudio.dll in $(TargetDir)
+		     and the wildcard Deploy carries it into the UMM mod folder, beside prism.dll. -->
+		<PackageReference Include="NAudio" Version="1.10.0" />
 		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
 		<PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" IncludeAssets="build; contentfiles" Version="0.4.2" PrivateAssets="all" />
 		<PackageReference Include="PublishToWorkshop" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" Version="1.0.10" PrivateAssets="all" />

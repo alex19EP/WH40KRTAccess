@@ -19,12 +19,26 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal static class ExplorationNav
 {
+    // TODO(needs-verify): the game populates SurfaceMainInputLayer.m_InteractableObjects only inside its own
+    // OnUpdate, gated `!Game.Instance.IsControllerMouse && LayerBinded.Value` (SurfaceMainInputLayer.cs:107 →
+    // private UpdateInteractions()). In mouse mode that path never runs, so the interactable set stays empty
+    // and OnNext/OnPrevInteractable cycle nothing. Driving UpdateInteractions()/UpdateInteractableSet()
+    // ourselves is unverified (private members; LayerBinded gate; gamepad-stick side effects). Until that is
+    // settled in-game, keep cycling OFF so this no-ops cleanly rather than speaking "Not in exploration".
+    // Fallback if it can't be driven: our own EntityBoundsHelper scan + raise the count handler ourselves.
+    private static bool EngineScanEnabled = false;
+
     public static void Update()
     {
+        // Re-gated for mouse mode (was ControllerMode == Gamepad). PageUp/Down/Home/End collide with UI nav
+        // (Home/End), so yield to the HUD when it's focused. Interactable cycling is exploration-only.
+        if (!RTAccess.Screens.InGameScreen.ExplorationActive || RTAccess.UI.Navigation.HasFocus) return;
         var game = Game.Instance;
-        if (game == null || game.ControllerMode != Game.ControllerModeType.Gamepad) return;
-        if (game.CurrentMode != GameModeType.Default) return;
         if (game.Player != null && game.Player.IsInCombat) return;
+
+        // Cycling is engine-dead in mouse mode (see EngineScanEnabled above) — gate it off until the
+        // self-driven interactable scan is verified in-game. The HUD works regardless.
+        if (!EngineScanEnabled) return;
 
         if (UnityEngine.Input.GetKeyDown(KeyCode.PageUp)) Cycle(prev: true);
         else if (UnityEngine.Input.GetKeyDown(KeyCode.PageDown)) Cycle(prev: false);

@@ -96,6 +96,7 @@ namespace RTAccess.Screens
             if (ReferenceEquals(cur, _focused)) return;
             _focused?.OnUnfocus();
             _focused = cur;
+            RTAccess.Audio.Earcons.ScreenChange(); // gated cue (no-op unless Earcons.Enabled) — deferred audio
             Safe(() => cur?.OnFocus(), cur, "OnFocus"); // speaks the screen name
             // Bind the navigator; the initial-focus landing is announced by EnsureFocus once the screen's
             // content exists (handles lazy builds + build-time silent Attach uniformly).
@@ -118,6 +119,10 @@ namespace RTAccess.Screens
             if (_registered.Count > 0) return;
             // Phase 2: base contexts come online one screen at a time. MainMenu is first.
             Register(new MainMenuScreen());
+            // In-game surface base context (RootUiContext.IsSurface) — Layer 0, mutually exclusive with the
+            // menu. StartUnfocused: exploration owns the arrows, Tab brings up the HUD (party/vitals/combat/
+            // service-window openers). Hosts the re-gated exploration helpers in mouse mode.
+            Register(new InGameScreen());
             // New Game wizard (MainMenuVM.NewGameVM) — layer 5, above the menu sidebar it's launched from.
             Register(new NewGameScreen());
             // Character generation (MainMenuVM.CharGenContextVM.CharGenVM) — layer 15, full-screen flow.
@@ -128,8 +133,12 @@ namespace RTAccess.Screens
             Register(new MessageBoxScreen());
             // Chargen character/ship name-entry modal — layer 32, lets the player type a custom name.
             Register(new NameEntryScreen());
-            // TODO: NewGameScreen, InGameScreen (Surface), InventoryScreen + the CurrentServiceWindow-driven
-            // service windows, per docs/plans/mirrored-surfacing-engelbart.md.
+            // Dialogue + book-event readers (DialogContextVM under Surface/Space) — layer 15, above the
+            // in-game context. Subsume the console-era DialogCuePatch as the cue reader in mouse mode.
+            Register(new DialogueScreen());
+            Register(new BookEventScreen());
+            // TODO: InventoryScreen + the remaining CurrentServiceWindow-driven service windows
+            // (Journal, CharacterInfo, …), per docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }
     }

@@ -4,8 +4,11 @@ using RTAccess.Accessibility;
 namespace RTAccess.Speech;
 
 /// <summary>
-/// Process-wide speech facade over the native Prism backend (<see cref="PrismSpeech"/>). If no usable
-/// prism.dll / screen-reader backend is present, speech is a silent no-op (ActiveBackend is "&lt;none&gt;").
+/// Process-wide speech facade over an ordered backend roster (<see cref="PrismSpeech"/> →
+/// <see cref="SapiSpeech"/> → <see cref="ClipboardSpeech"/>). The first backend that loads wins:
+/// Prism is preferred (drives the user's real screen reader + braille), SAPI 5 is the fallback so the
+/// mod still talks for players with no screen reader running (instead of going silent), and the
+/// clipboard is the last resort. Only when none load (never, given clipboard) is speech a no-op.
 /// </summary>
 public static class Speaker
 {
@@ -24,7 +27,12 @@ public static class Speaker
     {
         lock (_gate)
         {
-            _backend = PrismSpeech.TryCreate(modEntry?.Path);
+            // Ordered roster — first usable backend wins. Each TryCreate returns null (no throw) when its
+            // backend isn't available on this machine, so we fall through cleanly. Clipboard always loads,
+            // so the mod is never fully silent.
+            _backend = PrismSpeech.TryCreate(modEntry?.Path)
+                       ?? (ISpeech)SapiSpeech.TryCreate()
+                       ?? new ClipboardSpeech();
             Main.Log?.Log("Speech backend: " + ActiveBackend);
         }
     }
