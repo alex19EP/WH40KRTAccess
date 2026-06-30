@@ -19,9 +19,10 @@ namespace RTAccess.Accessibility;
 ///
 /// The two hold-radials (party selector = L2, in-game menu = R2) bind their items in
 /// <c>BindViewImplementation</c> BEFORE <c>CreateNavigation</c>, so we announce in a <c>CreateNavigation</c>
-/// prefix — that runs after the items exist but before the first focus, so "name + count" is queued ahead of
-/// the first entry (<see cref="Speaker"/> queues, never interrupts). The contextual group-changer and
-/// formation windows are announced from a <c>BindViewImplementation</c> postfix (best-effort ordering).
+/// prefix — that runs after the items exist but before the first focus, so "name + count" is spoken ahead of
+/// the first entry; the label interrupts (the user opened the wheel) and the first entry, being automatic focus
+/// rather than a directional move, is queued behind it by <see cref="SetFocusedPatch"/>, so the label is heard
+/// in full. The contextual group-changer and formation windows are announced from a <c>BindViewImplementation</c> postfix.
 /// </summary>
 internal static class WheelMenus
 {
@@ -32,7 +33,10 @@ internal static class WheelMenus
     {
         ActiveWheel = name;
         var counted = count == 1 ? noun : noun + "s"; // "1 character" / "5 characters"
-        Speaker.Speak($"{name}, {count} {counted}", interrupt: false);
+        // The user opened this wheel (a keypress), so interrupt to announce it. The first entry's focus readout
+        // follows and SetFocusedPatch queues it (opening isn't a directional nav, so it's automatic focus) —
+        // giving "Party selector, 5 characters. <first entry>." in order. Per [[rt-interrupt-speech-rule]].
+        Speaker.Speak($"{name}, {count} {counted}", interrupt: true);
     }
 
     private static void Close(string name)

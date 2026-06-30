@@ -29,18 +29,26 @@ internal static class SetFocusedPatch
     public static void RereadCurrent()
     {
         if (_last != null) Announce(_last, navigated: false);
-        else Speaker.Speak("No focused element.", interrupt: false);
+        else Speaker.Speak("No focused element.", interrupt: true);
     }
 
     /// <summary>Read the full tooltip/details of the currently focused element (Ctrl+I; controller trigger TBD).</summary>
     public static void ReadDetailsOfCurrent()
     {
-        if (_last == null) { Speaker.Speak("Nothing focused.", interrupt: false); return; }
+        if (_last == null) { Speaker.Speak("Nothing focused.", interrupt: true); return; }
         try
         {
             var comp = UiTextReader.ResolveComponent(_last);
             var details = comp != null ? TooltipReader.GetFull(comp) : null;
-            Speaker.Speak(!string.IsNullOrWhiteSpace(details) ? details : "No details.", interrupt: false);
+            // Fallback for CharGen options (Homeworld/Occupation/etc.) whose focusable item carries no tooltip
+            // of its own — the description lives only in the phase's info panel, which the keyboard can't reach.
+            if (string.IsNullOrWhiteSpace(details))
+                details = CharGenAnnounce.GetActivePhaseDescription();
+            // Fallback for the pre-CharGen New Game screens (campaign synopsis, difficulty/settings descriptions),
+            // read straight from the focused item's view model.
+            if (string.IsNullOrWhiteSpace(details) && comp != null)
+                details = UiTextReader.ReadFocusedDescription(comp);
+            Speaker.Speak(!string.IsNullOrWhiteSpace(details) ? details : "No details.", interrupt: true);
         }
         catch (Exception e)
         {
@@ -58,7 +66,13 @@ internal static class SetFocusedPatch
             // menu's m_FirstSelection) — stay silent rather than announce "Unlabeled". Wheel entries are
             // always labeled, so this hides only the placeholder, not a real coverage gap.
             if (!r.HasText && WheelMenus.ActiveWheel != null) return;
-            Speaker.Speak(r.HasText ? r.Text : ("Unlabeled: " + r.Source), interrupt: false);
+            // Interrupt only when this focus was caused by a navigation keypress. An explicit re-read (F7,
+            // navigated:false) always counts. For focus driven by the game's nav system (navigated:true), it
+            // counts only if a directional input fired this frame (NavInputProbe) — that's an active move, so
+            // cut the now-stale readout. Focus the game sets automatically while opening/restoring/rebuilding a
+            // screen runs no directional handler, so it queues instead of clipping the current line.
+            bool interrupt = !navigated || NavInputProbe.FiredThisFrame;
+            Speaker.Speak(r.HasText ? r.Text : ("Unlabeled: " + r.Source), interrupt: interrupt);
         }
         catch (Exception e)
         {

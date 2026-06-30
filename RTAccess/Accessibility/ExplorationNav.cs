@@ -26,21 +26,24 @@ internal static class ExplorationNav
         if (game.CurrentMode != GameModeType.Default) return;
         if (game.Player != null && game.Player.IsInCombat) return;
 
-        if (Input.GetKeyDown(KeyCode.PageUp)) Cycle(prev: true);
-        else if (Input.GetKeyDown(KeyCode.PageDown)) Cycle(prev: false);
-        else if (Input.GetKeyDown(KeyCode.End)) Interact();
-        else if (Input.GetKeyDown(KeyCode.Home)) ExplorationEvents.Instance.ReannounceCurrent();
+        if (UnityEngine.Input.GetKeyDown(KeyCode.PageUp)) Cycle(prev: true);
+        else if (UnityEngine.Input.GetKeyDown(KeyCode.PageDown)) Cycle(prev: false);
+        else if (UnityEngine.Input.GetKeyDown(KeyCode.End)) Interact();
+        else if (UnityEngine.Input.GetKeyDown(KeyCode.Home)) ExplorationEvents.Instance.ReannounceCurrent();
     }
 
     private static void Cycle(bool prev)
     {
         var layer = SurfaceMainInputLayer.Instance;
-        if (layer == null) { Speaker.Speak("Not in exploration.", interrupt: false); return; }
+        if (layer == null) { Speaker.Speak("Not in exploration.", interrupt: true); return; }
         try
         {
+            // The chosen-object change is voiced by ExplorationEvents on the next interactable-set update; mark
+            // this frame as a user cycle so that announce interrupts (you pressed a key) while passive walk-by
+            // announces still queue. Per [[rt-interrupt-speech-rule]].
+            ExplorationEvents.Instance.MarkUserCycle();
             if (prev) layer.OnPrevInteractable();
             else layer.OnNextInteractable();
-            // The chosen-object change is voiced by ExplorationEvents on the next interactable-set update.
         }
         catch (Exception e) { Main.Log?.Error("ExplorationNav.Cycle failed: " + e); }
     }
@@ -51,7 +54,7 @@ internal static class ExplorationNav
         if (layer == null) return;
         if (Game.Instance.SelectionCharacter?.SelectedUnit?.Value == null)
         {
-            Speaker.Speak("No character selected.", interrupt: false);
+            Speaker.Speak("No character selected.", interrupt: true);
             return;
         }
         try { layer.OnInteract(); }

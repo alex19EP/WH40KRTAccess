@@ -5,29 +5,25 @@ using RTAccess.Speech;
 namespace RTAccess.Accessibility;
 
 /// <summary>
-/// Puts the game into console (gamepad) UI mode — the mode in which the focus-navigation system, and
-/// therefore our <see cref="SetFocusedPatch"/> reader, is active. Mouse mode raises OnHover (not OnFocus),
-/// so nothing is announced there.
+/// Controller-mode policy. RTAccess no longer forces CONSOLE (gamepad) UI mode — the mod drives its own
+/// parallel accessible UI tree in MOUSE mode (see [[ui-paradigm-pivot]] /
+/// docs/plans/mirrored-surfacing-engelbart.md). But we keep using the game's own
+/// <c>Game.ControllerOverride</c> lever, now forcing <b>Mouse</b>: that makes the startup flow select
+/// mouse mode itself and, crucially, <b>skips the "press A for gamepad / Enter for keyboard" boot prompt
+/// entirely</b> (an override being present suppresses both that prompt and the gamepad connect/disconnect
+/// handler) — that prompt is inaccessible and would otherwise block a blind player at every launch.
 ///
-/// Enabled by default at launch via the game's OWN supported lever: <c>Game.ControllerOverride</c>. The
-/// startup flow (<c>GameStarter.StartGameCoroutine</c> / <c>Game.Initialize</c>) honours that override
-/// before it would otherwise fall back to mouse when no controller is connected, so the entire UI builds
-/// in console mode from the start — no UI rebuild, no flash. It also means <c>GamepadConnectDisconnectVM</c>
-/// never subscribes to controller connect/disconnect (it skips that when an override is present), so there
-/// is no auto-revert to mouse and no "gamepad disconnected" prompt when running without a physical pad,
-/// and the "choose controller mode" prompt is skipped entirely.
-///
-/// F6 still flips the live mode at runtime (see <see cref="Main"/>); that path needs a UI rebuild because
-/// the UI is already built by then.
+/// <c>F6</c> still flips the live mode at runtime (see <see cref="Main"/>) — for A/B-testing the parallel
+/// tree against the game's console focus ring, and to reach the console-era in-game helpers (PartyHotkeys,
+/// ExplorationNav, …) still gated on <c>ControllerMode == Gamepad</c> until rebuilt on the new paradigm.
 /// </summary>
 internal static class ConsoleMode
 {
     /// <summary>
-    /// Whether the mod forces console UI mode automatically when the game launches. Code-level switch for
-    /// now; can be surfaced in the UnityModManager settings UI later. Turning it off restores the game's
-    /// stock controller-mode behaviour (F6 still works to toggle manually).
+    /// Force mouse mode at launch (and skip the inaccessible controller-choice prompt). Code-level switch;
+    /// can be surfaced in settings later. Off → stock behaviour (the boot prompt returns). F6 still toggles.
     /// </summary>
-    internal static bool EnableByDefault = true;
+    internal static bool ForceMouseAtLaunch = true;
 
     /// <summary>
     /// Set the live controller mode at runtime, rebuilding the UI so it re-skins to the new mode. Used by
@@ -48,44 +44,44 @@ internal static class ConsoleMode
     internal static void Toggle()
     {
         var game = Game.Instance;
-        if (game == null) { Speaker.Speak("Game not ready.", interrupt: false); return; }
+        // F6 is key-driven, so interrupt ([[rt-interrupt-speech-rule]]). SetMode rebuilds the UI.
+        if (game == null) { Speaker.Speak("Game not ready.", interrupt: true); return; }
         try
         {
             bool toGamepad = game.ControllerMode != Game.ControllerModeType.Gamepad;
             if (SetMode(toGamepad, resetUi: true))
-                Speaker.Speak(toGamepad ? "Console UI mode." : "Mouse mode.", interrupt: false);
+                Speaker.Speak(toGamepad ? "Console UI mode." : "Mouse mode.", interrupt: true);
         }
         catch (Exception e)
         {
             Main.Log?.Error("ConsoleMode.Toggle failed: " + e);
-            Speaker.Speak("Mode switch failed.", interrupt: false);
+            Speaker.Speak("Mode switch failed.", interrupt: true);
         }
     }
 
     /// <summary>
-    /// Force <c>Game.ControllerOverride</c> to report Gamepad so the startup flow selects console mode
-    /// itself, before any UI is built. This is the whole "console UI by default" mechanism.
+    /// Force <c>Game.ControllerOverride</c> to report Mouse so the startup flow selects mouse mode itself,
+    /// before any UI is built, and the controller-choice boot prompt is skipped. The whole "mouse by
+    /// default, no prompt" mechanism.
     /// </summary>
     [HarmonyPatch(typeof(Game), nameof(Game.ControllerOverride), MethodType.Getter)]
     internal static class ControllerOverridePatch
     {
         private static void Postfix(ref Game.ControllerModeType? __result)
         {
-            if (EnableByDefault) __result = Game.ControllerModeType.Gamepad;
+            if (ForceMouseAtLaunch) __result = Game.ControllerModeType.Mouse;
         }
     }
 
     /// <summary>
-    /// Belt-and-suspenders: lock the controller mode after <c>Game.Initialize</c> so nothing reverts to
-    /// mouse later. (With the override above, the connect/disconnect handler isn't even subscribed, but
-    /// this keeps the intent explicit and survives if the override path is ever disabled mid-session.)
+    /// Belt-and-suspenders: lock the controller mode after <c>Game.Initialize</c> so nothing reverts later.
     /// </summary>
     [HarmonyPatch(typeof(Game), nameof(Game.Initialize))]
     internal static class InitializeLockPatch
     {
         private static void Postfix()
         {
-            if (EnableByDefault) Game.DontChangeController = true;
+            if (ForceMouseAtLaunch) Game.DontChangeController = true;
         }
     }
 }

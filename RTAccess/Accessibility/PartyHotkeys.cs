@@ -26,16 +26,16 @@ internal static class PartyHotkeys
         var game = Game.Instance;
         if (game == null || game.ControllerMode != Game.ControllerModeType.Gamepad) return;
 
-        bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-        bool alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
+        bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
+        bool alt = UnityEngine.Input.GetKey(KeyCode.LeftAlt) || UnityEngine.Input.GetKey(KeyCode.RightAlt);
 
-        if (shift && Input.GetKeyDown(KeyCode.D)) Step(next: true);
-        else if (shift && Input.GetKeyDown(KeyCode.A)) Step(next: false);
+        if (shift && UnityEngine.Input.GetKeyDown(KeyCode.D)) Step(next: true);
+        else if (shift && UnityEngine.Input.GetKeyDown(KeyCode.A)) Step(next: false);
         else if (alt)
         {
             for (int i = 0; i < 6; i++)
             {
-                if (Input.GetKeyDown(KeyCode.Alpha1 + i)) { SelectIndex(i); break; }
+                if (UnityEngine.Input.GetKeyDown(KeyCode.Alpha1 + i)) { SelectIndex(i); break; }
             }
         }
     }
@@ -77,7 +77,8 @@ internal static class PartyHotkeys
         try
         {
             Game.Instance.SelectionCharacter.SetSelected(unit);
-            Speaker.Speak(unit.CharacterName, interrupt: false);
+            // Key-driven selection — interrupt so stepping through the party stays responsive ([[rt-interrupt-speech-rule]]).
+            Speaker.Speak(unit.CharacterName, interrupt: true);
         }
         catch (Exception e)
         {

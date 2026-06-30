@@ -14,6 +14,12 @@ public static class Speaker
 
     public static string ActiveBackend => _backend?.Name ?? "<none>";
 
+#if DEBUG
+    /// <summary>Dev-only tap: every line spoken (after normalization) is also handed here, so the dev
+    /// server's /speech buffer can observe what the mod said. Wired by <c>DevServer</c>. See SpeechTap.</summary>
+    public static Action<string> Observer;
+#endif
+
     public static void Initialize(UnityModManager.ModEntry modEntry)
     {
         lock (_gate)
@@ -29,6 +35,9 @@ public static class Speaker
         // Normalize line breaks to sentence breaks so the synth pauses instead of running lines together.
         text = text.Replace("\r\n", ". ").Replace("\n", ". ").Replace("\r", ". ");
         SpeechLog.Write(text, interrupt);
+#if DEBUG
+        try { Observer?.Invoke(text); } catch { }
+#endif
         lock (_gate)
         {
             try { _backend?.Speak(text, interrupt); }

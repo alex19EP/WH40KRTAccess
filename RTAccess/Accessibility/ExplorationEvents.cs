@@ -3,6 +3,7 @@ using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
 using Kingmaker.View;
 using RTAccess.Speech;
+using UnityEngine;
 
 namespace RTAccess.Accessibility;
 
@@ -13,8 +14,9 @@ namespace RTAccess.Accessibility;
 ///
 /// The game raises <see cref="ISurroundingInteractableObjectsCountHandler"/> per interactable whenever the set
 /// or chosen object changes; we announce only the chosen one, deduped on the entity reference so walking (which
-/// continuously re-picks the closest object) doesn't repeat the same line every frame. Speech is queued
-/// (interrupt:false) per [[rt-interrupt-speech-rule]].
+/// continuously re-picks the closest object) doesn't repeat the same line every frame. The ambient walk-by
+/// announce is queued (interrupt:false) — it isn't a keypress — whereas a keyboard cycle (PageUp/Dn, via
+/// <see cref="MarkUserCycle"/>) and the Home re-announce interrupt. Per [[rt-interrupt-speech-rule]].
 /// </summary>
 internal sealed class ExplorationEvents :
     ISurroundingInteractableObjectsCountHandler,
@@ -24,23 +26,44 @@ internal sealed class ExplorationEvents :
 {
     internal static readonly ExplorationEvents Instance = new ExplorationEvents();
 
-    private EntityViewBase _lastChosen;
+    // Max auto-announce rate while moving (the chosen=closest object churns as you walk through a cluster).
+    private const float MinIntervalSeconds = 0.4f;
+    // Don't re-announce the same object this soon even if it flickers in/out of "chosen".
+    private const float SameObjectCooldown = 3f;
+
+    private EntityViewBase _lastChosen;   // current pick (for Home re-announce), regardless of filter/throttle
+    private EntityViewBase _lastSpoken;   // last object actually voiced (for cooldown)
+    private float _lastSpokenTime;
+    private int _userCycleFrame = -1;     // frame of the last keyboard cycle (PageUp/Dn), for interrupt provenance
+
+    /// <summary>Called by <see cref="ExplorationNav"/> just before it cycles the chosen interactable, so the
+    /// resulting announce (raised synchronously on the same frame) interrupts — it was a keypress — while the
+    /// ambient walk-by announce, which has no such mark, stays queued. Per [[rt-interrupt-speech-rule]].</summary>
+    internal void MarkUserCycle() => _userCycleFrame = Time.frameCount;
 
     public void HandleSurroundingInteractableObjectsCountChanged(EntityViewBase entity, bool isInNavigation, bool isChosen)
     {
         if (entity == null) return;
         try
         {
-            if (isChosen)
+            if (!isChosen)
             {
-                if (ReferenceEquals(entity, _lastChosen)) return; // already announced this pick
-                _lastChosen = entity;
-                Announce(entity);
+                if (ReferenceEquals(entity, _lastChosen)) _lastChosen = null; // chosen walked out of range
+                return;
             }
-            else if (ReferenceEquals(entity, _lastChosen))
-            {
-                _lastChosen = null; // the chosen object stopped being chosen (e.g. walked out of range)
-            }
+            if (ReferenceEquals(entity, _lastChosen)) return; // unchanged pick
+            _lastChosen = entity;
+
+            // No custom filter: announce whatever the game itself lets you select. We only pace the speech.
+            // Throttle the walk-through-a-crowd flood: cap the rate, and suppress the same object repeating soon.
+            float now = Time.unscaledTime;
+            if (now - _lastSpokenTime < MinIntervalSeconds) return;
+            if (ReferenceEquals(entity, _lastSpoken) && now - _lastSpokenTime < SameObjectCooldown) return;
+
+            _lastSpoken = entity;
+            _lastSpokenTime = now;
+            // Interrupt only if this change came from a keyboard cycle this frame; ambient walk-by stays queued.
+            Announce(entity, interrupt: _userCycleFrame == Time.frameCount);
         }
         catch (Exception e)
         {
@@ -48,17 +71,18 @@ internal sealed class ExplorationEvents :
         }
     }
 
-    /// <summary>Re-speak the current pick (bound to a key); says "nothing nearby" when there is none.</summary>
+    /// <summary>Re-speak the current pick (bound to the Home key); says "nothing nearby" when there is none.
+    /// Key-driven, so it interrupts prior speech.</summary>
     public void ReannounceCurrent()
     {
-        if (_lastChosen != null) Announce(_lastChosen);
-        else Speaker.Speak("Nothing nearby.", interrupt: false);
+        if (_lastChosen != null) Announce(_lastChosen, interrupt: true);
+        else Speaker.Speak("Nothing nearby.", interrupt: true);
     }
 
-    private static void Announce(EntityViewBase entity)
+    private static void Announce(EntityViewBase entity, bool interrupt)
     {
         var text = InteractableDescriber.Describe(entity);
-        Speaker.Speak(string.IsNullOrWhiteSpace(text) ? "Interactable." : text, interrupt: false);
+        Speaker.Speak(string.IsNullOrWhiteSpace(text) ? "Interactable." : text, interrupt: interrupt);
     }
 
     // Area / loading transitions.
@@ -66,7 +90,9 @@ internal sealed class ExplorationEvents :
     {
         try
         {
-            _lastChosen = null; // new area — drop the stale pick
+            _lastChosen = null; // new area — drop the stale pick + throttle state
+            _lastSpoken = null;
+            TileExplorer.Reset(); // the tile cursor pointed at a node in the old area's grid — clear it
             var name = Game.Instance?.CurrentlyLoadedArea?.AreaDisplayName;
             Speaker.Speak(string.IsNullOrWhiteSpace(name) ? "New area." : ("Entering " + name + "."), interrupt: false);
         }

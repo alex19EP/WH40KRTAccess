@@ -20,7 +20,11 @@ internal static class ServiceWindowAnnounce
     private static void Postfix(ServiceWindowsType type)
     {
         var label = Label(type);
-        if (label != null) Speaker.Speak(label, interrupt: false);
+        if (label == null) return;
+        // The user opened this window (a keypress), so interrupt to say which one it is. The window's first
+        // focus readout follows, and SetFocusedPatch queues it (the open is not a directional nav, so it's
+        // automatic focus) — giving "Inventory. <first item>." in order. Per [[rt-interrupt-speech-rule]].
+        Speaker.Speak(label, interrupt: true);
     }
 
     private static string Label(ServiceWindowsType type) => type switch

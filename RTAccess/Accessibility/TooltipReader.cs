@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using Kingmaker.Code.UI.MVVM.VM.Tooltip.Bricks;
@@ -20,13 +21,16 @@ internal static class TooltipReader
 {
     private static readonly Regex Tags = new Regex("<[^>]+>", RegexOptions.Compiled);
 
-    public static string GetTitle(Component comp) => Read(comp, TooltipTemplateType.Tooltip, titleOnly: true);
+    public static string GetTitle(Component comp) => ReadTemplates(GetTemplates(comp), TooltipTemplateType.Tooltip, titleOnly: true);
 
-    public static string GetFull(Component comp) => Read(comp, TooltipTemplateType.Info, titleOnly: false);
+    public static string GetFull(Component comp) => ReadTemplates(GetTemplates(comp), TooltipTemplateType.Info, titleOnly: false);
 
-    private static string Read(Component comp, TooltipTemplateType type, bool titleOnly)
+    /// <summary>Read a tooltip template directly (e.g. a CharGen phase's info-panel description, which has no
+    /// owning focusable widget). Same brick walk as the component path.</summary>
+    public static string GetFull(TooltipBaseTemplate template) => ReadTemplates(Wrap(template), TooltipTemplateType.Info, titleOnly: false);
+
+    private static string ReadTemplates(List<TooltipBaseTemplate> templates, TooltipTemplateType type, bool titleOnly)
     {
-        var templates = GetTemplates(comp);
         if (templates == null) return null;
 
         var sb = new StringBuilder();
@@ -88,21 +92,54 @@ internal static class TooltipReader
         }
     }
 
+    // Curated string member names to harvest from an unrecognized brick VM (covers the item-name header
+    // TooltipBrickItemHeaderVM.Text and other RT brick types we don't enumerate). Order = reading order.
+    private static readonly string[] BrickTextMembers = { "Title", "Header", "Name", "Text", "Value", "Label", "Description" };
+
     private static string BrickText(ITooltipBrick brick)
     {
         TooltipBaseBrickVM vm;
         try { vm = brick?.GetVM(); } catch { return null; }
-        string raw;
         switch (vm)
         {
             case null: return null;
-            case TooltipBrickTitleVM t: raw = t.Title; break;
-            case TooltipBrickTextVM t: raw = t.Text; break;
-            case TooltipBrickIconStatValueVM t: raw = Join(t.Name, t.Value); break;
-            case TooltipBrickFeatureVM t: raw = t.Name; break;
-            default: return null;
+            // Known bricks: keep precise formatting (stat bricks read "Name: Value").
+            case TooltipBrickTitleVM t: return Clean(t.Title);
+            case TooltipBrickTextVM t: return Clean(t.Text);
+            case TooltipBrickIconStatValueVM t: return Clean(Join(t.Name, t.Value));
+            case TooltipBrickFeatureVM t: return Clean(t.Name);
+            // Unknown brick (e.g. TooltipBrickItemHeaderVM — the item name — in a different namespace, plus
+            // the many other RT brick VMs): reflect common string members so we don't silently drop content.
+            default: return Clean(ReflectText(vm));
         }
-        return Clean(raw);
+    }
+
+    /// <summary>Harvest the non-empty string members (fields or props, unwrapping ReactiveProperty) of a brick VM.</summary>
+    private static string ReflectText(object vm)
+    {
+        var t = vm.GetType();
+        string result = null;
+        foreach (var name in BrickTextMembers)
+        {
+            object val = t.GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(vm)
+                         ?? t.GetField(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(vm);
+            var s = Unwrap(val);
+            if (string.IsNullOrWhiteSpace(s)) continue;
+            // Join distinct members (e.g. a "Name: Value" pair) and avoid duplicate echoes.
+            if (result == null) result = s.Trim();
+            else if (!result.Contains(s.Trim())) result = result + ": " + s.Trim();
+        }
+        return result;
+    }
+
+    // Unwrap a string or a UniRx ReactiveProperty<string> (.Value).
+    private static string Unwrap(object val)
+    {
+        if (val == null) return null;
+        if (val is string s) return s;
+        var valueProp = val.GetType().GetProperty("Value");
+        var inner = valueProp?.GetValue(val);
+        return inner as string;
     }
 
     private static string Clean(string s)
