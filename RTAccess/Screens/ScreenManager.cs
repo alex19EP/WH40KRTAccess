@@ -142,8 +142,12 @@ namespace RTAccess.Screens
             Register(new InventoryScreen());
             Register(new JournalScreen());
             Register(new CharacterInfoScreen());
-            // TODO: Vendor, Loot, EscMenu, SaveLoad, Encyclopedia + the long tail, per
-            // docs/plans/mirrored-surfacing-engelbart.md.
+            // In-game pause/Escape menu (CommonVM.EscMenuContextVM.EscMenu) — layer 20, above contexts/windows,
+            // below Settings(25)/MessageBox(30) (it raises a confirm box while staying open).
+            Register(new EscMenuScreen());
+            // Save/Load window (CommonVM.SaveLoadVM) — layer 22, launched from the Esc menu or main menu.
+            Register(new SaveLoadScreen());
+            // TODO: Vendor, Loot, Encyclopedia + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }
     }
