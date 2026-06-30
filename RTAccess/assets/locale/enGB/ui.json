@@ -10,6 +10,7 @@
   "role.setting": "setting",
   "role.item": "item",
   "role.spell": "spell",
+  "role.action": "action",
   "role.list": "list",
   "role.group": "group",
   "role.table": "table",

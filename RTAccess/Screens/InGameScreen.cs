@@ -5,11 +5,15 @@ using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;      // ServiceWindowsType, ServiceWindowsVM
 using Kingmaker.Code.UI.MVVM.VM.Surface;             // SurfaceStaticPartVM
 using Kingmaker.Code.UI.MVVM.VM.SurfaceCombat;       // SurfaceHUDVM, InitiativeTrackerUnitVM
+using Kingmaker.Code.UI.MVVM.VM.ActionBar;           // ActionBarSlotVM
+using Kingmaker.Code.UI.MVVM.VM.ActionBar.Surface;   // SurfaceActionBarVM
+using Kingmaker.Code.UI.MVVM.VM.IngameMenu;          // IngameMenuVM
 using Kingmaker.Controllers.Combat;                  // GetCombatStateOptional extension
 using Kingmaker.EntitySystem.Entities;               // BaseUnitEntity, MechanicEntity
 using Kingmaker.GameModes;                           // GameModeType
 using Kingmaker.Mechanics.Entities;                  // AbstractUnitEntity
 using Kingmaker.UI.Common;                           // IsDirectlyControllable() extension
+using Kingmaker.UI.Selection;                        // SelectionManagerBase (Hold/Stop/SelectAll)
 using RTAccess.UI;
 using RTAccess.UI.Proxies;
 using UnityEngine;                                   // Mathf
@@ -72,8 +76,10 @@ namespace RTAccess.Screens
             && Game.Instance.CurrentMode == GameModeType.Default;
 
         private TextElement _status;     // selected char + wounds + (in combat) AP/MP + whose turn
+        private ListContainer _actions;  // the action bar (abilities/weapons/consumables); rebuilt on change
         private ListContainer _party;    // roster; Enter selects
         private ListContainer _combat;   // turn-based only; empty/skipped out of combat
+        private string _actionsSig;      // last action-bar content signature
         private string _partySig;        // last party-membership signature
         private string _combatSig;       // last combat/initiative signature
 
@@ -82,14 +88,19 @@ namespace RTAccess.Screens
             Clear();
             _status = new TextElement(StatusLine);
             Add(_status);
+            _actions = new ListContainer("Actions");
+            Add(_actions);
             _party = new ListContainer("Party");
             Add(_party);
             _combat = new ListContainer("Combat");
             Add(_combat);
             BuildWindows();
+            BuildMenu();
 
+            RebuildActions();
             RebuildParty();
             RebuildCombat();
+            _actionsSig = ActionsSig();
             _partySig = PartySig();
             _combatSig = CombatSig();
         }
@@ -97,13 +108,16 @@ namespace RTAccess.Screens
         public override void OnPop()
         {
             Clear();
-            _status = null; _party = null; _combat = null;
-            _partySig = null; _combatSig = null;
+            _status = null; _actions = null; _party = null; _combat = null;
+            _actionsSig = null; _partySig = null; _combatSig = null;
         }
 
         public override void OnUpdate()
         {
             if (_party == null) { OnPush(); return; } // defensive: ensure the shell exists
+
+            var asig = ActionsSig();
+            if (asig != _actionsSig) { _actionsSig = asig; RebuildActions(); }
 
             var ps = PartySig();
             if (ps != _partySig) { _partySig = ps; RebuildParty(); }
@@ -143,6 +157,105 @@ namespace RTAccess.Screens
                 case ServiceWindowsType.Encyclopedia: return "Encyclopedia";
                 default: return type.ToString();
             }
+        }
+
+        // ---- Action bar region (abilities / weapon attacks / consumables the selected unit can use) ----
+
+        // All action-bar slots in a stable order — current weapon set, abilities, consumables, heroic acts,
+        // desperate measures, overdrive. RT has no unified slot list (the bar is split into part VMs); this
+        // mirrors the set the game itself refreshes in SurfaceActionBarVM.UpdateSlotsCommandHandler.
+        private static IEnumerable<ActionBarSlotVM> BarSlots()
+        {
+            var bar = ActionBar();
+            if (bar == null) yield break;
+            var set = bar.Weapons?.CurrentSet?.Value;
+            if (set?.AllSlots != null) foreach (var s in set.AllSlots) yield return s;
+            if (bar.Abilities?.Slots != null) foreach (var s in bar.Abilities.Slots) yield return s;
+            if (bar.Consumables?.Slots != null) foreach (var s in bar.Consumables.Slots) yield return s;
+            var momentum = bar.SurfaceMomentumVM;
+            if (momentum?.HeroicActSlots != null) foreach (var s in momentum.HeroicActSlots) yield return s;
+            if (momentum?.DesperateMeasureSlots != null) foreach (var s in momentum.DesperateMeasureSlots) yield return s;
+            var overdrive = bar.Abilities?.OverdriveSlotVM;
+            if (overdrive != null) yield return overdrive;
+        }
+
+        // A real, usable slot: not a non-current-weapon-set skeleton (IsFake), not empty, backed by a
+        // supported mechanic (not IsBad).
+        private static bool Usable(ActionBarSlotVM s)
+            => s != null && !s.IsFake.Value && !s.IsEmpty.Value
+               && s.MechanicActionBarSlot != null && !s.MechanicActionBarSlot.IsBad();
+
+        // Rebuild the action list in place, restoring focus to the same row index if focus was inside (so a
+        // character swap / item use under you doesn't strand focus). Focus elsewhere is untouched.
+        private void RebuildActions()
+        {
+            if (_actions == null) return;
+            var cur = Navigation.Active?.Current;
+            int focusedIndex = (cur != null && cur.Parent == _actions) ? _actions.IndexOf(cur) : -1;
+
+            _actions.Clear();
+            foreach (var s in BarSlots()) if (Usable(s)) _actions.Add(new ProxyActionBarSlot(s));
+
+            if (focusedIndex < 0 || _actions.Children.Count == 0) return;
+            var target = _actions.Children[Math.Min(focusedIndex, _actions.Children.Count - 1)];
+            Navigation.Focus(target, announce: true);
+        }
+
+        // The bar's content fingerprint: the selected unit + the usable slots' titles. Changes when the unit is
+        // swapped, abilities/items appear, or an item is consumed — exactly when we must rebuild. Live per-slot
+        // state (AP/cooldown/charges) is read by the proxy, so it isn't in here.
+        private static string ActionsSig()
+        {
+            var sb = new StringBuilder();
+            sb.Append(SelectedUnit()?.UniqueId).Append('|');
+            foreach (var s in BarSlots())
+                if (Usable(s)) { try { sb.Append(s.MechanicActionBarSlot.GetTitle()); } catch { } sb.Append(','); }
+            return sb.ToString();
+        }
+
+        // ---- Menu region (the compass-corner control cluster) ----
+
+        // RT keeps no menu VM for these controls (in RT the IngameMenuVM is only window-openers) — each is a
+        // direct game API. One Tab-stop list, built once; toggles speak their new state on press and read their
+        // live state into the label on the next focus. (No five-foot step / delay-turn / surface Rest in RT; the
+        // turn-based and speed-up toggles are omitted — no clean stateful API.)
+        private void BuildMenu()
+        {
+            var menu = new ListContainer("Menu");
+            menu.Add(new ProxyActionButton(() => "Pause, " + OnOff(Game.Instance != null && Game.Instance.IsPaused),
+                () => true, TogglePause, actionVerb: "toggle"));
+            menu.Add(new ProxyActionButton("Hold position", () => true, () => SelectionManagerBase.Instance?.Hold()));
+            menu.Add(new ProxyActionButton("Stop", () => true, () => SelectionManagerBase.Instance?.Stop()));
+            menu.Add(new ProxyActionButton("Select whole party", () => true, () => SelectionManagerBase.Instance?.SelectAll()));
+            menu.Add(new ProxyActionButton(() => "Formation" + (IngameMenu()?.IsFormationActive?.Value == true ? ", open" : ""),
+                () => true, () => IngameMenu()?.OpenFormation(), actionVerb: "open"));
+            menu.Add(new ProxyActionButton(() => "Inspect mode, " + OnOff(Game.Instance?.Player?.UISettings?.ShowInspect ?? false),
+                () => true, ToggleInspect, actionVerb: "toggle"));
+            menu.Add(new ProxyActionButton("Reset camera", () => true,
+                () => Kingmaker.View.CameraRig.Instance?.ResetCameraRotate()));
+            Add(menu);
+        }
+
+        private static string OnOff(bool on) => on ? "on" : "off";
+
+        private static void TogglePause()
+        {
+            var g = Game.Instance;
+            if (g == null) return;
+            // The pause-mode change settles a frame later, so reading g.IsPaused right after the set is stale —
+            // announce the state we just asked for, not the not-yet-updated getter.
+            bool willPause = !g.IsPaused;
+            g.IsPaused = willPause;
+            Tts.Speak(willPause ? "Paused" : "Unpaused", interrupt: true);
+        }
+
+        private static void ToggleInspect()
+        {
+            var ui = Game.Instance?.Player?.UISettings;
+            if (ui == null) return;
+            bool on = !ui.ShowInspect;
+            ui.ShowInspect = on;
+            Tts.Speak(on ? "Inspect mode on" : "Inspect mode off", interrupt: true);
         }
 
         // ---- Party region ----
@@ -332,5 +445,7 @@ namespace RTAccess.Screens
         private static SurfaceStaticPartVM StaticPart() => Game.Instance?.RootUiContext?.SurfaceVM?.StaticPartVM;
         private static SurfaceHUDVM SurfaceHUD() => StaticPart()?.SurfaceHUDVM;
         private static ServiceWindowsVM ServiceWindows() => StaticPart()?.ServiceWindowsVM;
+        private static SurfaceActionBarVM ActionBar() => SurfaceHUD()?.ActionBarVM;
+        private static IngameMenuVM IngameMenu() => SurfaceHUD()?.IngameMenuVM;
     }
 }

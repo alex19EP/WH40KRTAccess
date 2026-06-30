@@ -179,8 +179,9 @@ internal static class InteractableDescriber
         }
     }
 
-    /// <summary>The name only (used for terse contexts); mirrors the type mapping in Describe.</summary>
-    private static string ResolveName(EntityViewBase entity, out InteractionPart interaction)
+    /// <summary>The name only (used for terse contexts); mirrors the type mapping in Describe. Public so the
+    /// exploration scanner can reuse the same name + interaction resolution for its map-object proxies.</summary>
+    public static string ResolveName(EntityViewBase entity, out InteractionPart interaction)
     {
         interaction = entity.Data != null ? entity.InteractionComponent : null;
 
@@ -215,8 +216,9 @@ internal static class InteractableDescriber
         return string.IsNullOrWhiteSpace(fallback) ? "Object" : fallback;
     }
 
-    /// <summary>English verb for the interaction type; null when there is no meaningful verb.</summary>
-    private static string Verb(InteractionPart interaction)
+    /// <summary>English verb for the interaction type; null when there is no meaningful verb. Public so the
+    /// exploration scanner can reuse it for map-object detail lines.</summary>
+    public static string Verb(InteractionPart interaction)
     {
         if (interaction == null) return null;
         switch (interaction.UIInteractionType)
@@ -230,8 +232,9 @@ internal static class InteractableDescriber
         }
     }
 
-    /// <summary>Distance + map-relative compass between two world points, e.g. "8 metres, north-east".</summary>
-    private static string DirectionAndDistance(Vector3 from, Vector3 to)
+    /// <summary>Distance + map-relative compass between two world points, e.g. "8 metres, north-east". Public so
+    /// the exploration scanner speaks the same compass as the other navigators.</summary>
+    public static string DirectionAndDistance(Vector3 from, Vector3 to)
     {
         float dx = to.x - from.x; // east(+) / west(-)
         float dz = to.z - from.z; // north(+) / south(-)

@@ -113,6 +113,14 @@ namespace RTAccess.UI
             // can arrow through. (The rich brick/glossary drill reader — TooltipLinks + a FlowSheet-rendered
             // TooltipScreen — is the deferred flagship; this covers the common header+body case.)
             var body = el?.GetTooltipText();
+            // Icon-only in-game elements (action-bar slots, inventory/equipment items) carry no plain text —
+            // their name + stats + description live in a rich brick TEMPLATE. Read that to text via
+            // TooltipReader so Space speaks the full game tooltip instead of "no tooltip".
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                var tpl = el?.GetTooltipTemplate();
+                if (tpl != null) body = RTAccess.Accessibility.TooltipReader.GetFull(tpl);
+            }
             if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip")); return; }
             RTAccess.Screens.TooltipScreen.Open(el.GetLabelText(), body);
         }

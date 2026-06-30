@@ -113,6 +113,13 @@ public static class Main {
         // Home — re-announce the current pick. Gated to console mode + exploration (see ExplorationNav).
         ExplorationNav.Update();
 
+        // Scanner / review cursor — the self-built replacement for the engine's (mouse-mode-dead) interactable
+        // ring: PageUp/Down browse a categorized, distance-sorted list of everything in the area (units +
+        // interactables); Ctrl+PageUp/Down change category; , . N M cycle nearest party/enemy/neutral/object;
+        // End interacts, Insert walks the party there, Home reads location, P reads the party. Gated to
+        // exploration owning the keyboard (see RTAccess.Exploration.Scanner).
+        RTAccess.Exploration.Scanner.Update();
+
         // [ / ] — cycle whole-area local-map landmarks (exits/POI/objective); \ — walk the party to the
         // selected one. Map-relative directions. Gated to console mode + exploration (see LandmarkNav).
         LandmarkNav.Update();
