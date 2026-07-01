@@ -1,5 +1,5 @@
 using Kingmaker;                                          // Game
-using Kingmaker.Controllers.Units;                        // UnitCommandsRunner
+using Kingmaker.Controllers.Clicks.Handlers;              // ClickMapObjectHandler (the game's own click dispatch)
 using Kingmaker.EntitySystem.Entities;                    // MapObjectEntity, BaseUnitEntity
 using Kingmaker.GameCommands;                             // AreaTransitionHelper
 using Kingmaker.View.MapObjects;                          // InteractionDoorPart/LootPart/SkillCheckPart, AreaTransitionPart
@@ -13,8 +13,10 @@ namespace RTAccess.Exploration;
 /// A scannable interactable map object. Its categories come from the interaction parts it carries (loot →
 /// containers, door → doors, skill check → search points, anything else → mechanisms; an area transition adds
 /// exits; nothing → scenery). Name + verb are resolved by <see cref="InteractableDescriber"/> (the same mapping
-/// the overtip uses). Interact mirrors a click: an exit runs the area-transition flow, everything else approaches
-/// and acts via <see cref="UnitCommandsRunner.TryApproachAndInteract"/>.
+/// the overtip uses). Interact mirrors a click: an exit runs the area-transition flow, everything else is dispatched
+/// through the game's own click handler (<see cref="ClickMapObjectHandler.Interact"/>) — the same path a mouse click
+/// takes once an object is chosen, so unit-selection, Direct-vs-Approach, trap handling and AP/range warnings all
+/// match the base game.
 /// </summary>
 internal sealed class ProxyMapObject : ScanItem
 {
@@ -110,8 +112,10 @@ internal sealed class ProxyMapObject : ScanItem
         return nodes;
     }
 
-    // Same as clicking the object: an exit runs the party area-transition flow; everything else approaches the
-    // thing and runs its first enabled interaction (loot/open/use). The acting unit is the selected/lead unit.
+    // Same as clicking the object: an exit runs the party area-transition flow; everything else is dispatched
+    // through the game's own click handler, exactly as a mouse click does once it has picked an object. We pass
+    // forceOvertipInteractions: true so overtip-only interactions (which in mouse mode wait for a hover button a
+    // blind player can't click) still fire directly — the console/gamepad behaviour.
     public override bool Interact()
     {
         if (_obj.GetOptional<AreaTransitionPart>() != null)
@@ -120,17 +124,17 @@ internal sealed class ProxyMapObject : ScanItem
             return true;
         }
 
-        var user = Game.Instance?.SelectionCharacter?.SelectedUnit?.Value ?? Game.Instance?.Player?.MainCharacterEntity;
-        if (user == null) return false;
+        var view = _obj.View;
+        if (view == null) return false;
 
-        InteractionPart target = null;
-        foreach (var part in _obj.Interactions)
+        var units = Game.Instance?.SelectionCharacter?.SelectedUnits?.ToList();
+        if (units == null || units.Count == 0)
         {
-            if (part != null && part.Enabled) { target = part; break; }
+            var main = Game.Instance?.Player?.MainCharacterEntity;
+            units = main != null ? new List<BaseUnitEntity> { main } : null;
         }
-        if (target == null) return false;
+        if (units == null || units.Count == 0) return false;
 
-        UnitCommandsRunner.TryApproachAndInteract(user, target);
-        return true;
+        return ClickMapObjectHandler.Interact(view.gameObject, units, forceOvertipInteractions: true);
     }
 }

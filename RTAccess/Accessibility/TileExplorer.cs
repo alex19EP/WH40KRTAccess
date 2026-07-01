@@ -1,97 +1,104 @@
 using Kingmaker;
 using Kingmaker.Controllers.Units;
 using Kingmaker.EntitySystem.Entities;
-using Kingmaker.GameModes;
 using Kingmaker.Pathfinding;
+using Kingmaker.UI.Common;          // IsDirectlyControllable() extension
 using Kingmaker.UnitLogic;
 using Kingmaker.View;
+using RTAccess.Exploration; // MapCursor (the shared world cursor)
 using RTAccess.Speech;
 using UnityEngine;
 
 namespace RTAccess.Accessibility;
 
 /// <summary>
-/// A virtual grid cursor the user drives tile-by-tile with the arrow keys, speaking a full readout of each tile —
-/// occupant, walkability/reason, cover on every edge, and the offset from the anchor unit. Unlike
-/// <see cref="ExplorationNav"/> (which cycles the nearby interactables the game itself picks) this reads ARBITRARY
-/// tiles, so a blind player can map a room or scout cover before moving. The readout is composed by
-/// <see cref="InteractableDescriber.DescribeTile"/>; the grid model is the game's pathfinding graph
-/// (<see cref="CustomGridGraph"/>, the square 1.35 m grid).
+/// The always-active virtual grid cursor — the movement half of the WrathAccess "map viewer" coupling, on RT's
+/// discrete square grid. The player steps it tile-by-tile with the arrow keys and hears a full readout of each tile
+/// (occupant, walkability/reason, cover on every edge, offset from the anchor). Unlike the area scanner (which
+/// cycles the interactables the game itself surfaces) this reads ARBITRARY tiles, so a blind player can map a room
+/// or scout cover before moving. The readout is composed by <see cref="InteractableDescriber.DescribeTile"/>; the
+/// grid model is the game's pathfinding graph (<see cref="CustomGridGraph"/>, the square 1.35 m grid).
 ///
-/// Ctrl+T = toggle on/off (turning on recenters the cursor on the selected/lead unit); arrow keys = move N/E/S/W;
-/// Delete = re-announce the current tile; Enter = move the selected (combat: current-turn) unit to the cursor tile.
-/// The camera follows the cursor for sighted helpers. Active in console (gamepad) UI mode on any on-foot surface
-/// (<see cref="GameModeType.Default"/>) — i.e. BOTH exploration and tactical combat (the anchor is the selected
-/// unit, which in combat is the current-turn unit). Uses Ctrl+T + arrow keys + Delete/Enter, none of which the
-/// other navigators bind, so there is no double-handling in OnUpdate.
+/// There is no toggle. The cursor is live whenever the in-game screen owns world control: its keys are registered
+/// in the Exploration input category (see <see cref="RTAccess.Input.InputBindings"/>) and the screen takes them
+/// dead in windows / dialogue / cutscenes. The cursor is planted lazily — the first step / re-announce / move-to
+/// plants it on the anchor unit and reads that tile rather than acting, so a cold press never silently walks the
+/// party onto its own tile.
+///
+/// Keys (all WrathAccess-parity, all registered, not raw-polled): arrows = step N/E/S/W (primary slot); Shift+arrows
+/// = step (secondary slot, shadow-immune); C = recenter on the party; Delete = re-announce the current tile;
+/// Backspace = guarded move-to; Enter / KeypadEnter = interact with the nearest interactable to the cursor (the I key
+/// interacts with the scanner SELECTION instead). The whole primary set stands down while the HUD is focused — the arrows and
+/// Backspace/Enter yield to the navigator by chord shadowing, C and Delete by an explicit focus check — so only the
+/// shadow-immune Shift+arrows keep stepping the cursor when
+/// the HUD owns the keyboard. Move-to reproduces the engine turn guards the hand-rolled command bypasses
+/// (player turn + the active unit selected and controllable) and, in turn-based combat, takes a two-step confirm —
+/// it commits movement and spends the turn's movement points with no preview, so the first press only announces the
+/// distance. The cursor is the shared <see cref="MapCursor"/>, so the scanner and later spatial cues all measure
+/// from the same point; the camera follows it for sighted helpers.
 /// </summary>
 internal static class TileExplorer
 {
-    private static bool _active;
-    private static CustomGridNodeBase _cursor;
+    // Turn-based move-to is a two-step confirm: the first press arms (and announces the distance), a second press on
+    // the SAME tile within this window commits. It re-arms whenever the cursor moves or the window lapses, so a
+    // stale arm can never fire a move the player didn't just confirm.
+    private const float ConfirmWindow = 3f;
+    private static CustomGridNodeBase _armedNode;
+    private static float _armTime;
 
-    public static void Update()
-    {
-        // Re-gated for mouse mode (was ControllerMode == Gamepad). ExplorationActive already requires an
-        // on-foot surface (GameModeType.Default = exploration AND surface tactical combat). If we were active
-        // and the gate slips away, auto-exit.
-        if (!RTAccess.Screens.InGameScreen.ExplorationActive)
-        {
-            if (_active) Deactivate();
-            return;
-        }
-
-        // Ctrl+T toggles. (Insert proved unreliable — eaten before it reached the mod.)
-        bool ctrl = UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl);
-        if (ctrl && UnityEngine.Input.GetKeyDown(KeyCode.T)) { Toggle(); return; }
-        if (!_active) return;
-
-        // The cursor's arrow/Enter keys collide with HUD navigation — only consume them while exploration owns
-        // the keys (HUD unfocused). When the player Tabs into the HUD, the navigator wins the arrows.
-        if (RTAccess.UI.Navigation.HasFocus) return;
-
-        if (UnityEngine.Input.GetKeyDown(KeyCode.UpArrow)) Move(0, 1);          // north (+Z)
-        else if (UnityEngine.Input.GetKeyDown(KeyCode.DownArrow)) Move(0, -1);  // south (-Z)
-        else if (UnityEngine.Input.GetKeyDown(KeyCode.RightArrow)) Move(1, 0);  // east  (+X)
-        else if (UnityEngine.Input.GetKeyDown(KeyCode.LeftArrow)) Move(-1, 0);  // west  (-X)
-        else if (UnityEngine.Input.GetKeyDown(KeyCode.Delete)) Announce();      // re-read the current tile
-        else if (UnityEngine.Input.GetKeyDown(KeyCode.Return) || UnityEngine.Input.GetKeyDown(KeyCode.KeypadEnter)) MoveToCursor();
-    }
-
-    /// <summary>Drop cursor state on area change so a stale node from the previous area is never reused.</summary>
+    /// <summary>Drop cursor + confirm state on area change so a stale node from the previous area is never reused.</summary>
     public static void Reset()
     {
-        _active = false;
-        _cursor = null;
+        MapCursor.Clear();
+        _armedNode = null;
     }
 
-    private static void Toggle()
+    // ---- registered handlers (InputCategory.Exploration; see InputBindings) ----
+
+    public static void StepNorth() => Step(0, 1);   // +Z
+    public static void StepSouth() => Step(0, -1);  // -Z
+    public static void StepEast()  => Step(1, 0);   // +X
+    public static void StepWest()  => Step(-1, 0);  // -X
+
+    /// <summary>Re-read the cursor tile (planting on the party first if the cursor is cold).</summary>
+    public static void ReAnnounce()
     {
-        if (_active) { Deactivate(); return; }
+        if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys; the primary cursor reads stand down (Shift+arrows stay live)
+        if (EnsurePlanted(out _)) Announce();
+    }
+
+    /// <summary>Recenter the cursor on the anchor unit and read its tile.</summary>
+    public static void Recenter()
+    {
+        if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys; the primary cursor controls stand down
         var node = GetAnchor()?.CurrentUnwalkableNode;
         if (node == null) { Speaker.Speak("No reference point.", interrupt: true); return; }
-        _cursor = node;
-        _active = true;
+        MapCursor.Set(node);
+        _armedNode = null;   // the destination moved; never carry a pending confirm across a recenter
         ScrollTo(node);
-        // Key-driven — interrupt (per [[rt-interrupt-speech-rule]]).
-        Speaker.Speak("Tile explorer on. " + Describe(), interrupt: true);
+        Announce();
     }
 
-    private static void Deactivate()
+    // ---- stepping ----
+
+    private static void Step(int dx, int dz)
     {
-        _active = false;
-        Speaker.Speak("Tile explorer off.", interrupt: true);
+        if (!EnsurePlanted(out bool fresh)) return;
+        if (fresh) { Announce(); return; }   // the first touch reads the planted tile; it doesn't also step
+        Move(dx, dz);
     }
 
     private static void Move(int dx, int dz)
     {
         try
         {
-            if (_cursor == null) { Deactivate(); return; }
-            var grid = _cursor.Graph as CustomGridGraph;
-            var next = grid?.GetNode(_cursor.XCoordinateInGrid + dx, _cursor.ZCoordinateInGrid + dz);
+            var cur = MapCursor.Node;
+            if (cur == null) return;   // EnsurePlanted guarantees this; defensive only
+            var grid = cur.Graph as CustomGridGraph;
+            var next = grid?.GetNode(cur.XCoordinateInGrid + dx, cur.ZCoordinateInGrid + dz);
             if (next == null) { Speaker.Speak("Edge.", interrupt: true); return; }
-            _cursor = next;
+            MapCursor.Set(next);
+            _armedNode = null;   // any cursor step re-arms the move-to two-step confirm — no stale arm survives a move
             ScrollTo(next);
             Announce();
         }
@@ -99,46 +106,127 @@ internal static class TileExplorer
     }
 
     /// <summary>
-    /// Order the controllable unit to walk to the cursor tile. Exploration routes through the game's canonical
-    /// click-to-move (<see cref="UnitCommandsRunner.MoveSelectedUnitsToPoint"/>, formation-aware). Combat builds the
-    /// turn-based move command directly to this exact node — the same call the ground click handler uses
-    /// (<c>TryCreateMoveCommandTB(showMovePrediction:false)</c> + <c>Commands.Run</c>) — and speaks the reason when the
-    /// move is refused (out of movement points, blocked, etc.). NOTE: in combat this commits movement and spends the
-    /// turn's movement points; there is no preview step.
+    /// Plant the cursor on the anchor unit if it is unplanted. Returns false (and speaks) only when there is no
+    /// anchor to plant on. <paramref name="fresh"/> is true when this call did the planting — callers read the tile
+    /// instead of acting on that first press, so a cold key never walks the party onto its own tile.
     /// </summary>
-    private static void MoveToCursor()
+    private static bool EnsurePlanted(out bool fresh)
+    {
+        fresh = false;
+        if (MapCursor.Has) return true;
+        var node = GetAnchor()?.CurrentUnwalkableNode;
+        if (node == null) { Speaker.Speak("No reference point.", interrupt: true); return false; }
+        MapCursor.Set(node);
+        ScrollTo(node);
+        fresh = true;
+        return true;
+    }
+
+    // ---- move-to (the single guarded order; replaces Scanner.MoveToSelected + the old toggled MoveToCursor) ----
+
+    /// <summary>
+    /// Order the party / active unit to walk to the cursor tile. Out of combat this routes through the game's
+    /// canonical formation-aware click-to-move (<see cref="UnitCommandsRunner.MoveSelectedUnitsToPoint"/>), refused
+    /// while the game is paused. In turn-based combat it rebuilds the move command directly to the node — but ONLY
+    /// for the player's own active unit (the hand-rolled command bypasses the engine guards
+    /// <see cref="UnitCommandsRunner"/> enforces, which would otherwise let it command an enemy on its turn) and
+    /// behind a two-step confirm (the move commits and spends the turn's movement points with no preview, so the
+    /// first press only announces the distance). Refusals are spoken (out of points, blocked, etc.).
+    /// </summary>
+    public static void MoveToCursor()
     {
         try
         {
-            if (_cursor == null) { Deactivate(); return; }
+            if (!EnsurePlanted(out bool fresh)) return;
+            if (fresh) { Announce(); return; }   // cold press reads the planted tile rather than moving onto it
+
+            var node = MapCursor.Node;
             var game = Game.Instance;
-            var dest = (Vector3)_cursor.position;
+            if (game == null) return;
 
             if (game.TurnController.TurnBasedModeActive)
             {
-                var unit = game.TurnController.CurrentUnit as BaseUnitEntity;
-                if (unit == null) { Speaker.Speak("No active unit.", interrupt: true); return; }
+                if (!game.TurnController.IsPlayerTurn) { Speaker.Speak("Not your turn.", interrupt: true); return; }
+                var unit = game.SelectionCharacter?.SelectedUnit?.Value as BaseUnitEntity;
+                var current = game.TurnController.CurrentUnit as BaseUnitEntity;
+                if (unit == null || unit != current || !unit.IsDirectlyControllable())
+                { Speaker.Speak("Select your active character.", interrupt: true); return; }
+
+                // First press on this tile arms + announces the distance; a second within the window commits.
+                if (_armedNode != node || (Time.unscaledTime - _armTime) > ConfirmWindow)
+                {
+                    _armedNode = node;
+                    _armTime = Time.unscaledTime;
+                    Speaker.Speak(TilesAway(unit, node) + ", press again to move.", interrupt: true);
+                    return;
+                }
+                _armedNode = null;
+
                 var cmd = unit.TryCreateMoveCommandTB(
-                    new MoveCommandSettings { Destination = dest, DisableApproachRadius = true },
+                    new MoveCommandSettings { Destination = node.Vector3Position, DisableApproachRadius = true },
                     showMovePrediction: false, out var status);
-                if (cmd != null)
-                {
-                    unit.Commands.Run(cmd);
-                    Speaker.Speak("Moving.", interrupt: true);
-                }
-                else
-                {
-                    Speaker.Speak(MoveFailure(status), interrupt: true);
-                }
+                if (cmd != null) { unit.Commands.Run(cmd); Speaker.Speak("Moving.", interrupt: true); }
+                else Speaker.Speak(MoveFailure(status), interrupt: true);
             }
             else
             {
+                if (game.IsPaused) { Speaker.Speak("Paused, unpause to move.", interrupt: true); return; }
                 if (GetAnchor() == null) { Speaker.Speak("No character selected.", interrupt: true); return; }
-                UnitCommandsRunner.MoveSelectedUnitsToPoint(dest);
+                UnitCommandsRunner.MoveSelectedUnitsToPoint(node.Vector3Position);
                 Speaker.Speak("Moving.", interrupt: true);
             }
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.MoveToCursor failed: " + e); }
+    }
+
+    /// <summary>
+    /// Plant the cursor on an arbitrary world point (the scanner's Home/Slash "cursor to selection"), clear any
+    /// pending move confirm, follow the camera, and read the new tile. When the point is off-graph
+    /// <see cref="MapCursor.Set(Vector3)"/> keeps the previous node and returns false — we say so rather than
+    /// re-announcing the old tile as if the cursor had jumped to the selection (which would also leave the scanner
+    /// measuring from, and move-to walking to, the wrong tile).
+    /// </summary>
+    public static void PlantOn(Vector3 worldPos)
+    {
+        if (!MapCursor.Set(worldPos)) { Speaker.Speak("Can't place the cursor there.", interrupt: true); return; }
+        _armedNode = null;
+        var node = MapCursor.Node;
+        if (node == null) { Speaker.Speak("No reference point.", interrupt: true); return; }
+        ScrollTo(node);
+        Announce();
+    }
+
+    /// <summary>
+    /// Interact with the interactable NEAREST the cursor — the Enter / KeypadEnter half of the verb pair (the I key
+    /// interacts with the scanner SELECTION instead; see <see cref="RTAccess.Exploration.Scanner"/>). Interactables
+    /// live off-grid (not slotted per tile), so this resolves the nearest one within reach of the cursor via
+    /// <see cref="InteractableDescriber.InteractableAt"/> — the same object <see cref="Describe"/> just announced —
+    /// and drives it through the game's own click interaction (<see cref="RTAccess.Exploration.ProxyMapObject.Interact"/>,
+    /// i.e. ClickMapObjectHandler), the way a mouse click does. Lazy-plants like the other cursor verbs (a cold press
+    /// reads the tile rather than acting); speaks "nothing to interact with nearby" when there is none.
+    /// </summary>
+    public static void InteractAtCursor()
+    {
+        try
+        {
+            if (!EnsurePlanted(out bool fresh)) return;
+            if (fresh) { Announce(); return; }
+            var obj = InteractableDescriber.InteractableAt(MapCursor.Node);
+            if (obj == null) { Speaker.Speak("Nothing to interact with nearby.", interrupt: true); return; }
+            var item = new ProxyMapObject(obj);
+            Speaker.Speak(item.Interact() ? "Interacting with " + item.Name + "." : "Can't interact with " + item.Name + ".", interrupt: true);
+        }
+        catch (Exception e) { Main.Log?.Error("TileExplorer.InteractAtCursor failed: " + e); }
+    }
+
+    private static string TilesAway(BaseUnitEntity unit, CustomGridNodeBase dest)
+    {
+        var from = unit?.CurrentUnwalkableNode;
+        if (from == null) return "Destination set";
+        int dx = Mathf.Abs(dest.XCoordinateInGrid - from.XCoordinateInGrid);
+        int dz = Mathf.Abs(dest.ZCoordinateInGrid - from.ZCoordinateInGrid);
+        int tiles = Mathf.Max(dx, dz);
+        return tiles == 1 ? "1 tile away" : tiles + " tiles away";
     }
 
     private static string MoveFailure(UnitHelper.MoveCommandStatus status)
@@ -153,12 +241,14 @@ internal static class TileExplorer
         }
     }
 
+    // ---- readout ----
+
     // Each step supersedes the previous, so interrupt — stepping fast naturally clips long lines at the headline.
     private static void Announce() => Speaker.Speak(Describe(), interrupt: true);
 
     private static string Describe()
     {
-        var line = InteractableDescriber.DescribeTile(_cursor, GetAnchor());
+        var line = InteractableDescriber.DescribeTile(MapCursor.Node, GetAnchor());
         return string.IsNullOrWhiteSpace(line) ? "Unknown tile." : line;
     }
 

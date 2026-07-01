@@ -1,3 +1,4 @@
+using Kingmaker.EntitySystem.Entities; // MechanicEntity (Live view position)
 using Kingmaker.Pathfinding; // GetNearestNodeXZ extension (GridAreaHelper)
 using Kingmaker.View;        // ObstacleAnalyzer
 using UnityEngine;
@@ -18,6 +19,17 @@ internal static class Geo
 {
     // ObstacleAnalyzer.GetArea's sentinel when no node is near (decompiled: GetNearestNode(pos).node?.Area ?? 999999).
     private const uint NoArea = 999999u;
+
+    /// <summary>The entity's live VIEW position — the interpolated transform the player sees — rather than the
+    /// possibly-lagged logical <see cref="MechanicEntity.Position"/> (which can snap to the node mid-move), so
+    /// bearings/distances stay accurate while a unit is walking. Falls back to the logical position when no view
+    /// is present (off-screen / not yet spawned).</summary>
+    public static Vector3 Live(MechanicEntity e)
+    {
+        if (e == null) return Vector3.zero;
+        var view = e.View;
+        return view != null && view.ViewTransform != null ? view.ViewTransform.position : e.Position;
+    }
 
     /// <summary>Flat XZ distance in metres — the metric the scanner sorts and the siblings speak.</summary>
     public static float Distance(Vector3 from, Vector3 to)

@@ -13,9 +13,12 @@ namespace RTAccess.Accessibility;
 /// entirely</b> (an override being present suppresses both that prompt and the gamepad connect/disconnect
 /// handler) — that prompt is inaccessible and would otherwise block a blind player at every launch.
 ///
-/// <c>F6</c> still flips the live mode at runtime (see <see cref="Main"/>) — for A/B-testing the parallel
-/// tree against the game's console focus ring, and to reach the console-era in-game helpers (PartyHotkeys,
-/// ExplorationNav, …) still gated on <c>ControllerMode == Gamepad</c> until rebuilt on the new paradigm.
+/// <c>F6</c> still flips the live mode at runtime (see <see cref="Main"/>) — purely for A/B-testing the parallel
+/// accessible tree against the game's own console (gamepad) focus ring. The surviving in-game helpers now run in
+/// mouse mode too, no longer gated on <c>ControllerMode == Gamepad</c>: <c>PartyHotkeys</c> and <c>LandmarkNav</c>
+/// gate on <c>InGameScreen.ExplorationActive</c> (<c>CurrentMode == Default</c>), while the always-active tile
+/// cursor and scanner ride the Exploration input category (live whenever <c>ControlState.HasControl</c>, so also
+/// during real-time Pause — move-to is separately pause-guarded). So F6 is no longer needed to reach them.
 /// </summary>
 internal static class ConsoleMode
 {

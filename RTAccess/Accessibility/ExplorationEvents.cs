@@ -36,9 +36,10 @@ internal sealed class ExplorationEvents :
     private float _lastSpokenTime;
     private int _userCycleFrame = -1;     // frame of the last keyboard cycle (PageUp/Dn), for interrupt provenance
 
-    /// <summary>Called by <see cref="ExplorationNav"/> just before it cycles the chosen interactable, so the
-    /// resulting announce (raised synchronously on the same frame) interrupts — it was a keypress — while the
-    /// ambient walk-by announce, which has no such mark, stays queued. Per [[rt-interrupt-speech-rule]].</summary>
+    /// <summary>Mark the current frame as a user-driven cycle of the chosen interactable (was called by the
+    /// retired ExplorationNav; retained for a future self-driven cycler) so the resulting announce (raised
+    /// synchronously the same frame) interrupts — it was a keypress — while the ambient walk-by announce, which
+    /// has no such mark, stays queued. Per [[rt-interrupt-speech-rule]].</summary>
     internal void MarkUserCycle() => _userCycleFrame = Time.frameCount;
 
     public void HandleSurroundingInteractableObjectsCountChanged(EntityViewBase entity, bool isInNavigation, bool isChosen)

@@ -1,7 +1,5 @@
 using Kingmaker;                       // Game
-using Kingmaker.Controllers.Units;     // UnitCommandsRunner
 using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
-using Kingmaker.UnitLogic;             // UnitHelper.MoveCommandStatus, MoveCommandSettings, TryCreateMoveCommandTB
 using RTAccess.Accessibility;          // InteractableDescriber
 using RTAccess.Speech;                 // Speaker
 using UnityEngine;
@@ -11,17 +9,21 @@ namespace RTAccess.Exploration;
 /// <summary>
 /// The scanner / review cursor: a keyboard-driven, categorized, distance-sorted browse of everything in the
 /// current area (units + interactable map objects), plus tactical "nearest party / enemy / neutral / object"
-/// review cycles. Its selection is a look-without-moving cursor — End interacts with it, Insert walks the party
-/// to it — that never moves your position. Distances/bearings are relative to the selected (or lead) unit and
+/// review cycles. Its selection is a look-without-moving cursor — I interacts with it and never moves your
+/// position; walking the party to a tile is the tile cursor's job (Backspace; see TileExplorer). Distances and
+/// bearings are relative to the selected (or lead) unit and
 /// are spoken via <see cref="InteractableDescriber"/> so the compass matches the other navigators.
 ///
 /// Lists rebuild on every key (cheap; always fresh, via <see cref="WorldModel.Snapshot"/>) and the user's
-/// selection is tracked by the backing entity so it survives the rebuild. Active while exploration owns the
-/// keyboard (the same gate as the sibling navigators); works in exploration AND surface tactical combat.
+/// selection is tracked by the backing entity so it survives the rebuild. Its actions are registered in the
+/// <see cref="RTAccess.Input.InputCategory.Exploration"/> category (driven by <see cref="RTAccess.Input.InputManager"/>
+/// and the dev harness's /input), so they are live only while the in-game screen has world control — dead in
+/// windows/dialogue/cutscenes — and work in exploration AND surface tactical combat.
 ///
 /// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Comma/Period/N/M = cycle
-/// nearest party/enemy/neutral/object of interest (Shift reverses); End = interact; Insert = move party to it;
-/// Home = where am I; P = party readout.
+/// nearest party/enemy/neutral/object of interest (Shift reverses); I = interact with selection; Home/Slash =
+/// plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y inspect the cursor / the
+/// selection (see <see cref="Inspect"/>).
 /// </summary>
 internal static class Scanner
 {
@@ -45,33 +47,32 @@ internal static class Scanner
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
 
-    /// <summary>Polled from Main.OnUpdate. Gated to exploration owning the keyboard, mirroring the siblings.</summary>
-    public static void Update()
+    // ---- registered action entry points (InputCategory.Exploration; see InputBindings.RegisterDefaults) ----
+    // Each is wired to an InputAction so the dev harness /input can drive it and the framework's chord shadowing
+    // decides HUD-vs-exploration ownership of the shared Home chord (vs ui.home). The old manual
+    // `ExplorationActive && !Navigation.HasFocus` gate is now the Exploration category's liveness: it is live
+    // only while the in-game screen has world control (see ControlState), so the scanner goes dead in
+    // windows/dialogue/cutscenes automatically. The read-only browse chords (PageUp/Down, comma/period/N/M, X, P,
+    // and the inspect ' / Y) work whether or not the HUD is focused; Home yields to ui.home when the HUD is
+    // focused (chord shadowing). InteractSelected (I) mutates the world, so it self-guards on Navigation.HasFocus
+    // (it has no UI twin to shadow it).
+    internal static void ItemPrev() => Safe(() => StepItem(-1));
+    internal static void ItemNext() => Safe(() => StepItem(1));
+    internal static void CategoryPrev() => Safe(() => StepCategory(-1));
+    internal static void CategoryNext() => Safe(() => StepCategory(1));
+    internal static void ReviewParty(bool back) => Safe(() => Review(Group.Party, back ? -1 : 1));
+    internal static void ReviewEnemies(bool back) => Safe(() => Review(Group.Enemies, back ? -1 : 1));
+    internal static void ReviewNeutrals(bool back) => Safe(() => Review(Group.Neutrals, back ? -1 : 1));
+    internal static void ReviewObjects(bool back) => Safe(() => Review(Group.Objects, back ? -1 : 1));
+    internal static void InteractSelected() => Safe(() => { if (RTAccess.UI.Navigation.HasFocus) return; Interact(); });
+    internal static void CursorToSelection() => Safe(PlantCursorOnSelection);
+    internal static void WhereAmINow() => Safe(WhereAmI);
+    internal static void ReadParty() => Safe(PartyReadout);
+
+    private static void Safe(Action a)
     {
-        if (!RTAccess.Screens.InGameScreen.ExplorationActive || RTAccess.UI.Navigation.HasFocus) return;
-
-        // NB: bare `Input` resolves to the RTAccess.Input NAMESPACE here, not UnityEngine.Input — fully
-        // qualify, the same as the sibling navigators (ExplorationNav/TileExplorer).
-        bool ctrl = UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl);
-        bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
-
-        try
-        {
-            if (UnityEngine.Input.GetKeyDown(KeyCode.PageUp)) { if (ctrl) StepCategory(-1); else StepItem(-1); }
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.PageDown)) { if (ctrl) StepCategory(1); else StepItem(1); }
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.Comma)) Review(Group.Party, shift ? -1 : 1);
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.Period)) Review(Group.Enemies, shift ? -1 : 1);
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.N)) Review(Group.Neutrals, shift ? -1 : 1);
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.M)) Review(Group.Objects, shift ? -1 : 1);
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.End)) Interact();
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.Insert)) MoveToSelected();
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.Home)) WhereAmI();
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.P)) PartyReadout();
-        }
-        catch (Exception e)
-        {
-            Main.Log?.Error("Scanner failed: " + e);
-        }
+        try { a(); }
+        catch (Exception e) { Main.Log?.Error("Scanner failed: " + e); }
     }
 
     // ---- browsing ----
@@ -80,7 +81,7 @@ internal static class Scanner
     {
         var anchor = Anchor();
         if (anchor == null) { Speak("No character selected."); return; }
-        var refPos = anchor.Position;
+        var refPos = ScanFrom();
 
         var list = CategoryList(_categoryIndex, refPos);
         if (list.Count == 0) { _selectedKey = null; Speak(CategoryLabel + ", empty."); return; }
@@ -94,7 +95,7 @@ internal static class Scanner
     {
         var anchor = Anchor();
         if (anchor == null) { Speak("No character selected."); return; }
-        var refPos = anchor.Position;
+        var refPos = ScanFrom();
 
         _categoryIndex = Wrap(_categoryIndex + dir, Categories.Length);
         var list = CategoryList(_categoryIndex, refPos);
@@ -107,7 +108,7 @@ internal static class Scanner
     {
         var anchor = Anchor();
         if (anchor == null) { Speak("No character selected."); return; }
-        var refPos = anchor.Position;
+        var refPos = ScanFrom();
 
         var list = GroupList(group, refPos);
         if (list.Count == 0) { Speak(GroupLabel(group) + ", none in sight."); return; }
@@ -132,50 +133,14 @@ internal static class Scanner
         else Speak("Can't interact with " + item.Name + ".");
     }
 
-    private static void MoveToSelected()
+    /// <summary>Home/Slash: plant the shared cursor on the current review selection's tile — the coupling core.
+    /// The movement cursor follows the selection on demand; the selection itself (<see cref="_selectedKey"/>) is
+    /// unchanged. The tile readout + camera-follow are the tile explorer's (<see cref="TileExplorer.PlantOn"/>).</summary>
+    private static void PlantCursorOnSelection()
     {
         var item = ResolveSelected();
-        if (item == null) { Speak("No item selected."); return; }
-        var dest = item.Position;
-        var game = Game.Instance;
-
-        if (game.TurnController.TurnBasedModeActive)
-        {
-            var unit = game.TurnController.CurrentUnit as BaseUnitEntity;
-            if (unit == null) { Speak("No active unit."); return; }
-            var cmd = unit.TryCreateMoveCommandTB(
-                new MoveCommandSettings { Destination = dest, DisableApproachRadius = true },
-                showMovePrediction: false, out var status);
-            if (cmd != null)
-            {
-                unit.Commands.Run(cmd);
-                Speak("Moving to " + item.Name + ".");
-            }
-            else
-            {
-                Speak(MoveFailure(status));
-            }
-            return;
-        }
-
-        var anchor = Anchor();
-        if (anchor == null) { Speak("No character selected."); return; }
-        if (!Geo.OnNavmesh(dest)) { Speak("Not walkable."); return; }
-        if (!Geo.SameArea(anchor.Position, dest)) { Speak("Can't reach that."); return; }
-        UnitCommandsRunner.MoveSelectedUnitsToPoint(dest);
-        Speak("Moving to " + item.Name + ".");
-    }
-
-    private static string MoveFailure(UnitHelper.MoveCommandStatus status)
-    {
-        switch (status)
-        {
-            case UnitHelper.MoveCommandStatus.NotEnoughMovementPoints: return "Not enough movement points.";
-            case UnitHelper.MoveCommandStatus.DestinationUnreachable: return "Path blocked.";
-            case UnitHelper.MoveCommandStatus.CannotMove: return "Can't move.";
-            case UnitHelper.MoveCommandStatus.SamePath: return "Already moving there.";
-            default: return "Can't reach that tile.";
-        }
+        if (item == null) { Speak("No selection to plant the cursor on."); return; }
+        TileExplorer.PlantOn(item.Position);
     }
 
     private static void WhereAmI()
@@ -287,8 +252,27 @@ internal static class Scanner
         return null;
     }
 
+    /// <summary>The currently-selected scan item as a unit, if it is one and still present. A unit item's
+    /// <see cref="ScanItem.Key"/> is its <see cref="BaseUnitEntity"/> (see <c>ProxyUnit.Key</c>); map-object
+    /// items key on their entity, so this returns null for them. Resolves through the live
+    /// <see cref="WorldModel.Snapshot"/> (like the other selection consumers), so a selection that has left the
+    /// area, despawned, or died returns null instead of a stale cross-area entity. Used by <see cref="Inspect"/>
+    /// to inspect whatever the player is currently browsing in the scanner.</summary>
+    internal static BaseUnitEntity SelectedUnit() => ResolveSelected()?.Key as BaseUnitEntity;
+
     private static BaseUnitEntity Anchor()
         => Game.Instance?.SelectionCharacter?.SelectedUnit?.Value ?? Game.Instance?.Player?.MainCharacterEntity;
+
+    /// <summary>The origin the scanner measures and sorts from: the shared <see cref="MapCursor"/> when it is
+    /// planted (tile explorer active — you browse relative to where you are looking), otherwise the anchor unit's
+    /// live position. This is the two-cursor discipline — the review SELECTION (<see cref="_selectedKey"/>) is
+    /// tracked separately and is unaffected by where this origin sits.</summary>
+    private static Vector3 ScanFrom()
+    {
+        if (MapCursor.Has) return MapCursor.Position;
+        var a = Anchor();
+        return a != null ? Geo.Live(a) : Vector3.zero;
+    }
 
     private static string CategoryLabel => Categories[_categoryIndex].Label;
 

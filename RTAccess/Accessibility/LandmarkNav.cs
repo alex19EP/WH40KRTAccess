@@ -13,7 +13,7 @@ namespace RTAccess.Accessibility;
 /// <summary>
 /// Whole-area orientation by keyboard: cycle the game's local-map landmarks (exits, points of interest,
 /// important things, loot, and the current quest objective) and walk the party to the selected one. Unlike the
-/// interactable cycling (<see cref="ExplorationNav"/>), which is limited to objects within ~12.7 m, this reads
+/// area scanner's interactable cycling, which is limited to objects within ~12.7 m, this reads
 /// the game's <c>LocalMapModel.Markers</c> set — the same markers shown on the local map — across the entire
 /// area, so a blind player can find the exits and their objective and travel there without manual steering.
 ///

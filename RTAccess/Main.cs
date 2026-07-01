@@ -26,6 +26,10 @@ public static class Main {
             // Load the mod's own speech strings (roles, positions, structural glue) and wire them into the
             // Message pipeline. Game CONTENT is already localized by the game; this is just our framework text.
             Localization.LocalizationManager.Initialize();
+            // Mod settings tree + JSON persistence under persistentDataPath/RTAccess. Wire this BEFORE any feature
+            // that reads a persisted toggle; the tree is mostly empty today, but the map-viewer overlay/scanner
+            // prefs will hang off it. Initialize loads settings.json over the in-code defaults (+ Reindex inside).
+            Settings.ModSettings.Initialize(System.IO.Path.Combine(Application.persistentDataPath, "RTAccess"));
             // Parallel accessible-UI framework (Phase 2): register input actions + the screens whose
             // ScreenManager resolves over RootUiContext each frame (MainMenu first).
             Input.InputBindings.RegisterDefaults();
@@ -109,16 +113,13 @@ public static class Main {
         // console mode, so this is the sole handler — no double-fire. Gated to console mode.
         PartyHotkeys.Update();
 
-        // PageUp/PageDown — cycle nearby world interactables (auto-spoken); End — walk to & interact;
-        // Home — re-announce the current pick. Gated to console mode + exploration (see ExplorationNav).
-        ExplorationNav.Update();
-
-        // Scanner / review cursor — the self-built replacement for the engine's (mouse-mode-dead) interactable
-        // ring: PageUp/Down browse a categorized, distance-sorted list of everything in the area (units +
-        // interactables); Ctrl+PageUp/Down change category; , . N M cycle nearest party/enemy/neutral/object;
-        // End interacts, Insert walks the party there, Home reads location, P reads the party. Gated to
-        // exploration owning the keyboard (see RTAccess.Exploration.Scanner).
-        RTAccess.Exploration.Scanner.Update();
+        // The scanner / review cursor (the self-built replacement for the engine's mouse-mode-dead interactable
+        // ring) is now registered in the Exploration input category and driven by InputManager.Tick above — no
+        // direct poll here. The old engine-ring cycler (ExplorationNav) has been retired. PageUp/Down browse a
+        // categorized, distance-sorted list of the area; Ctrl+PageUp/Down change category; , . N M cycle nearest
+        // party/enemy/neutral/object; I interacts with the selection, Home/Slash plants the cursor on it, X reads
+        // location, ' / Y inspect the cursor / the selection, P reads the party. See RTAccess.Exploration.Scanner /
+        // RTAccess.Input.InputBindings.
 
         // [ / ] — cycle whole-area local-map landmarks (exits/POI/objective); \ — walk the party to the
         // selected one. Map-relative directions. Gated to console mode + exploration (see LandmarkNav).
@@ -128,10 +129,11 @@ public static class Main {
         // CharGen being open; phase changes auto-announce (see CharGenAnnounce).
         CharGenAnnounce.Update();
 
-        // Ctrl+T — toggle the tile explorer (a virtual grid cursor). While on, arrow keys step the cursor tile by
-        // tile, Delete re-reads it, and Enter moves the selected unit there; each tile is spoken in full (occupant,
-        // walkability, cover, offset). Gated to console mode + on-foot surface (Default = exploration AND combat).
-        TileExplorer.Update();
+        // The tile explorer (the always-active virtual grid cursor) is registered in the Exploration input category
+        // and driven by InputManager.Tick above — no direct poll here, and no toggle. Arrow keys step it tile by
+        // tile (Shift+arrows are the shadow-immune slot), C recenters on the party, Delete re-reads the tile,
+        // Backspace issues the guarded move-to, and Enter / KeypadEnter interact with the nearest interactable to the
+        // cursor. See RTAccess.Accessibility.TileExplorer / RTAccess.Input.InputBindings.
 
         // Ctrl+I — read the full tooltip / details of the focused element (item/ability description, etc.).
         // Controller trigger is still TBD.

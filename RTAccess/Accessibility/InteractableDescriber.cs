@@ -2,6 +2,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Kingmaker;
+using Kingmaker.Controllers.Clicks.Handlers; // ClickMapObjectHandler.HasAvailableInteractions (the game's own gate)
 using Kingmaker.Controllers.Optimization;
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.LocalMap.Utils;
 using Kingmaker.EntitySystem.Entities;
@@ -17,7 +18,7 @@ namespace RTAccess.Accessibility;
 
 /// <summary>
 /// Builds the spoken description of a focused world interactable — e.g. "Door, approach, 6 metres, ahead" —
-/// for the exploration navigator (<see cref="ExplorationEvents"/> / <see cref="ExplorationNav"/>).
+/// for the exploration navigator (<see cref="ExplorationEvents"/>) and the area scanner.
 ///
 /// There is no single display-name property on a map object and no localized verb strings, so this replicates
 /// the small name mapping the game itself uses in <c>OvertipMapObjectVM.UpdateObjectData()</c>
@@ -77,26 +78,26 @@ internal static class InteractableDescriber
         if (node == null) return string.Empty;
         var sb = new StringBuilder();
 
-        // 1. Headline — what occupies the tile. Unit > interactable map object > generic obstacle; otherwise the
-        //    walkability fills in (a bare unwalkable tile is a "wall", an empty walkable one is "clear").
+        // 1. Headline — what is on/near the tile. A unit on the tile is announced first; the interactable NEAR this
+        //    tile is then ALWAYS announced too (even behind a unit), because the cursor's Enter acts on it and it can
+        //    share the tile with a unit — interactables are off-grid, so this is a nearest-within-reach hint, not a
+        //    per-tile lookup. With neither a unit nor an interactable, walkability fills in (unwalkable = "wall",
+        //    empty walkable = "clear").
         var unit = node.GetUnit();
         if (unit != null)
         {
             sb.Append(unit.CharacterName);
             Append(sb, unit.Faction != null && unit.Faction.IsPlayerEnemy ? "enemy" : "ally");
         }
-        else if (TryNameMapObject(node, out var objectName, out var objectVerb))
+        if (TryNameMapObject(node, out var objectName, out var objectVerb))
         {
-            sb.Append(objectName);
+            Append(sb, objectName);
             if (objectVerb != null) Append(sb, objectVerb);
         }
-        else if (DestructibleEntity.FindByNode(node) != null)
+        else if (unit == null)
         {
-            sb.Append("obstacle");
-        }
-        else
-        {
-            sb.Append(node.Walkable ? "clear" : "wall");
+            if (DestructibleEntity.FindByNode(node) != null) sb.Append("obstacle");
+            else sb.Append(node.Walkable ? "clear" : "wall");
         }
 
         // 2. Cover on each cardinal edge (N/E/S/W = dirs 2/1/0/3 — the same source the game's CoverVisualizer reads).
@@ -110,26 +111,67 @@ internal static class InteractableDescriber
         return sb.ToString();
     }
 
-    /// <summary>Name + verb of an interactable map object (door/loot/console) occupying this tile, if any.</summary>
+    /// <summary>Name + verb of the interactable map object nearest this tile (within <see cref="InteractReach"/>),
+    /// if any — the map-object headline for <see cref="DescribeTile"/>. Delegates to <see cref="InteractableAt"/> so
+    /// the readout names exactly the object the cursor's Enter would act on.</summary>
     private static bool TryNameMapObject(CustomGridNodeBase node, out string name, out string verb)
     {
         name = null;
         verb = null;
+        var mapObject = InteractableAt(node);
+        if (mapObject?.View == null) return false;
         try
         {
-            foreach (var mapObject in EntityBoundsHelper
-                         .FindEntitiesInRange((Vector3)node.position, GraphParamsMechanicsCache.GridCellSize)
-                         .OfType<MapObjectEntity>())
-            {
-                if (!mapObject.Interactions.Any()) continue;
-                if (!mapObject.GetOccupiedNodes().Contains(node)) continue;
-                name = ResolveName(mapObject.View, out var interaction);
-                verb = Verb(interaction);
-                if (!string.IsNullOrWhiteSpace(name)) return true;
-            }
+            name = ResolveName(mapObject.View, out var interaction);
+            verb = Verb(interaction);
         }
         catch (Exception e) { Main.Log?.Error("DescribeTile map-object lookup failed: " + e); }
-        return false;
+        return !string.IsNullOrWhiteSpace(name);
+    }
+
+    // Interactables live in continuous world-space, NOT slotted one-per-tile: an object's Position sits up to ~0.95 m
+    // (the cell-corner distance) off any cell centre, can straddle an edge/corner shared by 2-4 tiles, span several
+    // cells, or occupy none — and the cursor snaps to the nearest WALKABLE node, which for a door set in a wall is the
+    // adjacent FLOOR cell, not the door's (unwalkable) cell. So a grid-footprint containment test misses objects the
+    // player is clearly pointing at. Instead the readout and the cursor's Enter both resolve the nearest interactable
+    // within this reach of the cursor, gated by the game's own availability check — mirroring how the console/gamepad
+    // interaction picker works (SurfaceMainInputLayer). See docs/plans + the rt-world-grid memory.
+    private static float InteractReach => GraphParamsMechanicsCache.GridCellSize * 1.5f;
+
+    /// <summary>The interactable map object nearest <paramref name="node"/> within <see cref="InteractReach"/>, or
+    /// null — the resolver behind the cursor's Enter "interact at cursor" and <see cref="DescribeTile"/>'s object
+    /// headline. Interactables are off-grid, so this is a proximity query (not grid-footprint containment), gated by
+    /// the game's own <see cref="ClickMapObjectHandler.HasAvailableInteractions"/> (plus area-transition exits, which
+    /// carry no InteractionPart). The chosen object is driven through the game's click handler by
+    /// <see cref="RTAccess.Exploration.ProxyMapObject.Interact"/>.</summary>
+    public static MapObjectEntity InteractableAt(CustomGridNodeBase node)
+    {
+        if (node == null) return null;
+        MapObjectEntity best = null;
+        float bestSqr = InteractReach * InteractReach;
+        var origin = (Vector3)node.position;
+        try
+        {
+            foreach (var mapObject in EntityBoundsHelper.FindEntitiesInRange(origin, InteractReach).OfType<MapObjectEntity>())
+            {
+                if (!IsActionable(mapObject)) continue;
+                var d = mapObject.Position - origin;
+                d.y = 0f;
+                float sqr = d.sqrMagnitude;
+                if (sqr <= bestSqr) { bestSqr = sqr; best = mapObject; }
+            }
+        }
+        catch (Exception e) { Main.Log?.Error("InteractableAt failed: " + e); }
+        return best;
+    }
+
+    /// <summary>Can the player act on this map object right now — the game's own gate (an available interaction, or
+    /// an area-transition exit, which carries no InteractionPart)?</summary>
+    private static bool IsActionable(MapObjectEntity o)
+    {
+        if (o?.View == null) return false;
+        if (ClickMapObjectHandler.HasAvailableInteractions(o.View.gameObject)) return true;
+        return o.GetOptional<AreaTransitionPart>() != null;
     }
 
     /// <summary>Append "half/full cover &lt;dir&gt;" (or "blocked &lt;dir&gt;" for sight-blocking) for one edge.</summary>
