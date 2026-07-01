@@ -18,4 +18,8 @@ internal static class ScanTaxonomy
     public const string Traps = "traps";
     public const string Mechanisms = "mechanisms";
     public const string Scenery = "scenery";
+    // Live area effects (Game.Instance.State.AreaEffects), surfaced by ProxyAreaEffect: a HAZARD is any zone that
+    // can catch enemies (a damage/debuff field — route around it); a BUFF ZONE is an ally-exclusive aura.
+    public const string Hazards = "hazards";
+    public const string BuffZones = "zones.buff";
 }

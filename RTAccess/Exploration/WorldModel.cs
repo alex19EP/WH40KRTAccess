@@ -25,6 +25,10 @@ internal static class WorldModel
         {
             if (obj != null) list.Add(new ProxyMapObject(obj));
         }
+        foreach (var ae in state.AreaEffects)
+        {
+            if (ae != null) list.Add(new ProxyAreaEffect(ae));
+        }
         return list;
     }
 }

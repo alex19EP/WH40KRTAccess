@@ -23,7 +23,8 @@ namespace RTAccess.Exploration;
 ///
 /// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Comma/Period/N/M = cycle
 /// nearest party/enemy/neutral/object of interest (Shift reverses); V/B = cycle area-wide exits / points of
-/// interest (the local-map landmarks, Shift reverses); I = interact with selection; O = re-announce the current
+/// interest (the local-map landmarks, Shift reverses); Z = cycle live area effects (hazards + buff zones, Shift
+/// reverses); I = interact with selection; O = re-announce the current
 /// selection; Home/Slash = plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y
 /// inspect the cursor / the selection (see <see cref="Inspect"/>).
 /// </summary>
@@ -42,11 +43,15 @@ internal static class Scanner
         ("Traps",         it => it.HasNode(ScanTaxonomy.Traps)),
         ("Mechanisms",    it => it.HasNode(ScanTaxonomy.Mechanisms)),
         ("Scenery",       it => it.HasNode(ScanTaxonomy.Scenery)),
+        ("Hazards",       it => it.HasNode(ScanTaxonomy.Hazards)),
+        ("Buff zones",    it => it.HasNode(ScanTaxonomy.BuffZones)),
     };
 
-    // Party/Enemies/Neutrals/Objects come from the WorldModel snapshot (units + reachable interactables); Exits/Poi
-    // are area-wide local-map landmarks sourced from LocalMapModel.Markers instead (see GroupList / MarkerList).
-    private enum Group { Party, Enemies, Neutrals, Objects, Exits, Poi }
+    // Party/Enemies/Neutrals/Objects/Zones come from the WorldModel snapshot (units + reachable interactables +
+    // live area effects); Exits/Poi are area-wide local-map landmarks sourced from LocalMapModel.Markers instead
+    // (see GroupList / MarkerList). Zones covers ALL area effects (hazards + buff zones) so one cycle answers "what
+    // AoEs are near me" — the Detail says which.
+    private enum Group { Party, Enemies, Neutrals, Objects, Exits, Poi, Zones }
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
@@ -73,6 +78,8 @@ internal static class Scanner
     // the cursor on them (see the marker source branch in GroupList).
     internal static void ReviewExits(bool back) => Safe(() => Review(Group.Exits, back ? -1 : 1));
     internal static void ReviewPoi(bool back) => Safe(() => Review(Group.Poi, back ? -1 : 1));
+    // Cycle the live area effects (hazards + buff zones) nearest the cursor — the AoE-awareness cycle for combat.
+    internal static void ReviewZones(bool back) => Safe(() => Review(Group.Zones, back ? -1 : 1));
     internal static void InteractSelected() => Safe(() => { if (RTAccess.UI.Navigation.HasFocus) return; Interact(); });
     internal static void CursorToSelection() => Safe(PlantCursorOnSelection);
     internal static void WhereAmINow() => Safe(WhereAmI);
@@ -266,6 +273,7 @@ internal static class Scanner
             case Group.Party: return it.Primary == ScanTaxonomy.UnitsParty;
             case Group.Enemies: return it.Primary == ScanTaxonomy.UnitsEnemies;
             case Group.Neutrals: return it.Primary == ScanTaxonomy.UnitsNeutrals;
+            case Group.Zones: return it.HasNode(ScanTaxonomy.Hazards) || it.HasNode(ScanTaxonomy.BuffZones);
             default:
                 return it.HasNode(ScanTaxonomy.Containers) || it.HasNode(ScanTaxonomy.Doors)
                     || it.HasNode(ScanTaxonomy.Exits) || it.HasNode(ScanTaxonomy.SearchPoints);
@@ -339,6 +347,7 @@ internal static class Scanner
             case Group.Neutrals: return "Neutrals";
             case Group.Exits: return "Exits";
             case Group.Poi: return "Points of interest";
+            case Group.Zones: return "Zones";
             default: return "Objects";
         }
     }

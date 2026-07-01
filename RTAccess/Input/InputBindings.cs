@@ -96,6 +96,13 @@ namespace RTAccess.Input
                 () => Ex.Scanner.ReviewPoi(false)).AddBinding(KeyCode.B).Grouped("scanner");
             InputManager.Register("scan.review_poi_back", "Scanner: cycle points of interest (reverse)", InputCategory.Exploration,
                 () => Ex.Scanner.ReviewPoi(true)).AddBinding(KeyCode.B, shift: true).Grouped("scanner");
+            // Z = cycle live area effects (hazards + buff zones) nearest the cursor — the AoE-awareness cycle for
+            // turn-based combat (stepping one tile into a cloud is a real cost). Z is a free letter key (see the
+            // PartyHotkeys keymap notes); Shift reverses like the other review cycles.
+            InputManager.Register("scan.review_zones", "Scanner: cycle area effects", InputCategory.Exploration,
+                () => Ex.Scanner.ReviewZones(false)).AddBinding(KeyCode.Z).Grouped("scanner");
+            InputManager.Register("scan.review_zones_back", "Scanner: cycle area effects (reverse)", InputCategory.Exploration,
+                () => Ex.Scanner.ReviewZones(true)).AddBinding(KeyCode.Z, shift: true).Grouped("scanner");
             InputManager.Register("scan.interact", "Scanner: interact with selection", InputCategory.Exploration,
                 Ex.Scanner.InteractSelected).AddBinding(KeyCode.I).Grouped("scanner");
             // Home / Slash — plant the movement cursor on the current review selection's tile (the coupling core;
