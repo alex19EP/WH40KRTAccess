@@ -207,7 +207,8 @@ internal static class InteractableDescriber
         return sb.ToString();
     }
 
-    private static string MarkerTypeLabel(LocalMapMarkType type)
+    // internal so ProxyMarker (the scanner's Exits/Poi landmark items) can slot the same type word after the name.
+    internal static string MarkerTypeLabel(LocalMapMarkType type)
     {
         switch (type)
         {

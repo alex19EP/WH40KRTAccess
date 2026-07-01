@@ -279,7 +279,13 @@ internal static class TileExplorer
 
     private static void ScrollTo(CustomGridNodeBase node)
     {
+        if (!CameraFollow()) return;   // exploration.camera_follow gates the follow-cam; review cycles never reach here
         try { CameraRig.Instance?.ScrollTo((Vector3)node.position); }
         catch (Exception e) { Main.Log?.Error("TileExplorer.ScrollTo failed: " + e); }
     }
+
+    // exploration.camera_follow (Off/On, default On). Off = the cursor never drives the camera. Read live each
+    // scroll so a mid-session toggle takes effect immediately; defaults On if the setting is somehow absent.
+    private static bool CameraFollow()
+        => RTAccess.Settings.ModSettings.GetSetting<RTAccess.Settings.BoolSetting>("exploration.camera_follow")?.Get() ?? true;
 }

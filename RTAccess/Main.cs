@@ -29,6 +29,11 @@ public static class Main {
             // Mod settings tree + JSON persistence under persistentDataPath/RTAccess. Wire this BEFORE any feature
             // that reads a persisted toggle; the tree is mostly empty today, but the map-viewer overlay/scanner
             // prefs will hang off it. Initialize loads settings.json over the in-code defaults (+ Reindex inside).
+            // Declare settings on the tree BEFORE Initialize so Reindex indexes them and Load applies saved values.
+            // exploration.camera_follow (Off/On, default On) gates the tile-cursor follow-cam (TileExplorer.ScrollTo).
+            var explCat = Settings.ModSettingsRegistry.EnsureCategory("exploration", "Exploration");
+            if (explCat.GetByKey("camera_follow") == null)
+                explCat.Add(new Settings.BoolSetting("camera_follow", "Camera follows cursor", true, "exploration.camera_follow"));
             Settings.ModSettings.Initialize(System.IO.Path.Combine(Application.persistentDataPath, "RTAccess"));
             // Parallel accessible-UI framework (Phase 2): register input actions + the screens whose
             // ScreenManager resolves over RootUiContext each frame (MainMenu first).

@@ -84,6 +84,18 @@ namespace RTAccess.Input
                 () => Ex.Scanner.ReviewObjects(false)).AddBinding(KeyCode.M).Grouped("scanner");
             InputManager.Register("scan.review_objects_back", "Scanner: cycle objects (reverse)", InputCategory.Exploration,
                 () => Ex.Scanner.ReviewObjects(true)).AddBinding(KeyCode.M, shift: true).Grouped("scanner");
+            // Area-wide landmark cycles (the local-map markers): V = exits/transitions, B = points of interest
+            // (loot/objective/important). The coupled twin of LandmarkNav's raw [ / ] ring — reversible (Shift),
+            // cursor-relative, and Home/Slash-plantable. V/B are game service-window keys the mod suppresses under
+            // focus mode (same as the already-shipped M/Y), so this is the sole handler.
+            InputManager.Register("scan.review_exits", "Scanner: cycle exits", InputCategory.Exploration,
+                () => Ex.Scanner.ReviewExits(false)).AddBinding(KeyCode.V).Grouped("scanner");
+            InputManager.Register("scan.review_exits_back", "Scanner: cycle exits (reverse)", InputCategory.Exploration,
+                () => Ex.Scanner.ReviewExits(true)).AddBinding(KeyCode.V, shift: true).Grouped("scanner");
+            InputManager.Register("scan.review_poi", "Scanner: cycle points of interest", InputCategory.Exploration,
+                () => Ex.Scanner.ReviewPoi(false)).AddBinding(KeyCode.B).Grouped("scanner");
+            InputManager.Register("scan.review_poi_back", "Scanner: cycle points of interest (reverse)", InputCategory.Exploration,
+                () => Ex.Scanner.ReviewPoi(true)).AddBinding(KeyCode.B, shift: true).Grouped("scanner");
             InputManager.Register("scan.interact", "Scanner: interact with selection", InputCategory.Exploration,
                 Ex.Scanner.InteractSelected).AddBinding(KeyCode.I).Grouped("scanner");
             // Home / Slash — plant the movement cursor on the current review selection's tile (the coupling core;
@@ -94,6 +106,10 @@ namespace RTAccess.Input
                 Ex.Scanner.WhereAmINow).AddBinding(KeyCode.X).Grouped("scanner");
             InputManager.Register("scan.party", "Scanner: read the party", InputCategory.Exploration,
                 Ex.Scanner.ReadParty).AddBinding(KeyCode.P).Grouped("scanner");
+            // O — re-announce the current scanner selection (any group) from the live cursor origin, without
+            // stepping the list. O is a confirmed-free letter key (see PartyHotkeys keymap notes).
+            InputManager.Register("scan.announce_selection", "Scanner: re-announce selection", InputCategory.Exploration,
+                Ex.Scanner.AnnounceSelection).AddBinding(KeyCode.O).Grouped("scanner");
             // The inspect verb pair — speaks the game's own inspect panel (full sighted parity) and pops it for a
             // sighted helper (see Ex.Inspect). ' inspects the tile cursor's occupant; Y inspects the scanner's
             // review selection.

@@ -1,4 +1,5 @@
 using Kingmaker;                       // Game
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.LocalMap.Utils; // LocalMapModel, ILocalMapMarker, LocalMapMarkType
 using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
 using RTAccess.Accessibility;          // InteractableDescriber
 using RTAccess.Speech;                 // Speaker
@@ -21,9 +22,10 @@ namespace RTAccess.Exploration;
 /// windows/dialogue/cutscenes — and work in exploration AND surface tactical combat.
 ///
 /// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Comma/Period/N/M = cycle
-/// nearest party/enemy/neutral/object of interest (Shift reverses); I = interact with selection; Home/Slash =
-/// plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y inspect the cursor / the
-/// selection (see <see cref="Inspect"/>).
+/// nearest party/enemy/neutral/object of interest (Shift reverses); V/B = cycle area-wide exits / points of
+/// interest (the local-map landmarks, Shift reverses); I = interact with selection; O = re-announce the current
+/// selection; Home/Slash = plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y
+/// inspect the cursor / the selection (see <see cref="Inspect"/>).
 /// </summary>
 internal static class Scanner
 {
@@ -42,7 +44,9 @@ internal static class Scanner
         ("Scenery",       it => it.HasNode(ScanTaxonomy.Scenery)),
     };
 
-    private enum Group { Party, Enemies, Neutrals, Objects }
+    // Party/Enemies/Neutrals/Objects come from the WorldModel snapshot (units + reachable interactables); Exits/Poi
+    // are area-wide local-map landmarks sourced from LocalMapModel.Markers instead (see GroupList / MarkerList).
+    private enum Group { Party, Enemies, Neutrals, Objects, Exits, Poi }
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
@@ -64,10 +68,19 @@ internal static class Scanner
     internal static void ReviewEnemies(bool back) => Safe(() => Review(Group.Enemies, back ? -1 : 1));
     internal static void ReviewNeutrals(bool back) => Safe(() => Review(Group.Neutrals, back ? -1 : 1));
     internal static void ReviewObjects(bool back) => Safe(() => Review(Group.Objects, back ? -1 : 1));
+    // Area-wide landmark cycles (V / B, Shift reverses) — the coupled, reversible, cursor-relative twin of
+    // LandmarkNav's raw [ / ] ring: they sort from the cursor, land as the review selection, and Home/Slash plants
+    // the cursor on them (see the marker source branch in GroupList).
+    internal static void ReviewExits(bool back) => Safe(() => Review(Group.Exits, back ? -1 : 1));
+    internal static void ReviewPoi(bool back) => Safe(() => Review(Group.Poi, back ? -1 : 1));
     internal static void InteractSelected() => Safe(() => { if (RTAccess.UI.Navigation.HasFocus) return; Interact(); });
     internal static void CursorToSelection() => Safe(PlantCursorOnSelection);
     internal static void WhereAmINow() => Safe(WhereAmI);
     internal static void ReadParty() => Safe(PartyReadout);
+    // Re-speak the current selection from the live cursor origin (any group — unit, object, or landmark), so the
+    // player can recover what they last cycled without stepping the list. Resolves through ResolveSelected (which
+    // is marker-aware), so it works after a V/B landmark cycle too; drops the "N of M" ordinal (contextual to a cycle).
+    internal static void AnnounceSelection() => Safe(ReSpeakSelection);
 
     private static void Safe(Action a)
     {
@@ -124,6 +137,9 @@ internal static class Scanner
     {
         var item = ResolveSelected();
         if (item == null) { Speak("No item selected."); return; }
+        // Landmarks aren't reach-interactables — you travel TO them. Point the player at the coupling verbs
+        // rather than saying "can't interact", which reads as an error for a valid landmark.
+        if (item is ProxyMarker) { Speak(item.Name + ", landmark. Press Home to move the cursor there, then Backspace to walk."); return; }
         var anchor = Anchor();
         if (anchor == null) { Speak("No character selected."); return; }
 
@@ -131,6 +147,14 @@ internal static class Scanner
 
         if (item.Interact()) Speak("Interacting with " + item.Name + ".");
         else Speak("Can't interact with " + item.Name + ".");
+    }
+
+    /// <summary>Re-speak the resolved selection (any group) from the current scan origin — the O key.</summary>
+    private static void ReSpeakSelection()
+    {
+        var item = ResolveSelected();
+        if (item == null) { Speak("No selection."); return; }
+        Speak(item.Describe(ScanFrom()));
     }
 
     /// <summary>Home/Slash: plant the shared cursor on the current review selection's tile — the coupling core.
@@ -200,10 +224,36 @@ internal static class Scanner
 
     private static List<ScanItem> GroupList(Group group, Vector3 refPos)
     {
+        if (group == Group.Exits || group == Group.Poi) return MarkerList(group, refPos);
+
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Snapshot())
         {
             if (it.IsVisible && it.CurrentlySeen && InGroup(it, group)) list.Add(it);
+        }
+        list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
+        return list;
+    }
+
+    // Area-wide local-map landmarks (the same set LandmarkNav reads), wrapped as ScanItems so the Exits/Poi review
+    // groups behave like the unit/object cycles. Sourced from LocalMapModel.Markers, NOT the WorldModel snapshot.
+    // Do NOT filter on marker.IsVisible() — it's a perception check that hides ordinary exits (see
+    // LandmarkNav.BuildList). Exits group = Exit markers; Poi group = Poi/Loot/objective/important (creature/Unit
+    // markers are excluded — they belong to the party/enemies/neutrals cycles).
+    private static List<ScanItem> MarkerList(Group group, Vector3 refPos)
+    {
+        var list = new List<ScanItem>();
+        foreach (var m in LocalMapModel.Markers)
+        {
+            if (m == null) continue;
+            var type = m.GetMarkerType();
+            if (type == LocalMapMarkType.Invalid || type == LocalMapMarkType.PlayerCharacter) continue;
+            if (!LocalMapModel.IsInCurrentArea(m.GetPosition())) continue;
+            bool match = group == Group.Exits
+                ? type == LocalMapMarkType.Exit
+                : type == LocalMapMarkType.Poi || type == LocalMapMarkType.Loot
+                  || type == LocalMapMarkType.DestinationMark || type == LocalMapMarkType.VeryImportantThing;
+            if (match) list.Add(new ProxyMarker(m));
         }
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
@@ -245,6 +295,10 @@ internal static class Scanner
     private static ScanItem ResolveSelected()
     {
         if (_selectedKey == null) return null;
+        // Landmark selections (Exits/Poi groups) aren't in the WorldModel snapshot — re-wrap the live marker so
+        // Home-plant and the O re-announce keep working on them; null once it leaves the current area's set.
+        if (_selectedKey is ILocalMapMarker marker)
+            return LocalMapModel.Markers.Contains(marker) ? new ProxyMarker(marker) : null;
         foreach (var it in WorldModel.Snapshot())
         {
             if (ReferenceEquals(it.Key, _selectedKey)) return it;
@@ -283,6 +337,8 @@ internal static class Scanner
             case Group.Party: return "Party";
             case Group.Enemies: return "Enemies";
             case Group.Neutrals: return "Neutrals";
+            case Group.Exits: return "Exits";
+            case Group.Poi: return "Points of interest";
             default: return "Objects";
         }
     }

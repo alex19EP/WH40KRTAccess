@@ -393,6 +393,26 @@ Each phase is independently shippable and harness-verifiable (`/eval`, `/speech`
 
 ---
 
+### R2-deferred wave A — camera-follow setting + landmark review groups + re-announce — **CODE-COMPLETE, build 0/0, in-harness verified** (2026-07-01)
+
+Closes three of the five R2 deferrals (recon done by a 5-lens `Explore` workflow: scanner internals / settings / marker source / WA-lockpick / readout-composer).
+
+**Shipped:**
+- **`exploration.camera_follow`** (Off/On, default On) — first entry in a new `exploration` settings category, declared in `Main.cs` **before** `ModSettings.Initialize` (so Reindex/Load pick it up). `TileExplorer.ScrollTo` now early-returns on `!CameraFollow()` (read live each scroll, `?? true`), gating all four follow-cam callers (arrow-step / recenter / plant / cursor-to-selection) uniformly. Review cycles never reach `ScrollTo` (confirmed), so browsing never scrolls regardless.
+- **Landmark review groups (V / B)** — folds WA's `V`/`B` into the coupled scanner: `scan.review_exits` (**V** / Shift+V) and `scan.review_poi` (**B** / Shift+B), routed through the existing `Review`→`GroupList`→`Select` pipeline. Two new `Group` enum values (`Exits`, `Poi`); `GroupList` **branches its source** to `MarkerList` (from `LocalMapModel.Markers`, the same set `LandmarkNav` reads — Exit type → exits; Poi/Loot/DestinationMark/VeryImportantThing → POI; creature/Unit markers excluded) for those two groups only, keeping the `WorldModel.Snapshot()` path for the unit/object groups. New `ProxyMarker : ScanItem` wraps `ILocalMapMarker` (Name = cleaned `GetDescription()`, Detail = `InteractableDescriber.MarkerTypeLabel` [promoted `internal`]) so the base `Describe` reproduces `DescribeMarker`'s line verbatim + the `Select` "N of M". Unlike the raw `[`/`]` `LandmarkNav` ring, these are reversible, sort from the (stationary) cursor, land as the review selection, and accept Home/Slash plant. `ResolveSelected` made **marker-aware** (re-wraps the live marker) so Home-plant, `Interact`, and the O re-announce work on landmark selections; `Interact` on a marker speaks a coupling hint ("…, landmark. Press Home to move the cursor there, then Backspace to walk.") instead of a misleading "can't interact".
+- **`scan.announce_selection`** (**O**) — re-speaks the resolved selection (any group) from the live scan origin via `ScanItem.Describe(ScanFrom())`; robust across unit/object/marker selections (drops the cycle-contextual ordinal by design). O confirmed free.
+- **Unified readout composer (item 4) — documented satisfied, no code churn.** Recon verdict: the metres+compass tail (`DirectionAndDistance`), name/verb (`ResolveName`/`Verb`), and comma-joiner (`Append`) are already shared across all four composers; the only remaining consolidation is a cosmetic `Compose()` extraction, and `RelativeTile` (tile grid) vs `DirectionAndDistance` (metres) are *intentionally* different tails. No refactor made.
+
+**In-harness verification (2026-07-01, save on Верхние палубы, `/eval markers=2 exits=2 poi=0`):**
+- `/input scan.review_exits` ×2 → **"Палаты Лорд-капитана, exit, 135 metres, south-west, 1 of 2"** then **"На мостик корабля, …, 2 of 2"** (cycles, selection tracked, ordinal correct); `/input scan.review_poi` → **"Points of interest, none in sight."** (empty-group path).
+- `/input scan.announce_selection` → re-spoke **"На мостик корабля, exit, 146 metres, south-west"** (resolved a MARKER selection — the marker-aware `ResolveSelected` path).
+- `/input scan.cursor_to_item` on the exit selection → cursor **planted** ("clear, 51 west, 95 south") — marker Home-plant coupling end-to-end.
+- `/input scan.interact` on the marker → the landmark hint. `/eval` toggled `camera_follow` off→False, on→True (Set/Get + `MarkDirty` persistence); registered value reads `True`.
+
+**Remaining R2 deferral → wave B:** WA's lockpick special-case, which in RT is the generic **variative-interaction** choice (`VariativeInteractionVM` / `IVariativeInteractionUIHandler`; there is no `LockpickVM`). Announce-only is incomplete (the player still can't pick the tool), so it needs a parallel choice-`Screen`.
+
+---
+
 ## Appendix A — WA → RT explorer key audit
 
 Every WrathAccess (Pathfinder) in-area-explorer key, grouped, with its RT status **verified against the current RT source** (not from memory; via a 5-reader verification pass). Status tags: `shipped <id/key>` (live in RT) · `R1`/`R2`/`R3` (this plan closes it) · `echoing <phase>` (a later `echoing-charting-lovelace.md` phase) · `N/A` (no RT equivalent — TB-only or feature-absent) · `gap` (unported, no phase yet) · `verify` (reports unsure). Where a key ships on a different RT key, the RT key is given.
