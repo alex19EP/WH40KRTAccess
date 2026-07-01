@@ -320,17 +320,27 @@ a second run through `CommandDispatch.DevTestAttackNearestEnemy()` (DEBUG self-t
 narrated a miss. A2 is the natural execution verifier. Point/AoE (`UseAbilityOnPoint` via
 `OnClick(null, point)`) compiles but is unverified — validated when AoE targeting lands (B3).
 
-#### B4 · Hit prediction / decision support  — *M, deps B0*
-**New** `Accessibility/HitPredictor.cs` producing a spoken readout for a `(caster, ability, target)`
-triple; follow **`LineOfSightVM.UpdateHitChance`** verbatim. Inputs: caster =
-`SelectionCharacter.SelectedUnit.Value`; ability = `SelectedAbilityHandler.Ability` ?? focused
-`ProxyActionBarSlot._slot.AbilityData` ?? default weapon attack; target = `node.GetUnit()`.
-Compute: `CanTargetFromNode` (range/LOS/cover/reason; if `TargetTooFar`, cells-to-close =
-`distance − RangeCells`) → `AbilityTargetUIData` at `bestShootingPos` (hit%, damage,
-cover/dodge/parry/block) → `RuleCalculateHitChances.ResultRighteousFuryChance` (crit) → for AoE
-`GatherAffectedTargetsData` (who's caught, flag allies). One terse line + a full-breakdown key.
-Consumed by B3 (per-target line, preview key), the passive tile cursor (gated on an attack being
-selected), and C5 (scanner).
+#### B4 · Hit prediction / decision support  — ✅ **SHIPPED + parity-verified 2026-07-01**
+**New** `Accessibility/HitPredictor.cs` — `Describe(caster, ability, target, verbose)` → one spoken
+line, following **`LineOfSightVM.UpdateHitChance`** verbatim. Pipeline:
+`VirtualPositionController.GetDesiredPosition(caster)` → `AoEPatternHelper.GetGridNode` →
+`CanTargetFromNode` (out distance/los/reason; on `TargetTooFar` → "N cells too far", `TargetTooClose`
+→ min-range, `HasNoLosToTarget` → "No line of sight") → `GetBestShootingPositionForDesiredPosition`
+→ `AbilityTargetUIDataCache.Instance.GetOrCreate(ability, target, shootPos)` (the *same* cache the
+reticle reads) → `HitWithAvoidanceChance` + `RuleCalculateHitChances.ResultRighteousFuryChance`
+(crit). Terse = "H% to hit[, C% crit][, half/full cover]"; verbose adds base hit, each avoidance
+that applies (dodge/parry/cover/block/evasion), damage range, and per-shot burst chances.
+
+**Parity proof (live /eval, prologue TB fight):** mod line `80% to hit, 25% crit. Base 80%. 4 to 8
+damage.` matched the raw cache/rule field-for-field (hitAvoid=80, initial=80, dmg=4-8,
+dodge/parry/cover/block=0 → correctly omitted, crit=25, burst=none). It's a **pure DRY read** — no
+command issued, no state mutated — and by construction reveals only what a sighted player sees on the
+reticle (per user parity directive). Burst path is a trivial `List<float>` loop mirroring
+`OvertipHitChanceBlockVM.cs:156-160`; not exercised live (this character has only single-shot
+weapons) — observe opportunistically in B3. Crit isn't in `AbilityTargetUIData`, so it's a separate
+`RuleCalculateHitChances` trigger. DEBUG self-test `HitPredictor.DevPredictNearestEnemy(verbose)`.
+Consumed next by B3 (per-target line, preview key), the passive tile cursor (gated on an attack being
+selected), and C5 (scanner) — B4 is a standalone service; those are its consumers.
 
 #### B3 · Targeting mode  — *L, deps B0 + B4* — the crux
 **New** `Accessibility/TargetingMode.cs` (state machine, subscriber to
