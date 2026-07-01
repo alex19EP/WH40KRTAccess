@@ -342,32 +342,37 @@ weapons) — observe opportunistically in B3. Crit isn't in `AbilityTargetUIData
 Consumed next by B3 (per-target line, preview key), the passive tile cursor (gated on an attack being
 selected), and C5 (scanner) — B4 is a standalone service; those are its consumers.
 
-#### B3 · Targeting mode  — *L, deps B0 + B4* — the crux
-**New** `Accessibility/TargetingMode.cs` (state machine, subscriber to
-`IAbilityTargetSelectionUIHandler.HandleAbilityTargetSelectionStart/End`), **new**
-transient `InputCategory.Targeting` declared top-of-stack by `InGameScreen` while active. Flow:
+#### B3 · Targeting mode  — ✅ **v1 SHIPPED + verified end-to-end 2026-07-01** (unit-target loop)
+**Decision D4 resolved → the UNIFIED-cursor model.** No new state machine, no new `InputCategory`:
+B3 v1 is built as an enrichment of the *existing* aim→cycle→fire bridge (`Exploration/Targeting.cs`
++ `Exploration/AbilityTargeting.cs`), because the mod's two-cursor model already makes the scanner's
+review axis "pick a thing without moving the party" — which is exactly target selection. What v1 adds:
 
-1. **Enter** on the event (raised by the existing `ProxyActionBarSlot` activation → `SetAbility`).
-   Stash ability + caster + `desiredPos`; classify via `TargetAnchor` + `IsAOE/IsScatter/IsMelee/
-   IsBurstAttack/BurstAttacksCount/RangeCells` → opening announce + controls.
-2. **Target list** (Unit anchor): enumerate `Game.Instance.State.AllBaseAwakeUnits`, keep
-   `CanBeAttackedDirectly && conscious && (IsEnemy(caster)?CanTargetEnemies:CanTargetFriends)`;
-   partition valid/invalid via `CanTargetFromNode`; sort nearest-first (enemy-first secondary).
-   Cycle (`[`/`]`); each stop speaks name + cells + cover/LOS + B4 one-liner. Invalid group speaks
-   the reason.
-3. **Cell cursor** (Point/AoE anchor): reuse `MapCursor`/`TileExplorer` as the aim cursor (arrows;
-   C recenter on caster); per move build `TargetWrapper(node.Vector3Position)`, `GetPattern` →
-   speak offset, in/out of range, pattern size, caught units (`pattern.Nodes → node.GetUnit()`,
-   flag allies), primary vs splash via `NodesWithExtraData.MainCell`.
-4. **Preview** key → full `AbilityTargetUIData` incl. per-shot `BurstHitChances`.
-5. **Confirm** (Enter): validate `CanTargetFromDesiredPosition`; multi-target →
-   `MultiTargetHandler.AddTarget` loop with "target k of n"; commit via `CommandDispatch`
-   (`UseAbilityOnUnit` / `UseAbilityOnPoint`). The game's own log/damage events narrate the result.
-6. **Cancel** (Esc/Backspace) → `SelectedAbilityHandler.DropAbility()` + pop the category; also
-   tear down on `HandleAbilityTargetSelectionEnd`.
+1. **Announce-on-arm** (`Targeting.Tick`, on the null→armed transition): "Aiming *name*, range *N*
+   cells. Cycle enemies with period, fire with I, O for the breakdown, Backspace to cancel." Controls
+   tailored by target kind (`CanTargetEnemies`→enemies/period; `CanTargetFriends`→allies/comma; else
+   cursor+Enter). Blurs the HUD so the exploration keys go live immediately.
+2. **Per-target hit prediction** (`Targeting.PredictLine` → appended by `Scanner.Select`): cycling
+   enemies (`.`/`,`) speaks the scanner readout **plus** the terse B4 line ("80% to hit, 25% crit");
+   dead/out-of-range/no-LOS targets speak B4's reason ("Can't target that."). Gated to attack
+   abilities (`CanTargetEnemies`, non-self target) — no misleading to-hit on a heal.
+3. **Verbose breakdown on `O`** (`Scanner.ReSpeakSelection`): the full line — base hit, each nonzero
+   avoidance, damage range, per-shot burst — so O is "tell me more about this shot".
+4. **Fire** with `I` (commit on the scanner selection) or Enter (commit at the cursor) — the existing
+   `AbilityTargeting.CommitAt` path; multi-target re-arms with "Target added." The game's log narrates
+   the resolution (A2). **Cancel** with Backspace ("Targeting cancelled.").
 
-> **Decision D4 (blind-playtest):** one unified cursor (land on a unit ⇒ that's the target) vs two
-> explicit modes (list + cell) toggled by a key.
+**Verified live (prologue TB fight, /eval + /input):** arm pistol → announce fired verbatim; cycle 3
+enemies → live one read "…28 of 30 HP… 80% to hit, 25% crit", dead ones "Can't target that."; O →
+"…80% to hit, 25% crit. Base 80%. 4 to 8 damage."; fire I → "Firing on …" then A2 "uses Pistol Shot"
+→ "Deals damage (8, Piercing) Critical hit!" (the 80%/25%/4-8 prediction borne out: hit, crit, 8);
+re-arm re-announced (proving aim cleared post-cast); Backspace → "Targeting cancelled."
+
+**Deferred to B3 v2 (own slice):** the **Point/AoE cell cursor** — arrows aim a template point,
+`GetPattern`/`GatherAffectedTargetsData` reads offset, in/out of range, pattern size, caught units
+(flag allies), primary vs splash. Current Enter-at-cursor already *fires* AoE at a point but gives no
+pattern readout. Also v2: explicit "target k of n" multi-target announce (v1 says only "Target
+added."). These fold naturally into the C5 scanner work.
 
 #### B2 · Action-bar read recipe + self-cast completeness  — *M, deps B0*
 **Extend** `ProxyActionBarSlot`: append **range** (`AbilityData.RangeCells`, `MinRangeCells` if >0),

@@ -162,12 +162,17 @@ internal static class Scanner
         else Speak("Can't interact with " + item.Name + ".");
     }
 
-    /// <summary>Re-speak the resolved selection (any group) from the current scan origin — the O key.</summary>
+    /// <summary>Re-speak the resolved selection (any group) from the current scan origin — the O key. While aiming
+    /// an attack at this unit it also appends the FULL hit breakdown (base hit, each avoidance, damage, per-shot
+    /// burst), so O is "tell me more about this shot" versus the terse line the cycle gives.</summary>
     private static void ReSpeakSelection()
     {
         var item = ResolveSelected();
         if (item == null) { Speak("No selection."); return; }
-        Speak(item.Describe(ScanFrom()));
+        var line = item.Describe(ScanFrom());
+        var pred = Targeting.PredictLine(item, verbose: true);
+        if (!string.IsNullOrEmpty(pred)) line += ". " + pred;
+        Speak(line);
     }
 
     /// <summary>Home/Slash: plant the shared cursor on the current review selection's tile — the coupling core.
@@ -293,7 +298,11 @@ internal static class Scanner
         var item = list[idx];
         _selectedKey = item.Key;
         var line = item.Describe(refPos) + ", " + (idx + 1) + " of " + list.Count;
-        Speak(string.IsNullOrEmpty(prefix) ? line : prefix + line);
+        if (!string.IsNullOrEmpty(prefix)) line = prefix + line;
+        // While aiming an attack, cycling doubles as picking a target: append the terse hit prediction (B3/B4).
+        var pred = Targeting.PredictLine(item, verbose: false);
+        if (!string.IsNullOrEmpty(pred)) line += ". " + pred;
+        Speak(line);
     }
 
     private static int IndexOfSelected(List<ScanItem> list)

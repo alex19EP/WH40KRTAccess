@@ -1,4 +1,6 @@
-using RTAccess.Speech; // Speaker
+using Kingmaker;                       // Game
+using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
+using RTAccess.Speech;                 // Speaker
 
 namespace RTAccess.Exploration;
 
@@ -44,6 +46,26 @@ internal static class Targeting
         if (Aiming) Ability.Cancel();
     }
 
+    // ---- hit prediction (B4) woven into the scanner's target cycle (B3) ----
+
+    /// <summary>While aiming an attack, the one-line hit prediction for firing the armed ability at a scanned unit —
+    /// appended by the scanner to its readout so cycling enemies (period) doubles as picking a target and hearing
+    /// the odds, and re-announcing (O) gives the full breakdown. Returns null when not aiming, the item isn't a
+    /// unit, or the armed ability isn't an attack (prediction is a to-hit number — meaningless for a self-buff/heal).
+    /// A pure read (<see cref="RTAccess.Accessibility.HitPredictor"/>), same numbers the sighted reticle shows.</summary>
+    public static string PredictLine(ScanItem item, bool verbose)
+    {
+        if (!Aiming) return null;
+        var target = item?.TargetUnit;
+        if (target == null) return null;
+        var ability = Game.Instance?.SelectedAbilityHandler?.Ability;
+        if (ability == null || !ability.CanTargetEnemies) return null;   // to-hit prediction is for attacks
+        var caster = ability.Caster as BaseUnitEntity
+                     ?? Game.Instance?.TurnController?.CurrentUnit as BaseUnitEntity;
+        if (caster == null || caster == target) return null;
+        return RTAccess.Accessibility.HitPredictor.Describe(caster, ability, target, verbose);
+    }
+
     // ---- per-frame ----
 
     private static bool _wasAiming;
@@ -51,12 +73,41 @@ internal static class Targeting
     /// <summary>The moment aiming begins, hand the keyboard from the HUD back to exploration so the cursor/scanner
     /// commit keys work immediately — the exploration keys are live only while the HUD is unfocused, and arming an
     /// ability from the (focused) action bar would otherwise strand the player inside the HUD. Only blurs when the
-    /// HUD actually holds focus; leaves focus elsewhere alone.</summary>
+    /// HUD actually holds focus; leaves focus elsewhere alone. Also announces the opening of targeting (what's armed,
+    /// its range, and how to pick a target / fire / cancel) so a blind player knows they've entered aim mode.</summary>
     public static void Tick()
     {
         bool aiming = Aiming;
-        if (aiming && !_wasAiming && RTAccess.UI.Navigation.HasFocus)
-            RTAccess.UI.Navigation.Blur();
+        if (aiming && !_wasAiming)
+        {
+            if (RTAccess.UI.Navigation.HasFocus) RTAccess.UI.Navigation.Blur();
+            var opening = ArmAnnounce();
+            if (opening != null) Speaker.Speak(opening, interrupt: true);
+        }
         _wasAiming = aiming;
+    }
+
+    /// <summary>The opening announce when an ability arms: name + range + the controls that fit its target kind
+    /// (enemies via the scanner's period cycle for attacks, the party's comma cycle for friend-only abilities, or
+    /// the free cursor + Enter for point/area abilities). Null if nothing is armed (the transition raced away).</summary>
+    private static string ArmAnnounce()
+    {
+        var ability = Game.Instance?.SelectedAbilityHandler?.Ability;
+        if (ability == null) return null;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("Aiming ").Append(ability.Name);
+        int range = 0;
+        try { range = ability.RangeCells; } catch { /* range rule can throw on odd abilities; omit it */ }
+        if (range > 0) sb.Append(", range ").Append(range).Append(range == 1 ? " cell" : " cells");
+        sb.Append(". ");
+
+        if (ability.CanTargetEnemies)
+            sb.Append("Cycle enemies with period, fire with I, O for the breakdown, Backspace to cancel.");
+        else if (ability.CanTargetFriends)
+            sb.Append("Cycle allies with comma, use with I, Backspace to cancel.");
+        else
+            sb.Append("Move the cursor and press Enter, or Backspace to cancel.");
+        return sb.ToString();
     }
 }
