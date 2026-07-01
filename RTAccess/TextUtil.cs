@@ -30,6 +30,21 @@ namespace RTAccess
             return s.Trim();
         }
 
+        /// <summary>Like <see cref="StripRichText"/> but replaces each tag with a SPACE rather than nothing,
+        /// so segments joined only by a rich-text boundary don't weld into one word — e.g. a combat-log damage
+        /// line and its emphasised "Critical hit!" suffix, which the game separates with a colour/size tag and
+        /// no space. Use for combat-log and bark text (no intra-word drop-cap tags); prefer
+        /// <see cref="StripRichText"/> for UI labels, where tight stripping keeps "N&lt;size&gt;ew Game" whole.
+        /// Extra spaces around punctuation are audibly harmless — screen readers normalise them.</summary>
+        public static string StripRichTextSpaced(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            s = SubSup.Replace(s, "");
+            s = RichTextTag.Replace(s, " ");
+            s = Whitespace.Replace(s, " ");
+            return s.Trim();
+        }
+
         /// <summary>Fold accents away for matching ("Séance" matches "seance"); ligatures œ/æ expand.
         /// Ported from OniAccess (VisionNotIncluded) with permission.</summary>
         public static string RemoveDiacritics(string text)
