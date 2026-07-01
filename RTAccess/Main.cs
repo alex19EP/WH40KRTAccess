@@ -100,6 +100,12 @@ public static class Main {
         // every area transition). Edge-detected; any key dismisses it.
         LoadingScreenAnnounce.Update();
 
+        // The live world registry: diff the entity pools into stable per-entity scan proxies (units + map objects +
+        // placed area effects), raising Added/Removed. Ticked BEFORE the input tick so the scanner's handlers read a
+        // current-frame registry; the persistent proxies are what future object/sonar cues attach to. See
+        // RTAccess.Exploration.WorldModel.
+        Exploration.WorldModel.Tick();
+
         // ---- Parallel accessible-UI framework (Phase 2) ----
         // Engage focus mode once the keyboard exists (suppresses the game's own KeyboardAccess hotkeys so
         // our navigator owns the keys), and re-assert it across scene reloads.

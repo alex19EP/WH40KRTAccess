@@ -15,8 +15,8 @@ namespace RTAccess.Exploration;
 /// bearings are relative to the selected (or lead) unit and
 /// are spoken via <see cref="InteractableDescriber"/> so the compass matches the other navigators.
 ///
-/// Lists rebuild on every key (cheap; always fresh, via <see cref="WorldModel.Snapshot"/>) and the user's
-/// selection is tracked by the backing entity so it survives the rebuild. Its actions are registered in the
+/// Lists rebuild on every key from the live <see cref="WorldModel.Items"/> registry (kept fresh each frame by
+/// <see cref="WorldModel.Tick"/>) and the user's selection is tracked by the backing entity so it survives the rebuild. Its actions are registered in the
 /// <see cref="RTAccess.Input.InputCategory.Exploration"/> category (driven by <see cref="RTAccess.Input.InputManager"/>
 /// and the dev harness's /input), so they are live only while the in-game screen has world control — dead in
 /// windows/dialogue/cutscenes — and work in exploration AND surface tactical combat.
@@ -221,7 +221,7 @@ internal static class Scanner
     {
         var pred = Categories[categoryIndex].Pred;
         var list = new List<ScanItem>();
-        foreach (var it in WorldModel.Snapshot())
+        foreach (var it in WorldModel.Items)
         {
             if (it.IsVisible && pred(it)) list.Add(it);
         }
@@ -234,7 +234,7 @@ internal static class Scanner
         if (group == Group.Exits || group == Group.Poi) return MarkerList(group, refPos);
 
         var list = new List<ScanItem>();
-        foreach (var it in WorldModel.Snapshot())
+        foreach (var it in WorldModel.Items)
         {
             if (it.IsVisible && it.CurrentlySeen && InGroup(it, group)) list.Add(it);
         }
@@ -303,21 +303,19 @@ internal static class Scanner
     private static ScanItem ResolveSelected()
     {
         if (_selectedKey == null) return null;
-        // Landmark selections (Exits/Poi groups) aren't in the WorldModel snapshot — re-wrap the live marker so
+        // Landmark selections (Exits/Poi groups) aren't in the WorldModel registry — re-wrap the live marker so
         // Home-plant and the O re-announce keep working on them; null once it leaves the current area's set.
         if (_selectedKey is ILocalMapMarker marker)
             return LocalMapModel.Markers.Contains(marker) ? new ProxyMarker(marker) : null;
-        foreach (var it in WorldModel.Snapshot())
-        {
-            if (ReferenceEquals(it.Key, _selectedKey)) return it;
-        }
-        return null;
+        // Everything else keys on its backing entity — the persistent registry re-finds the SAME stable proxy in
+        // O(1); null once it despawns or the area changes.
+        return WorldModel.Find(_selectedKey);
     }
 
     /// <summary>The currently-selected scan item as a unit, if it is one and still present. A unit item's
     /// <see cref="ScanItem.Key"/> is its <see cref="BaseUnitEntity"/> (see <c>ProxyUnit.Key</c>); map-object
     /// items key on their entity, so this returns null for them. Resolves through the live
-    /// <see cref="WorldModel.Snapshot"/> (like the other selection consumers), so a selection that has left the
+    /// <see cref="WorldModel.Items"/> registry (like the other selection consumers), so a selection that has left the
     /// area, despawned, or died returns null instead of a stale cross-area entity. Used by <see cref="Inspect"/>
     /// to inspect whatever the player is currently browsing in the scanner.</summary>
     internal static BaseUnitEntity SelectedUnit() => ResolveSelected()?.Key as BaseUnitEntity;

@@ -405,5 +405,24 @@ Phase C is being landed in slices so each is independently build- + harness-veri
     loading blindly from the TOC risks a main-thread hang. Will be confirmed with a NATURAL combat AoE (thrown
     grenade / psychic template) alongside the multi-tile-unit and wide-door checks the plan groups together.
 
+- **Slice 3 — persistent `WorldModel.Tick()` diff registry — DONE (build 0/0, in-game verified).**
+  - `Exploration/WorldModel.cs` — rewritten from the per-call `Snapshot()` enumerator to a persistent registry: a
+    `Dictionary<entity, ScanItem>` diffed every frame against the live pools (`AllBaseUnits` + `MapObjects` +
+    placed `AreaEffects`, skipping on-unit auras via `AreaEffectView.OnUnit`). Keeps ONE proxy instance per entity
+    STABLE across frames and raises `Added`/`Removed`; a genuinely-new entity is the only allocation (ContainsKey
+    guard). New `Items` (live view) + `Find(key)` (O(1) selection re-find). This is the hard prerequisite for the
+    Phase G cue/sonar cross-frame identity (a per-call snapshot makes fresh proxies each frame → every frame looks
+    like an enter/exit).
+  - `Main.cs` — `WorldModel.Tick()` wired into `OnUpdate` BEFORE the input tick (handlers read a current-frame
+    registry; guarded so it never throws out of the loop). `Scanner.cs` — the three `Snapshot()` call sites now read
+    `WorldModel.Items`; `ResolveSelected` uses `Find` (O(1), still marker-aware for the Exits/Poi direct path).
+  - **Design note:** local-map markers (Exits/Poi) stay on their direct `LocalMapModel.Markers` path for now —
+    folding them into the registry waits on Slice 4's taxonomy rebuild (today's `ProxyMarker.Primary` is always
+    `Exits`, which would leak POI markers into the Exits browse category).
+  - **Verified (save = VoidshipOfficersDeck):** transparent swap — `scan.review_objects` steps "WallMechanismSet02
+    … 1 of 3" → "WallMechanismSet01 … 2 of 3"; `scan.announce_selection` (O) re-announced the SAME item (proves
+    `Find` resolved the stable proxy across frames); category browse intact; no `Tick()` errors (objects listed →
+    registry populated every frame). `Added`/`Removed` fire structurally (first real consumer lands in Phase G).
+
 **Phase C exit verify (batched, still pending):** footprint-aware bearing on a multi-tile unit, a wide door, and an
 AoE edge; two-cursor discipline (review selection vs `MapCursor`) via `/eval`.
