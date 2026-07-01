@@ -47,6 +47,9 @@ public static class Main {
             // / WarningReader). Persistent session subscribers; unsubscribed in OnUnload.
             EventBus.Subscribe(CombatEvents.Instance);
             EventBus.Subscribe(WarningReader.Instance);
+            // Voice interaction outcomes the player can't see — currently lock-pick success/fail (an interaction runs
+            // a skill check with no audible result of its own). Persistent session subscriber; unsubscribed below.
+            EventBus.Subscribe(InteractionEvents.Instance);
             // Build the review-buffer set (Alt+arrows query a unit's live HP/AP/defenses/buffs without losing
             // UI focus); resolvers read the live selected unit / combat target each refresh.
             Buffers.BufferManager.Instance.RegisterDefaults();
@@ -170,6 +173,7 @@ public static class Main {
         EventBus.Unsubscribe(BarkEvents.Instance);
         EventBus.Unsubscribe(CombatEvents.Instance);
         EventBus.Unsubscribe(WarningReader.Instance);
+        EventBus.Unsubscribe(InteractionEvents.Instance);
         Speaker.Stop();
         Speaker.Shutdown();
         HarmonyInstance?.UnpatchAll(HarmonyInstance.Id);
