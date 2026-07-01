@@ -374,6 +374,25 @@ Each phase is independently shippable and harness-verifiable (`/eval`, `/speech`
 
 ---
 
+### R3 — party selection + combat status + move-to cardinality — **CODE-COMPLETE, build 0/0, in-harness verified** (2026-07-01)
+
+**Shipped (four registered `InputCategory.Exploration` actions + a coupling refinement):**
+- **`party.select_all`** (**Ctrl+A**) → `SelectionManagerBase.Instance.SelectAll()` — the one-press way back to a formation move-to after `PartyHotkeys` Alt+1..6 / Shift+A/D collapsed the selection to a single member. Announces "Whole party selected, N characters." (N > 1) or "Party selected." Ctrl+A is free: focus mode suppresses the game's own Ctrl+A and the mod's focus toggle is Ctrl+Shift+A.
+- **`combat.status`** (**R**) → speaks `InGameScreen.StatusLine()` (name + wounds +, in TB, AP / MP / whose-turn) with no HUD-focus trip. `StatusLine()` widened `private`→`internal static` so the hotkey and the HUD status element read identical phrasing (no duplicated logic).
+- **`party.hold`** (**H**) → `SelectionManagerBase.Instance.Hold()` ("Holding position."); **`party.stop`** (**G**) → `Stop()` ("Stopped.") — the two optional Menu-button parities, now on keys.
+- **Move-to cardinality announce** — `TileExplorer.MovingAnnounce()` reads the live `SelectionCharacter.SelectedUnits` the **real-time** branch actually drives: "Moving party." (Count > 1) vs "Moving \<name\>." (single, falling back to the anchor name when the collection is empty). The only cue a blind player gets that a stray Alt+1 turned a formation move into a single-unit one. TB branch keeps its own "Moving." (single active unit, two-step confirm).
+- **Host:** all four handlers are public static methods on `PartyHotkeys` (which already owns the raw-polled member selector); registered in `InputBindings.cs` under the `"party"` settings subgroup.
+- **Explicitly NOT ported** (per plan §5): WA's `Ctrl+S` stealth (RT stealth is per-unit `PartUnitStealth`, no group toggle) and `Ctrl+D` AI handoff (RT combat is fully TB); `Ctrl+T` mode-toggle (TB-only N/A). No forward-ported stubs.
+
+**In-harness verification (2026-07-01, latest save loaded directly into TB combat — the encounter R1/R2 saves lacked):**
+- `/input combat.status` (R) on the player's turn → **"Багардор, 22 of 22 wounds, 4 AP, 0 MP, Багардор's turn"** — the full TB action-economy line via the now-`internal` `StatusLine()`. (First live exercise of the TB branch; R1/R2 could only build-verify it.)
+- `/input party.select_all` → **"Party selected."** (this encounter has a single controllable → the singular branch, correct); `/input party.hold` → **"Holding position."**; `/input party.stop` → **"Stopped."** — all three drive `SelectionManagerBase` and announce.
+- `/eval` confirmed `SelectedUnits.Count == 0` in TB combat (turn-based tracks the active-turn unit, not the multi-select collection) — expected, and why `MovingAnnounce` (real-time-only) falls back to the anchor name when the collection is empty.
+
+**Build+reasoned-verified only (needs a multi-select exploration save, not this single-unit TB combat):** the `party.select_all` "Whole party selected, N" (N > 1) branch and the `MovingAnnounce` "Moving party." path. The chain is sound: in PC/real-time mode `SelectAllImpl` synchronously populates `SelectedUnits` with the whole selectable party (`SelectionManagerPC.cs:67`), which `UnitCommandsRunner.MoveSelectedUnitsToPoint` then walks — same collection `MovingAnnounce` reads. Same class of deferral as R1's TB two-step-confirm.
+
+---
+
 ## Appendix A — WA → RT explorer key audit
 
 Every WrathAccess (Pathfinder) in-area-explorer key, grouped, with its RT status **verified against the current RT source** (not from memory; via a 5-reader verification pass). Status tags: `shipped <id/key>` (live in RT) · `R1`/`R2`/`R3` (this plan closes it) · `echoing <phase>` (a later `echoing-charting-lovelace.md` phase) · `N/A` (no RT equivalent — TB-only or feature-absent) · `gap` (unported, no phase yet) · `verify` (reports unsure). Where a key ships on a different RT key, the RT key is given.

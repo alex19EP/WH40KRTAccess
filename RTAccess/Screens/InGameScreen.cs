@@ -338,7 +338,9 @@ namespace RTAccess.Screens
 
         // ---- Status region ----
 
-        private static string StatusLine()
+        // internal so the R hotkey (PartyHotkeys.CombatStatus) can speak the same line the HUD status element shows,
+        // one-press, without a trip through HUD focus.
+        internal static string StatusLine()
         {
             try
             {

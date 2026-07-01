@@ -173,7 +173,7 @@ internal static class TileExplorer
                 if (game.IsPaused) { Speaker.Speak("Paused, unpause to move.", interrupt: true); return; }
                 if (GetAnchor() == null) { Speaker.Speak("No character selected.", interrupt: true); return; }
                 UnitCommandsRunner.MoveSelectedUnitsToPoint(node.Vector3Position);
-                Speaker.Speak("Moving.", interrupt: true);
+                Speaker.Speak(MovingAnnounce(), interrupt: true);
             }
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.MoveToCursor failed: " + e); }
@@ -227,6 +227,25 @@ internal static class TileExplorer
         int dz = Mathf.Abs(dest.ZCoordinateInGrid - from.ZCoordinateInGrid);
         int tiles = Mathf.Max(dx, dz);
         return tiles == 1 ? "1 tile away" : tiles + " tiles away";
+    }
+
+    /// <summary>
+    /// The real-time move-to confirmation: "Moving party." when more than one unit is selected — the payoff of
+    /// Ctrl+A (<see cref="PartyHotkeys.SelectAll"/>), since <see cref="UnitCommandsRunner.MoveSelectedUnitsToPoint"/>
+    /// walks every selected unit — else "Moving &lt;name&gt;." naming the single actor so the player hears WHO got the
+    /// order. Reads the live selection set the command actually drives.
+    /// </summary>
+    private static string MovingAnnounce()
+    {
+        try
+        {
+            var sel = Game.Instance?.SelectionCharacter?.SelectedUnits;
+            int n = sel?.Count ?? 0;
+            if (n > 1) return "Moving party.";
+            var one = (n == 1 ? sel[0] : null) ?? GetAnchor() as BaseUnitEntity;
+            return string.IsNullOrWhiteSpace(one?.CharacterName) ? "Moving." : "Moving " + one.CharacterName + ".";
+        }
+        catch { return "Moving."; }
     }
 
     private static string MoveFailure(UnitHelper.MoveCommandStatus status)

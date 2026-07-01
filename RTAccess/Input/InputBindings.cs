@@ -134,6 +134,21 @@ namespace RTAccess.Input
                 Ax.TileExplorer.MoveToCursor).AddBinding(KeyCode.Backspace).Grouped("cursor");
             InputManager.Register("cursor.interact", "Cursor: interact at cursor", InputCategory.Exploration,
                 Ax.TileExplorer.InteractAtCursor).AddBinding(KeyCode.Return).AddBinding(KeyCode.KeypadEnter).Grouped("cursor");
+
+            // ---- Exploration: party commands + status readout. Registered (not raw-polled like PartyHotkeys.Update's
+            // member-select): the game's own Select-all / Hold / Stop / status keys live in the PC HUD (dead in our
+            // parallel tree), so these are the sole handler — focus mode suppresses the game's duplicates. Ctrl+A is
+            // free because the focus toggle is Ctrl+Shift+A; H / G / R are bare letters the game only uses via the HUD.
+            // Select-all is load-bearing: it restores a formation move-to (cursor.move_to walks every selected unit)
+            // after Alt+1-6 / Shift+A/D collapsed the selection. See RTAccess.Accessibility.PartyHotkeys. ----
+            InputManager.Register("party.select_all", "Select whole party", InputCategory.Exploration,
+                Ax.PartyHotkeys.SelectAll).AddBinding(KeyCode.A, ctrl: true).Grouped("party");
+            InputManager.Register("party.hold", "Party: hold position", InputCategory.Exploration,
+                Ax.PartyHotkeys.Hold).AddBinding(KeyCode.H).Grouped("party");
+            InputManager.Register("party.stop", "Party: stop", InputCategory.Exploration,
+                Ax.PartyHotkeys.Stop).AddBinding(KeyCode.G).Grouped("party");
+            InputManager.Register("combat.status", "Read status (AP / MP / turn)", InputCategory.Exploration,
+                Ax.PartyHotkeys.CombatStatus).AddBinding(KeyCode.R).Grouped("party");
         }
 
         // The review-buffer keys are Global (always polled), so their handlers stand down when not in a
