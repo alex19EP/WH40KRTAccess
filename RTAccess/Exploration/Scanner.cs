@@ -1,7 +1,9 @@
 using Kingmaker;                       // Game
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.LocalMap.Utils; // LocalMapModel, ILocalMapMarker, LocalMapMarkType
+using Kingmaker.EntitySystem;          // DistanceToInCells (EntityHelper ext)
 using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
-using RTAccess.Accessibility;          // InteractableDescriber
+using Kingmaker.UnitLogic;             // IsThreat (AttackOfOpportunityHelper ext)
+using RTAccess.Accessibility;          // InteractableDescriber, CombatReads
 using RTAccess.Speech;                 // Speaker
 using UnityEngine;
 
@@ -94,6 +96,10 @@ internal static class Scanner
     // player can recover what they last cycled without stepping the list. Resolves through ResolveSelected (which
     // is marker-aware), so it works after a V/B landmark cycle too; drops the "N of M" ordinal (contextual to a cycle).
     internal static void AnnounceSelection() => Safe(ReSpeakSelection);
+    // Battlefield summary (C5): one aggregate sentence — enemy/ally counts, and in combat how many enemies the
+    // acting unit can reach and how many threaten it, plus the nearest enemy's range. The whole-board glance a
+    // sighted player gets from the initiative tracker + overtips at once, without stepping the review cycle.
+    internal static void BattlefieldSummary() => Safe(Summarize);
 
     private static void Safe(Action a)
     {
@@ -224,6 +230,55 @@ internal static class Scanner
             parts.Add(member.CharacterName + ", " + InteractableDescriber.DirectionAndDistance(refPos, member.Position));
         }
         Speak("Party: " + string.Join("; ", parts));
+    }
+
+    // Battlefield summary (C5): counts + combat reach/threat vs the acting unit, in one sentence. Enemies must be
+    // currently seen (fog-gated); allies are always known. The in-range / threatening tallies use the shared
+    // CombatReads (same numbers the per-enemy cycle speaks), and only in combat — out of combat it's just counts.
+    private static void Summarize()
+    {
+        var me = Game.Instance?.TurnController?.CurrentUnit as BaseUnitEntity ?? Anchor();
+        bool combat = Game.Instance?.Player?.IsInCombat == true && me != null;
+
+        int enemies = 0, allies = 0, inRange = 0, threats = 0;
+        int nearestCells = int.MaxValue;   // select the nearest by the SAME footprint-aware cell metric we speak,
+        bool haveNearest = false;          // so a large multi-tile enemy can't be mis-ranked by raw centre distance.
+
+        foreach (var it in WorldModel.Items)
+        {
+            if (!it.IsVisible || !it.IsUnit) continue;
+            var u = it.TargetUnit;
+            if (u == null || u.LifeState.IsDead) continue;
+
+            if (it.Primary == ScanTaxonomy.UnitsParty) { allies++; continue; }
+            if (it.Primary != ScanTaxonomy.UnitsEnemies || !it.CurrentlySeen) continue;
+
+            enemies++;
+            if (me != null)
+            {
+                int c = me.DistanceToInCells(u);
+                if (c < nearestCells) { nearestCells = c; haveNearest = true; }
+            }
+            if (combat)
+            {
+                if (u.IsThreat(me)) threats++;
+                if (CombatReads.InRange(me, u)) inRange++;
+            }
+        }
+
+        if (enemies == 0 && allies == 0) { Speak("No one in sight."); return; }
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(enemies).Append(enemies == 1 ? " enemy" : " enemies");
+        if (combat && enemies > 0)
+        {
+            sb.Append(", ").Append(inRange).Append(" in range");
+            if (threats > 0) sb.Append(", ").Append(threats).Append(" threatening you");
+        }
+        sb.Append(". ").Append(allies).Append(allies == 1 ? " ally" : " allies").Append('.');
+        if (haveNearest)
+            sb.Append(" Nearest enemy ").Append(nearestCells).Append(" cells.");
+        Speak(sb.ToString());
     }
 
     // ---- list building ----

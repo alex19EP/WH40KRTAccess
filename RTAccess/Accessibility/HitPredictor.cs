@@ -46,7 +46,7 @@ public static class HitPredictor
             var casterNode = AoEPatternHelper.GetGridNode(casterPos);
             var tw = new TargetWrapper(target);
 
-            if (!ability.CanTargetFromNode(casterNode, null, tw, out int distance, out var los, out var reason))
+            if (!ability.CanTargetFromNode(casterNode, null, tw, out int distance, out var _, out var reason))
                 return Untargetable(ability, distance, reason);
 
             // The ability may pick a better firing node than the desired position (e.g. to clear cover / gain LOS);
@@ -58,8 +58,12 @@ public static class HitPredictor
             if (cache == null) return null;
             var ui = cache.GetOrCreate(ability, target, shootPos);
 
+            // Cover for the terse line, computed from the firing position (CanTargetFromNode's out-cover is
+            // hardcoded to None by the game — it tests LOS with a separate bool — so read it here, as the overtip does).
+            var cover = LosCalculations.GetWarhammerLos(shootPos, caster.SizeRect, target).CoverType;
+
             int crit = CritChance(caster, target, ability, shootPos);
-            return Compose(ui, crit, los, verbose);
+            return Compose(ui, crit, cover, verbose);
         }
         catch (Exception e) { Main.Log?.Log("hit predict failed: " + e.Message); return null; }
     }

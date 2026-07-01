@@ -1,7 +1,10 @@
+using System.Text;
 using Kingmaker;                                          // Game
 using Kingmaker.EntitySystem.Entities;                   // BaseUnitEntity
 using Kingmaker.Pathfinding;                             // PathfindingService, WarhammerPathPlayerCell, CustomGridNodeBase
+using Kingmaker.UnitLogic;                                // CalculateAttackOfOpportunity (AttackOfOpportunityHelper ext)
 using Pathfinding;                                        // GraphNode
+using UnityEngine;                                        // Mathf
 
 namespace RTAccess.Exploration;
 
@@ -60,7 +63,45 @@ internal static class PathInfo
         int tiles = TileCount(dest, dict);
         if (tiles == 0) return "You are here.";
         canMove = true;
-        return tiles == 1 ? "Reachable, 1 tile." : "Reachable, " + tiles + " tiles.";
+
+        // The hop count answers "how many steps"; the movement-point cost is the real budget number (it diverges
+        // from the hop count on diagonals and through threatened cells), so speak both. cell.Length is the
+        // accumulated MP cost of THIS path; ActionPointsBlueMax is the unit's total movement for the turn.
+        int cost = Mathf.RoundToInt(cell.Length);
+        int budget = Mathf.RoundToInt(unit.CombatState.ActionPointsBlueMax);
+
+        var sb = new StringBuilder();
+        sb.Append("Reachable, ").Append(tiles).Append(tiles == 1 ? " tile" : " tiles");
+        sb.Append(", costs ").Append(cost).Append(" of ").Append(budget).Append(" movement");
+
+        // Attack-of-opportunity warning: the exact call the game's own move prediction runs. Leaving an enemy's
+        // threatened tile provokes; the API self-filters to combat, so out of combat it yields nothing. Name the
+        // attacker(s) so the player can weigh the risk before committing (a second press still commits).
+        var attackers = unit.CalculateAttackOfOpportunity(PathNodes(dest, dict))
+                            .Select(a => a.Attacker).Where(a => a != null).Distinct().ToList();
+        if (attackers.Count > 0)
+            sb.Append(". Provokes attacks of opportunity from ")
+              .Append(string.Join(", ", attackers.Select(a => a.CharacterName)));
+
+        return sb.Append('.').ToString();
+    }
+
+    /// <summary>The traversed node list origin→dest, from the priced dict's parent chain — fed to the engine's
+    /// path-AoO API. Includes the origin (the AoO check compares consecutive nodes, so it needs the full walk).</summary>
+    private static List<GraphNode> PathNodes(GraphNode dest, Dictionary<GraphNode, WarhammerPathPlayerCell> dict)
+    {
+        var nodes = new List<GraphNode>();
+        var node = dest;
+        for (int guard = 0; guard < 1024; guard++)
+        {
+            if (node == null || !dict.TryGetValue(node, out var cell)) break;
+            nodes.Add(node);
+            var parent = cell.ParentNode;
+            if (parent == null || parent == node) break;   // reached the origin
+            node = parent;
+        }
+        nodes.Reverse();   // origin → dest
+        return nodes;
     }
 
     /// <summary>Number of grid steps from the origin to <paramref name="dest"/> — walk the per-cell parent chain back

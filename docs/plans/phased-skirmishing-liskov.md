@@ -398,32 +398,34 @@ sub-actions (currently the silent popup), and a post-cast remaining-AP cue (`IUn
 
 ### Milestone C — Tactical mastery (fight well)
 
-#### C5 · Battlefield scanner (tactical radar)  — *L, deps B4 helpers*
-**New** `Accessibility/CombatScanner.cs` (combat `InputCategory`, modeled on the exploration
-`Scanner`). Enumerate `Game.Instance.State.AllBaseAwakeUnits` (**not** the `internal`
-`UnitsInCombat`) filtered `IsInCombat && !IsDead && IsVisibleForPlayer`; segment by faction
-(`IsPlayerEnemy`/`IsInPlayerParty`/`IsNeutral`); anchor = `CurrentUnit` else `SelectedUnit`; sort
-`DistanceToInCells`. Per-target line: name + faction + cells + bearing
-(`InteractableDescriber.DirectionAndDistance`/`RelativeTile`) + HP (respect
-`HideRealHealthInUI`) + cover-vs-me (**replicate `OvertipCoverBlockVM.UpdateCover`**:
-`GetBestShootingPosition` → `GetWarhammerLos` — do NOT read the VM, it's stale for off-screen/ally
-units) + LOS + threat (`IsThreat`, `GetEngagedByUnits().Count`) + in-range (B4 helper). Cycle
-`]`/`[` (Shift = allies); drive the shared `MapCursor`; whole-battlefield **summary key** ("4
-enemies, 2 allies. Nearest Ork Boy, 3 east, half cover, in range. Threatened by 1."). Add a
-"Scanned combatant" `UnitBuffer` to `BufferManager.RegisterDefaults` (one line).
+#### C5 · Battlefield scanner (tactical radar)  — 🔨 **BUILT + API-verified 2026-07-01; live-verification PENDING**
+**Decision: EXTEND the existing exploration `Scanner`, no new `CombatScanner`** (a 6-agent recon confirmed
+the scanner already runs in combat, already has faction/HP/distance + enemy/party cycles, and funnels every
+readout through one hook — B3 already rode on it). Built:
+- **Per-enemy tactical tail** — new `protected virtual ScanItem.CombatSuffix()`, hooked in `ScanItem.Describe`
+  after the bearing, gated `Player.IsInCombat && !Targeting.Aiming` (so the aiming-time B4 line supersedes it,
+  no double). `ProxyUnit` overrides it → new shared **`Accessibility/CombatReads.cs`** `CoverRangeThreat(me,
+  target)`: cover-vs-me + LOS + in-range + "threatening you", all dry reads. Cover **replicates
+  `OvertipCoverBlockVM.UpdateCover`** (do NOT read the stale VM): `GetBestShootingPosition(desiredPos)` →
+  `GetWarhammerLos` → `CoverType` (**4 values** — `None/Half/Full/Invisible`; Invisible = no LOS). In-range via
+  the default weapon's `CanTargetFromNode`. Threat via `enemy.IsThreat(me)` (`AttackOfOpportunityHelper` ext).
+- **Battlefield summary key `U`** (`scan.battlefield`) → `Scanner.Summarize`: "N enemies, K in range, T
+  threatening you. M allies. Nearest enemy D cells." (combat fields drop out of combat).
+- **Corrections vs the original spec:** `HideRealHealthInUI` is a `MechanicsFeatureType` flag
+  (`HasMechanicFeature`), not a `BlueprintUnit` field — HP-hide parity left as a pre-existing OPEN (ProxyUnit
+  speaks raw HP regardless); `IsThreat` is an ext (attacker→target), not a member. `U` is a bare letter →
+  **live-verify it pops no game service window** (fallback `F7`).
 
-#### C6 · Movement preview  — *M, deps B0*
-**New** `Accessibility/CombatMovement.cs`; commit already works, only the **preview** is missing.
-Cache `FindAllReachableTiles_Blocking(agent, pos, ActionPointsBlue)` once per turn (invalidate on
-turn/move). Per cursor cell: reachable? = dict contains node → `cell.Length` AP,
-`WarhammerPathHelper.ConstructPathTo` (no A*); else full `FindPathTB_Blocking` +
-`RuleCalculateMovementCost` for the shortfall. `PathExtras.LengthInCells` for a true tile count
-(replaces Chebyshev `TilesAway`). Threats crossed via `CacheThreateningAreaCells` (name via
-per-enemy `CollectThreateningArea`); overwatch via enemies' `PartOverwatch.OverwatchArea`. Speak on
-the **arm press** in `TileExplorer.MoveToCursor` (e.g. "4 tiles, 8 MP, reachable, crosses 1
-threatened tile — provokes attack of opportunity. Press again to move."). Optional reachable-set
-overview key. **Do not** use `UnitMoveTo`/`PathVisualizer` (WOTR-only); the TB path is
-`UnitMoveToProper` via `TryCreateMoveCommandTB`.
+#### C6 · Movement preview  — 🔨 **BUILT + API-verified 2026-07-01; live-verification PENDING**
+Extended the existing `Exploration/PathInfo.Preview` (not a new class — commit + reachability already shipped).
+The priced `WarhammerPathPlayerCell` is already in hand from `FindAllReachableTiles_Blocking`, so **no new
+pricing API**: MP cost = `cell.Length` (accumulated), budget = `unit.CombatState.ActionPointsBlueMax`. AoO is
+**first-class** — reconstruct the node path from the dict's parent chain (`PathNodes`) and feed
+`unit.CalculateAttackOfOpportunity(IEnumerable<GraphNode>)` (the exact call the game's move prediction runs;
+self-filters to combat), naming `.Attacker`. Spoken on the arm press: "Reachable, N tiles, costs X of Y
+movement. Provokes attacks of opportunity from &lt;name&gt;. Press again to move." Keep the hop count (answers
+"how many steps") alongside the MP cost (diverges on diagonals/threat cells — the point of the change).
+`RuleCalculateMovementCost` proved unnecessary (whole-`Path` only; the node cost is `cell.Length`).
 
 ---
 

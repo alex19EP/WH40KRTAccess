@@ -1,3 +1,4 @@
+using Kingmaker;                       // Game
 using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
 using UnityEngine;
 
@@ -72,6 +73,21 @@ internal sealed class ProxyUnit : ScanItem
                 return FactionWord();
             }
         }
+    }
+
+    // The passive tactical tail for an enemy, relative to the acting unit (whose turn it is, else the selected
+    // unit). Enemies only; dead enemies carry nothing tactical. The heavy read lives in CombatReads (shared with
+    // the battlefield summary); this just resolves the observer and the enemy/dead gate.
+    protected override string CombatSuffix()
+    {
+        try
+        {
+            if (!_unit.IsPlayerEnemy || _unit.LifeState.IsDead) return null;
+            var me = Game.Instance?.TurnController?.CurrentUnit as BaseUnitEntity
+                     ?? Game.Instance?.SelectionCharacter?.SelectedUnit?.Value;
+            return RTAccess.Accessibility.CombatReads.CoverRangeThreat(me, _unit);
+        }
+        catch { return null; }
     }
 
     private string FactionNode()

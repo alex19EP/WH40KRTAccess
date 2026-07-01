@@ -117,6 +117,11 @@ namespace RTAccess.Input
             // stepping the list. O is a confirmed-free letter key (see PartyHotkeys keymap notes).
             InputManager.Register("scan.announce_selection", "Scanner: re-announce selection", InputCategory.Exploration,
                 Ex.Scanner.AnnounceSelection).AddBinding(KeyCode.O).Grouped("scanner");
+            // U — battlefield summary (C5): counts + in-combat reach/threat vs the acting unit, in one sentence. U is
+            // the last confirmed-free bare letter (see PartyHotkeys keymap notes); like the other bare-letter scanner
+            // keys it inherits focus mode's game-service-window suppression (verify live it pops no window).
+            InputManager.Register("scan.battlefield", "Scanner: battlefield summary", InputCategory.Exploration,
+                Ex.Scanner.BattlefieldSummary).AddBinding(KeyCode.U).Grouped("scanner");
             // The inspect verb pair — speaks the game's own inspect panel (full sighted parity) and pops it for a
             // sighted helper (see Ex.Inspect). ' inspects the tile cursor's occupant; Y inspects the scanner's
             // review selection.

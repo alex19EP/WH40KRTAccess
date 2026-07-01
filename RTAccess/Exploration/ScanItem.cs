@@ -89,7 +89,7 @@ internal abstract class ScanItem
     /// <summary>Distance from <paramref name="from"/> to the nearest part of the thing (its edge, not its centre).</summary>
     public float DistanceTo(Vector3 from) => Geo.Distance(from, NearestPoint(from));
 
-    /// <summary>"&lt;name&gt;[, &lt;detail&gt;], &lt;distance&gt;, &lt;bearing&gt;" relative to a reference point.</summary>
+    /// <summary>"&lt;name&gt;[, &lt;detail&gt;], &lt;distance&gt;, &lt;bearing&gt;[, &lt;combat suffix&gt;]" relative to a reference point.</summary>
     public string Describe(Vector3 from)
     {
         var sb = new StringBuilder();
@@ -97,6 +97,20 @@ internal abstract class ScanItem
         var detail = Detail;
         if (!string.IsNullOrWhiteSpace(detail)) sb.Append(", ").Append(detail);
         sb.Append(", ").Append(InteractableDescriber.DirectionAndDistance(from, NearestPoint(from)));
+
+        // In combat, append the tactical tail (cover-vs-me / LOS / in-range / threat) — but not while an ability is
+        // armed, since the aiming-time HitPredictor line (appended by Scanner) already carries the richer, ability-
+        // specific hit read and would double the cover/range. So: passive read when idle, prediction when aiming.
+        if (Kingmaker.Game.Instance?.Player?.IsInCombat == true && !Targeting.Aiming)
+        {
+            var combat = CombatSuffix();
+            if (!string.IsNullOrWhiteSpace(combat)) sb.Append(", ").Append(combat);
+        }
         return sb.ToString();
     }
+
+    /// <summary>Combat-only tactical tail (cover-vs-me / LOS / in-range / threat), appended after the bearing while
+    /// the player is in combat and not aiming. Measured relative to the ACTING unit, so — unlike <see cref="Detail"/>
+    /// (which only has the scan-origin point) — the override resolves the observer unit itself. Base: nothing.</summary>
+    protected virtual string CombatSuffix() => null;
 }
