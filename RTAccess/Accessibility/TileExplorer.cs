@@ -169,11 +169,9 @@ internal static class TileExplorer
                 }
                 _armedNode = null;
 
-                var cmd = unit.TryCreateMoveCommandTB(
-                    new MoveCommandSettings { Destination = node.Vector3Position, DisableApproachRadius = true },
-                    showMovePrediction: false, out var status);
-                if (cmd != null) { unit.Commands.Run(cmd); Speaker.Speak("Moving.", interrupt: true); }
-                else Speaker.Speak(MoveFailure(status), interrupt: true);
+                // Commit through the shared act funnel (shared guard + refusal speech); it voices the specific
+                // failure, we give the success cue.
+                if (RTAccess.Combat.CommandDispatch.MoveTo(node)) Speaker.Speak("Moving.", interrupt: true);
             }
             else
             {
@@ -245,18 +243,6 @@ internal static class TileExplorer
             return string.IsNullOrWhiteSpace(one?.CharacterName) ? "Moving." : "Moving " + one.CharacterName + ".";
         }
         catch { return "Moving."; }
-    }
-
-    private static string MoveFailure(UnitHelper.MoveCommandStatus status)
-    {
-        switch (status)
-        {
-            case UnitHelper.MoveCommandStatus.NotEnoughMovementPoints: return "Not enough movement points.";
-            case UnitHelper.MoveCommandStatus.DestinationUnreachable: return "Path blocked.";
-            case UnitHelper.MoveCommandStatus.CannotMove: return "Can't move.";
-            case UnitHelper.MoveCommandStatus.SamePath: return "Already moving there.";
-            default: return "Can't reach that tile.";
-        }
     }
 
     // ---- readout ----

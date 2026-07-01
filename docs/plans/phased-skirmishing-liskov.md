@@ -308,9 +308,17 @@ scrubs. Store the `CombatLogMessage` (not just text) so a verbose "read the roll
 Depends on **CommandDispatch (§2.1)**. B4 (prediction) and B3 (targeting) are tightly coupled —
 build the predictor first, then consume it in targeting.
 
-#### B0 · CommandDispatch service  — *M, foundation* — see §2.1.
-Refactor `TileExplorer`'s move commit to call `CommandDispatch.MoveTo`; add `EndTurn`; stub
-ability paths. De-risks B2/B3.
+#### B0 · CommandDispatch service  — ✅ **SHIPPED + verified 2026-07-01** — see §2.1.
+`Combat/CommandDispatch.cs` (public static funnel): `ActingUnit` guard (TB + IsPlayerTurn +
+selected==current + IsDirectlyControllable), `UseAbilityOnUnit`/`UseAbilityOnPoint`/`UseSelfAbility`
+(SetAbility → OnClick — the game's own pointer path), `MoveTo` (relocated the proven
+`TryCreateMoveCommandTB` + `Commands.Run` path out of `TileExplorer`, which now calls it), `EndTurn`,
+`AbilityArmed`. **Execution proven end-to-end** (closes the long-standing open question, §6/D1): a
+dispatched pistol shot returned `ok=True`, dropped the target's HP 28→24, and was narrated by the A2
+combat-log reader ("Багардор uses: Stub-revolver / Pistol Shot → deals damage (4, Piercing) to …");
+a second run through `CommandDispatch.DevTestAttackNearestEnemy()` (DEBUG self-test) fired again and
+narrated a miss. A2 is the natural execution verifier. Point/AoE (`UseAbilityOnPoint` via
+`OnClick(null, point)`) compiles but is unverified — validated when AoE targeting lands (B3).
 
 #### B4 · Hit prediction / decision support  — *M, deps B0*
 **New** `Accessibility/HitPredictor.cs` producing a spoken readout for a `(caster, ability, target)`
