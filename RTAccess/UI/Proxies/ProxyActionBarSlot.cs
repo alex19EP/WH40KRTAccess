@@ -1,7 +1,11 @@
 using System.Collections.Generic;
 using System.Text;
-using Kingmaker.Code.UI.MVVM.VM.ActionBar; // ActionBarSlotVM
+using Kingmaker;                                     // Game (VirtualPositionController)
+using Kingmaker.Code.UI.MVVM.VM.ActionBar;           // ActionBarSlotVM
+using Kingmaker.UnitLogic.Abilities;                 // AbilityData
+using Kingmaker.UnitLogic.Abilities.Blueprints;      // AbilityTargetAnchor
 using RTAccess.UI.Announcements;
+using UnityEngine;                                   // Vector3
 
 namespace RTAccess.UI.Proxies
 {
@@ -57,7 +61,10 @@ namespace RTAccess.UI.Proxies
             catch { return ""; }
         }
 
-        // AP cost + ammo + cooldown + targeting/active, read live off the VM's reactive mirrors.
+        // AP cost + range/target-kind/uses + ammo + cooldown + targeting/active + why-disabled. The reactive
+        // mirrors are the VM's; the range/target-kind/uses/reason come off the AbilityData — the same decision
+        // info a sighted player reads off the slot icon and its greyed-out tooltip. Read on focus (user-driven),
+        // so the rule-triggering getters (RangeCells, GetUnavailableReason) are fine to call here.
         private string State()
         {
             if (_slot == null) return null;
@@ -66,6 +73,10 @@ namespace RTAccess.UI.Proxies
             {
                 int ap = _slot.ActionPointCost.Value;
                 if (ap > 0) Append(sb, ap + (ap == 1 ? " action point" : " action points"));
+
+                var ab = _slot.AbilityData;
+                if (ab != null) AppendAbilityDetails(sb, ab);
+
                 if (_slot.IsReload.Value)
                     Append(sb, _slot.CurrentAmmo.Value + " of " + _slot.MaxAmmo.Value + " ammo");
                 if (_slot.IsOnCooldown.Value)
@@ -76,9 +87,73 @@ namespace RTAccess.UI.Proxies
                 if (_slot.IsSelected.Value) Append(sb, "targeting");
                 else if (_slot.MechanicActionBarSlot != null && _slot.MechanicActionBarSlot.IsActive())
                     Append(sb, "active");
+
+                // Why it's greyed out — the game's own reason (not enough AP, on cooldown, out of range, …), so a
+                // disabled slot says the cause instead of a bare "disabled".
+                if (ab != null && !Enabled)
+                {
+                    var why = UnavailableReason(ab);
+                    if (why != null) Append(sb, "unavailable, " + why);
+                }
             }
             catch { }
             return sb.Length > 0 ? sb.ToString() : null;
+        }
+
+        // Range (melee vs cells, + a minimum if the weapon has one), what it targets, and limited uses.
+        private void AppendAbilityDetails(StringBuilder sb, AbilityData ab)
+        {
+            try
+            {
+                var anchor = ab.TargetAnchor;
+
+                // Range is meaningless for a self/owner ability; melee reads better as "melee" than "range 1 cell".
+                if (anchor != AbilityTargetAnchor.Owner)
+                {
+                    if (ab.IsMelee) Append(sb, "melee");
+                    else
+                    {
+                        int r = 0; try { r = ab.RangeCells; } catch { }
+                        if (r > 1) Append(sb, "range " + r + " cells");
+                        int min = 0; try { min = ab.MinRangeCells; } catch { }
+                        if (min > 0) Append(sb, "minimum range " + min);
+                    }
+                }
+
+                // What activating it will ask for.
+                switch (anchor)
+                {
+                    case AbilityTargetAnchor.Owner: Append(sb, "self"); break;
+                    case AbilityTargetAnchor.Unit: Append(sb, "targets a unit"); break;
+                    case AbilityTargetAnchor.Point: Append(sb, ab.IsAOE ? "area effect" : "targets a point"); break;
+                }
+
+                // Limited uses (charges / per-day resource); -1 == at-will. Ammo weapons already read their ammo
+                // above, so don't also say "N uses left" for them.
+                if (!_slot.IsReload.Value)
+                {
+                    int uses = -1; try { uses = ab.GetAvailableForCastCount(); } catch { }
+                    if (uses >= 0) Append(sb, uses + (uses == 1 ? " use left" : " uses left"));
+                }
+            }
+            catch { }
+        }
+
+        // The game's localized "why greyed out" text, evaluated from where the caster will act (its desired
+        // position, matching the on-screen tooltip). Null when there's no reason or no caster.
+        private string UnavailableReason(AbilityData ab)
+        {
+            try
+            {
+                var caster = ab.Caster;
+                if (caster == null) return null;
+                Vector3 pos = caster.Position;
+                try { var vpc = Game.Instance?.VirtualPositionController; if (vpc != null) pos = vpc.GetDesiredPosition(caster); }
+                catch { }
+                var reason = ab.GetUnavailableReason(pos);
+                return string.IsNullOrWhiteSpace(reason) ? null : TextUtil.StripRichText(reason);
+            }
+            catch { return null; }
         }
 
         private static void Append(StringBuilder sb, string s)

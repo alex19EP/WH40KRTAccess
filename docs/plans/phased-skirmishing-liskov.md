@@ -374,15 +374,27 @@ re-arm re-announced (proving aim cleared post-cast); Backspace → "Targeting ca
 pattern readout. Also v2: explicit "target k of n" multi-target announce (v1 says only "Target
 added."). These fold naturally into the C5 scanner work.
 
-#### B2 · Action-bar read recipe + self-cast completeness  — *M, deps B0*
-**Extend** `ProxyActionBarSlot`: append **range** (`AbilityData.RangeCells`, `MinRangeCells` if >0),
-**charges/uses** (`ResourceCount`/`GetAvailableForCastCount`), **why-disabled** on greyed slots
-(`AbilityData.GetUnavailableReason(GetDesiredPosition(unit))` — speak it, don't click), **target
-kind** (`TargetAnchor` → "self" / "target a unit" / "area, target a point"), **category tag**
-(heroic act / desperate measure / toggle w/ on-off). Activation branches on `TargetAnchor`:
-Owner/toggle → `CommandDispatch.UseSelfAbility`; Unit/Point → `OnMainClick` (arms `SetAbility`) →
-B3 takes over. Detect `HasConvert`/variants and expose conversions as sub-actions instead of the
-silent popup. Optionally announce remaining AP after a cast via `IUnitSpentActionPoints`.
+#### B2 · Action-bar read recipe + self-cast completeness  — ✅ **SHIPPED + verified 2026-07-01**
+**Extended** `ProxyActionBarSlot.State()` (all off `_slot.AbilityData`, the same info the sighted slot
+icon/tooltip shows; read on focus so the rule-triggering getters are fine): **range**
+(`RangeCells`, `MinRangeCells` if >0 → "minimum range M"; `IsMelee` → "melee"; omitted for Owner
+anchor), **target kind** (`TargetAnchor` → "self" / "targets a unit" / `IsAOE`?"area effect":"targets
+a point"), **limited uses** (`GetAvailableForCastCount()`, −1==at-will so omit; skipped for ammo
+weapons that already read their ammo), and **why-disabled** on greyed slots
+(`GetUnavailableReason(GetDesiredPosition(caster))` — the game's own localized reason string, stripped
+of rich text). Activation is UNCHANGED: `OnMainClick` is the game's canonical click and already
+branches correctly (Owner/toggle → immediate self-cast; Unit/Point → `SetAbility` arms → B3 takes
+over), so no dispatch rewire was needed.
+
+**Verified live** (rendered live slots through `AnnouncementComposer`): pistol → "1 action point,
+range 12 cells, targets a unit, 6 uses left"; reload → "self, 6 of 6 ammo, unavailable, *Cannot
+reload a full weapon*, disabled"; charge → "2 action points, range 6 cells, minimum range 2, targets
+a point, unavailable, *Requires a melee weapon*, disabled". Reason strings surface in the game's
+locale (= sighted parity); the mod scaffolding stays English.
+
+**Deferred (low value / optional):** heroic-act/desperate-measure category tags, `HasConvert` variant
+sub-actions (currently the silent popup), and a post-cast remaining-AP cue (`IUnitSpentActionPoints`)
+— none blocking; the core decision info (range/target/uses/why-disabled) is in.
 
 ### Milestone C — Tactical mastery (fight well)
 
