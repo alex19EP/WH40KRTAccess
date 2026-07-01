@@ -154,12 +154,17 @@ internal static class TileExplorer
                 if (unit == null || unit != current || !unit.IsDirectlyControllable())
                 { Speaker.Speak("Select your active character.", interrupt: true); return; }
 
-                // First press on this tile arms + announces the distance; a second within the window commits.
+                // First press on this tile arms + previews the PATH (reachability + step count, from the game's own
+                // movable-area set); a second within the window commits. The arm is unconditional — the engine stays
+                // authoritative on commit — so even when the preview reads "out of range" a determined second press
+                // still defers to the real move command (which then speaks its own refusal), and the preview can never
+                // wrongly block a move the engine would allow.
                 if (_armedNode != node || (Time.unscaledTime - _armTime) > ConfirmWindow)
                 {
                     _armedNode = node;
                     _armTime = Time.unscaledTime;
-                    Speaker.Speak(TilesAway(unit, node) + ", press again to move.", interrupt: true);
+                    var preview = RTAccess.Exploration.PathInfo.Preview(unit, node, out bool canMove);
+                    Speaker.Speak(canMove ? preview + " Press again to move." : preview, interrupt: true);
                     return;
                 }
                 _armedNode = null;
@@ -221,16 +226,6 @@ internal static class TileExplorer
             Speaker.Speak(item.Interact() ? "Interacting with " + item.Name + "." : "Can't interact with " + item.Name + ".", interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.InteractAtCursor failed: " + e); }
-    }
-
-    private static string TilesAway(BaseUnitEntity unit, CustomGridNodeBase dest)
-    {
-        var from = unit?.CurrentUnwalkableNode;
-        if (from == null) return "Destination set";
-        int dx = Mathf.Abs(dest.XCoordinateInGrid - from.XCoordinateInGrid);
-        int dz = Mathf.Abs(dest.ZCoordinateInGrid - from.ZCoordinateInGrid);
-        int tiles = Mathf.Max(dx, dz);
-        return tiles == 1 ? "1 tile away" : tiles + " tiles away";
     }
 
     /// <summary>

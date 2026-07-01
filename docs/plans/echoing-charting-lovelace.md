@@ -455,7 +455,7 @@ for RT (footprint, live AoE surfacing, persistent registry, party visibility); t
 infra (F/G) or refinements with no current RT payoff. Next high-value work is **Phase D (targeting-from-cursor)** —
 the user-named "act on the map" capability, which depends only on Slices 1+3 (both shipped).
 
-### Phase D — targeting-from-cursor + PathInfo — **targeting DONE (build 0/0, in-combat verified); PathInfo PENDING**
+### Phase D — targeting-from-cursor + PathInfo — **DONE (build 0/0, both halves in-combat verified)**
 
 The "act on the map" half of exploration: once an action-bar ability arms (the game enters `PointerMode.Ability` via
 `SetAbility`), a blind player had no mouse to click a target with and dead-ended. Phase D supplies the missing commit
@@ -489,7 +489,33 @@ and the actual cast command are reused verbatim — we add zero combat rules.
     read while unfocused was cosmetic, not a failed dispatch); **commit-at-cursor (Enter)** after planting the cursor
     on the servitor (Home) → `CursorTarget.Inside()` resolved it → "Firing on Взбесившийся сервитор."; **cancel
     (Backspace)** → "Targeting cancelled." + pointer mode cleared. All three commit/cancel paths confirmed.
-  - **PENDING — PathInfo (the reachability/MP half).** Port a speech-only "Path, N tiles / out of MP / No path"
-    readout: WA's `CombatMode.TryPathInfo` doesn't exist in RT, so drive it from the cached
-    `IUnitMovableAreaHandler.HandleSetUnitMovableArea` push (reachable cells + MP) resolved against the cursor node.
-    Default ON, speech-only, no overlay. Lands next.
+- **PathInfo (the reachability half) — DONE (build 0/0, verified end-to-end in live combat).**
+  - `Exploration/PathInfo.cs` (new) — the speech-only "can I move there, and how far" readout for the tile cursor in
+    turn-based combat, where movement is the limited resource. `Preview(unit, dest, out canMove)` returns a spoken
+    phrase and sets `canMove` only when the tile is a legal, reachable, stand-on-able destination this turn.
+  - **Reachability is authoritative, not re-derived.** Instead of WA's non-existent `CombatMode.TryPathInfo` (or
+    subscribing to the `IUnitMovableAreaHandler.HandleSetUnitMovableArea` push), it reads the game's OWN cached
+    reachable set — `UnitMovableAreaController.CurrentUnitMovableArea` (public; the controller recomputes it on every
+    movement-point change with the real CantMove/pet/action-points-blue formula). Null/empty set → "Out of movement."
+    for free; `!set.Contains(dest)` → "Out of range." (walkable) / "Blocked." (not). This is strictly better than the
+    plan's "cache the push": no subscription, no duplicated MP formula, and it can never diverge from the coloured
+    tiles a sighted player sees.
+  - **Cost/tile-count from our own pathfind.** The controller keeps only its set's node *keys* and discards the
+    per-cell `WarhammerPathPlayerCell` costs, so `PathInfo` runs one `PathfindingService.FindAllReachableTiles_Blocking`
+    over the same unit (the identical call the game itself makes on every point change) to price the cursor node:
+    `IsCanStand` gates "Occupied, can't stop there.", and the exact step count comes from walking the cell
+    `ParentNode` chain back to the origin. One pathfind per deliberate move-arming key press — not per frame.
+  - `TileExplorer.MoveToCursor` — the combat first (arming) press now speaks `PathInfo.Preview` instead of the naive
+    Chebyshev `TilesAway` (removed): a real path-aware preview at the exact moment the player is about to commit a
+    move. The arm stays UNCONDITIONAL — the engine remains authoritative on commit — so a preview that reads "out of
+    range" can never wrongly block a move the engine would allow (a determined second press still defers to the real
+    move command, which speaks its own refusal).
+  - **Verified (live combat, Багардор, MP restored via `SetActionPoints` cheat → 59-tile reachable area):** own tile →
+    "You are here."; 2–3 tiles east (in range) → "Reachable, N tiles. Press again to move." with the exact path step
+    count; 10 tiles east (walkable, beyond 6 MP) → "Out of range."; MP zeroed → "Out of movement."; the two-press
+    arm→commit still fires the move ("Moving." — `TryCreateMoveCommandTB` returned a valid command, unchanged flow).
+  - **Placement note:** lives in `Exploration/` beside the other Phase D files rather than the plan's future
+    `Overlays/PathInfoSystem.cs` — the overlay framework is Phase E. When it lands, its arm-on-cursor-stop
+    auto-announce simply calls `PathInfo.Preview` behind a toggle; the computation/phrasing is already the reusable
+    half. **Deferred to that pass:** the MP-remaining nuance ("uses all your movement") — tiles alone is an
+    unambiguous v1, and a reachable tile is affordable by definition.
