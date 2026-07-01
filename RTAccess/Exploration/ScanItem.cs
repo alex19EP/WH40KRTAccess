@@ -8,9 +8,11 @@ namespace RTAccess.Exploration;
 /// One thing the scanner can list: a stable identity key (the backing entity), a name, a world position, the
 /// taxonomy nodes it belongs to, and the single state-aware role it sounds/cycles as. Visibility is a live
 /// per-item lens: <see cref="IsVisible"/> is reveal-latched ("we know it's here", the area-wide scanner), while
-/// <see cref="CurrentlySeen"/> is "can perceive it right now" (the tactical review cycles). <see cref="Describe"/>
-/// composes the spoken line relative to a reference point, reusing <see cref="InteractableDescriber"/> for the
-/// distance + compass so the scanner matches the other navigators.
+/// <see cref="CurrentlySeen"/> is "can perceive it right now" (the tactical review cycles). A thing also has a
+/// spatial extent (<see cref="Bounds"/> / <see cref="Footprint"/>): distance and bearing report the nearest PART
+/// of it (its <see cref="NearestPoint"/>), so a large creature or wide area effect reads by its nearest edge, not
+/// its centre. <see cref="Describe"/> composes the spoken line relative to a reference point, reusing
+/// <see cref="InteractableDescriber"/> for the distance + compass so the scanner matches the other navigators.
 /// </summary>
 internal abstract class ScanItem
 {
@@ -50,7 +52,34 @@ internal abstract class ScanItem
         return false;
     }
 
-    public float DistanceTo(Vector3 from) => Geo.Distance(from, Position);
+    /// <summary>
+    /// XZ radius of the thing's footprint, in world metres. Large creatures/objects span several tiles, so the
+    /// scanner reports distance/bearing to the nearest EDGE, not the centre. Default 0 = a point (markers); units
+    /// and map objects override with their <c>Corpulence</c>.
+    /// </summary>
+    public virtual float Footprint => 0f;
+
+    /// <summary>The thing's spatial extent — a circle of <see cref="Footprint"/> (a point when 0). Shaped things
+    /// (area effects, wide doorways) override so distance/bearing report the nearest PART while the cursor still
+    /// targets the centre.</summary>
+    public virtual ScanBounds Bounds
+        => Footprint > 0f ? ScanBounds.Circle(Position, Footprint) : ScanBounds.Point(Position);
+
+    /// <summary>The closest point of the thing to <paramref name="from"/> (XZ), NON-ALLOCATING — for the per-frame
+    /// lenses that run over every item each frame. Default: a circle of <see cref="Footprint"/> about the centre.
+    /// Inside the footprint → the reference point itself (distance 0).</summary>
+    public virtual Vector3 NearestPoint(Vector3 from) => ScanBounds.NearestOnCircleXZ(Position, Footprint, from);
+
+    /// <summary>Is <paramref name="point"/> inside this thing's footprint (XZ)? — "the cursor is on it".</summary>
+    public bool Contains(Vector3 point)
+    {
+        var np = NearestPoint(point);
+        float dx = np.x - point.x, dz = np.z - point.z;
+        return dx * dx + dz * dz < 1e-4f;
+    }
+
+    /// <summary>Distance from <paramref name="from"/> to the nearest part of the thing (its edge, not its centre).</summary>
+    public float DistanceTo(Vector3 from) => Geo.Distance(from, NearestPoint(from));
 
     /// <summary>"&lt;name&gt;[, &lt;detail&gt;], &lt;distance&gt;, &lt;bearing&gt;" relative to a reference point.</summary>
     public string Describe(Vector3 from)
@@ -59,7 +88,7 @@ internal abstract class ScanItem
         sb.Append(string.IsNullOrWhiteSpace(Name) ? "Unknown" : Name);
         var detail = Detail;
         if (!string.IsNullOrWhiteSpace(detail)) sb.Append(", ").Append(detail);
-        sb.Append(", ").Append(InteractableDescriber.DirectionAndDistance(from, Position));
+        sb.Append(", ").Append(InteractableDescriber.DirectionAndDistance(from, NearestPoint(from)));
         return sb.ToString();
     }
 }

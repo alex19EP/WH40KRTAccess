@@ -20,6 +20,10 @@ internal sealed class ProxyUnit : ScanItem
 
     public override Vector3 Position => _unit.Position;
 
+    // Real footprint radius (metres) — a large creature reads distance/bearing to its nearest edge, not its centre,
+    // and sorts by that edge, so an adjacent ogryn reads "here"/"1 metre" rather than its centre's 2 m.
+    public override float Footprint => _unit.Corpulence;
+
     // Reveal-latched: the engine's per-unit "visible for player" flag (true for party, fog-gated for others).
     public override bool IsVisible => _unit.IsVisibleForPlayer;
 
