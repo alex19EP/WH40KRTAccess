@@ -424,5 +424,33 @@ Phase C is being landed in slices so each is independently build- + harness-veri
     `Find` resolved the stable proxy across frames); category browse intact; no `Tick()` errors (objects listed →
     registry populated every frame). `Added`/`Removed` fire structurally (first real consumer lands in Phase G).
 
+- **Slice 4 — taxonomy tree / ScanSounds / typed announce — RE-SCOPED after RT findings.** The full WA Slice-4
+  port (Node tree + two-level browse + `ScanSounds` + the `ScanAnnounce*` verbosity pipeline) is **DEFERRED**; only
+  the one concrete gap it would have closed is fixed now.
+  - **DONE — party always visible in the scanner (build 0/0, in-game verified).** `Exploration/ProxyUnit.cs`:
+    player-faction units are now always `IsVisible`/`CurrentlySeen`. RT's engine reports `IsVisibleForPlayer=false`
+    for your OWN units when they aren't the current "spotlight" (out of combat / not the acting unit) — verified via
+    `/eval` (Багардор: in `AllBaseUnits`, `IsPlayerFaction=true`, `IsVisibleForPlayer=false`) — which had left the
+    "Party" browse category and the `review_party` cycle empty out of combat. **Verified:** `scan.review_party` →
+    "Багардор, ally, 22 of 22 HP … 1 of 1" (was "Party, none in sight"). Closes the Phase-B pre-existing note.
+  - **DEFERRED — Node tree + two-level browse.** RT's `ProxyMapObject` classifies into COARSE flat buckets
+    (Containers / Doors / SearchPoints / Traps / Mechanisms / Exits / Scenery) with NO subtypes — WA's two-level
+    browse existed because WA had rich container/unit subtypes (chest/corpse/environment/…), which RT can't detect.
+    A category→subcategory browse on RT would present empty subcategories: navigation depth for no content. The flat
+    `Categories` browse fits RT's granularity; keep it until RT classification gains subtypes.
+  - **DEFERRED — `ScanSounds`.** It depends on `OverlayAudio.Dir` (Phase E, unported) and its only consumer is the
+    Sonar system (Phase G). All audio ships gated-off pending the maintainer tuning pass — porting the sound-stem
+    settings layer before either endpoint exists is premature. Lands with Phase F/G.
+  - **DEFERRED — typed `ScanAnnounce*` verbosity pipeline.** Pure refinement (per-part on/off + the spatial
+    sub-toggles) over today's working flat `ScanItem.Detail`. WA itself shipped the tree BEFORE the announce
+    pipeline ("Announcements move onto it next"); layering it on later is clean and blocks nothing. Revisit once the
+    taxonomy tree lands (if it does) or a verbosity request arrives.
+  - **DEFERRED — folding markers into `WorldModel`.** No consumer needs cross-frame marker identity until the Phase G
+    cues; markers work today via the direct `LocalMapModel.Markers` path (Exits/Poi cycles verified). Fold in with
+    the marker exit/poi classification when Phase G lands.
+
 **Phase C exit verify (batched, still pending):** footprint-aware bearing on a multi-tile unit, a wide door, and an
-AoE edge; two-cursor discipline (review selection vs `MapCursor`) via `/eval`.
+AoE edge; two-cursor discipline (review selection vs `MapCursor`) via `/eval`. **Phase C is functionally complete**
+for RT (footprint, live AoE surfacing, persistent registry, party visibility); the deferred items above are audio
+infra (F/G) or refinements with no current RT payoff. Next high-value work is **Phase D (targeting-from-cursor)** —
+the user-named "act on the map" capability, which depends only on Slices 1+3 (both shipped).

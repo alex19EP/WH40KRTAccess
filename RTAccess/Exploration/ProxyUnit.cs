@@ -24,10 +24,13 @@ internal sealed class ProxyUnit : ScanItem
     // and sorts by that edge, so an adjacent ogryn reads "here"/"1 metre" rather than its centre's 2 m.
     public override float Footprint => _unit.Corpulence;
 
-    // Reveal-latched: the engine's per-unit "visible for player" flag (true for party, fog-gated for others).
-    public override bool IsVisible => _unit.IsVisibleForPlayer;
+    // The player's OWN party is always known (the game always shows your party on the map), even though the engine's
+    // IsVisibleForPlayer flag reports false for owned units when they aren't the current "spotlight" (out of combat /
+    // not the acting unit). So player-faction units are always listed and always "seen"; everyone else is
+    // reveal-latched on IsVisibleForPlayer and fog-gated for the review cycles.
+    public override bool IsVisible => _unit.IsPlayerFaction || _unit.IsVisibleForPlayer;
 
-    public override bool CurrentlySeen => _unit.IsVisibleForPlayer && !_unit.IsInFogOfWar;
+    public override bool CurrentlySeen => _unit.IsPlayerFaction || (_unit.IsVisibleForPlayer && !_unit.IsInFogOfWar);
 
     public override string Primary => FactionNode();
 
