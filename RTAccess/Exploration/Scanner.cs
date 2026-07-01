@@ -80,7 +80,13 @@ internal static class Scanner
     internal static void ReviewPoi(bool back) => Safe(() => Review(Group.Poi, back ? -1 : 1));
     // Cycle the live area effects (hazards + buff zones) nearest the cursor — the AoE-awareness cycle for combat.
     internal static void ReviewZones(bool back) => Safe(() => Review(Group.Zones, back ? -1 : 1));
-    internal static void InteractSelected() => Safe(() => { if (RTAccess.UI.Navigation.HasFocus) return; Interact(); });
+    internal static void InteractSelected() => Safe(() =>
+    {
+        // While an ability is armed, I commits the aim on the review selection instead of interacting (see Targeting).
+        if (Targeting.Aiming) { Targeting.CommitOnSelection(ResolveSelected()); return; }
+        if (RTAccess.UI.Navigation.HasFocus) return;
+        Interact();
+    });
     internal static void CursorToSelection() => Safe(PlantCursorOnSelection);
     internal static void WhereAmINow() => Safe(WhereAmI);
     internal static void ReadParty() => Safe(PartyReadout);

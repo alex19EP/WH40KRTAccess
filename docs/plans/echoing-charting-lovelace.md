@@ -454,3 +454,42 @@ AoE edge; two-cursor discipline (review selection vs `MapCursor`) via `/eval`. *
 for RT (footprint, live AoE surfacing, persistent registry, party visibility); the deferred items above are audio
 infra (F/G) or refinements with no current RT payoff. Next high-value work is **Phase D (targeting-from-cursor)** —
 the user-named "act on the map" capability, which depends only on Slices 1+3 (both shipped).
+
+### Phase D — targeting-from-cursor + PathInfo — **targeting DONE (build 0/0, in-combat verified); PathInfo PENDING**
+
+The "act on the map" half of exploration: once an action-bar ability arms (the game enters `PointerMode.Ability` via
+`SetAbility`), a blind player had no mouse to click a target with and dead-ended. Phase D supplies the missing commit
+by routing a keyboard-chosen target through the game's own `ClickWithSelectedAbilityHandler.OnClick`, so ALL of the
+game's validation, target restrictions, refusal messaging (spoken by the warning reader), multi-target accumulation,
+and the actual cast command are reused verbatim — we add zero combat rules.
+
+- **Targeting commit/cancel bridge — DONE (build 0/0, verified end-to-end in live combat).**
+  - `Exploration/AbilityTargeting.cs` (new) — the commit/cancel half. `Active` reads LIVE from the handler
+    (`Game.Instance.SelectedAbilityHandler.Ability != null`), so cancelling elsewhere (right-click, re-toggle, mode
+    switch) clears us too — no stale aim state. `CommitAt(unit, point)` calls `OnClick(unit?.View.gameObject, point,
+    0)`; on refusal `OnClick` returns false and the game already spoke the reason, so we stay silent; on success we
+    distinguish "one more target added" (handler still armed → multi-target) from the cast ("Firing on X." / "Ability
+    used.") by whether `Ability != null` afterwards. `Cancel()` → `ClickEventsController.ClearPointerMode()`.
+  - `Exploration/CursorTarget.cs` (new) — `Inside()` resolves what the world cursor is *on*: the nearest visible
+    `IsUnit` registry item whose `Contains(cursor)` footprint holds `MapCursor.Position` (LevelGap 3 m rejects other
+    floors). Units only — abilities aim at units or ground points, so off-a-unit falls back to the point.
+  - `Exploration/Targeting.cs` (new) — the coordinator. `Aiming => Ability.Active` gates the exploration act keys:
+    while aiming, **Enter** commits at the cursor (`CommitAtCursor` → `CursorTarget.Inside()`), **I** commits on the
+    scanner review selection (`CommitOnSelection`), **Backspace** cancels. `Tick()` blurs the HUD the instant aiming
+    begins (arming from the focused action bar would otherwise strand the player inside the HUD).
+  - `Exploration/ScanItem.cs` + `ProxyUnit.cs` — added the `IsUnit` / `TargetUnit` virtuals the cursor resolver and
+    commit path filter on (`ProxyUnit` overrides both; everything else stays the point-fallback default).
+  - Wiring: `Scanner.InteractSelected` (I), `TileExplorer.InteractAtCursor` (Enter) + `MoveToCursor` (Backspace) all
+    gain a leading `if (Targeting.Aiming) …` guard that redirects to commit/cancel; `Main.OnUpdate` ticks
+    `Targeting.Tick()` right after `WorldModel.Tick()`. No new keybinds — the aim state repurposes the existing
+    exploration act keys, whose normal jobs resume the instant aiming ends.
+  - **Verified (live combat, save = combat encounter):** armed Pistol Shot from the action bar → HUD auto-blurred;
+    **commit-on-selection (I)** on the reviewed servitor → "Firing on Взбесившийся сервитор." with a running
+    `PlayerUseAbility` command, and the servitor's HP dropped 27→20 (the cast landed — the earlier stalled-animation
+    read while unfocused was cosmetic, not a failed dispatch); **commit-at-cursor (Enter)** after planting the cursor
+    on the servitor (Home) → `CursorTarget.Inside()` resolved it → "Firing on Взбесившийся сервитор."; **cancel
+    (Backspace)** → "Targeting cancelled." + pointer mode cleared. All three commit/cancel paths confirmed.
+  - **PENDING — PathInfo (the reachability/MP half).** Port a speech-only "Path, N tiles / out of MP / No path"
+    readout: WA's `CombatMode.TryPathInfo` doesn't exist in RT, so drive it from the cached
+    `IUnitMovableAreaHandler.HandleSetUnitMovableArea` push (reachable cells + MP) resolved against the cursor node.
+    Default ON, speech-only, no overlay. Lands next.

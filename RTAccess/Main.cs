@@ -106,6 +106,11 @@ public static class Main {
         // RTAccess.Exploration.WorldModel.
         Exploration.WorldModel.Tick();
 
+        // Ability targeting: the moment an action-bar ability arms (SetAbility → aiming), hand the keyboard from the
+        // HUD to the cursor/scanner so the player can commit the aim (Enter at the cursor, I on the selection,
+        // Backspace to cancel). See RTAccess.Exploration.Targeting.
+        Exploration.Targeting.Tick();
+
         // ---- Parallel accessible-UI framework (Phase 2) ----
         // Engage focus mode once the keyboard exists (suppresses the game's own KeyboardAccess hotkeys so
         // our navigator owns the keys), and re-assert it across scene reloads.

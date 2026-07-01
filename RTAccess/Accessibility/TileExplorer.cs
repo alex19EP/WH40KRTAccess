@@ -137,6 +137,8 @@ internal static class TileExplorer
     {
         try
         {
+            // While an ability is armed, Backspace cancels the aim instead of moving (see Targeting).
+            if (RTAccess.Exploration.Targeting.Aiming) { RTAccess.Exploration.Targeting.Cancel(); return; }
             if (!EnsurePlanted(out bool fresh)) return;
             if (fresh) { Announce(); return; }   // cold press reads the planted tile rather than moving onto it
 
@@ -209,6 +211,8 @@ internal static class TileExplorer
     {
         try
         {
+            // While an ability is armed, Enter commits the aim at the cursor instead of interacting (see Targeting).
+            if (RTAccess.Exploration.Targeting.Aiming) { RTAccess.Exploration.Targeting.CommitAtCursor(); return; }
             if (!EnsurePlanted(out bool fresh)) return;
             if (fresh) { Announce(); return; }
             var obj = InteractableDescriber.InteractableAt(MapCursor.Node);

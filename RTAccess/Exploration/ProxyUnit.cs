@@ -20,6 +20,10 @@ internal sealed class ProxyUnit : ScanItem
 
     public override Vector3 Position => _unit.Position;
 
+    // This item IS a unit — the target the game's unit-targeted ability click wants.
+    public override bool IsUnit => true;
+    public override BaseUnitEntity TargetUnit => _unit;
+
     // Real footprint radius (metres) — a large creature reads distance/bearing to its nearest edge, not its centre,
     // and sorts by that edge, so an adjacent ogryn reads "here"/"1 metre" rather than its centre's 2 m.
     public override float Footprint => _unit.Corpulence;

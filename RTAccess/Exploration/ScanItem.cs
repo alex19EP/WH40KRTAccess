@@ -1,4 +1,5 @@
 using System.Text;
+using Kingmaker.EntitySystem.Entities; // BaseUnitEntity (TargetUnit)
 using RTAccess.Accessibility; // InteractableDescriber (name/verb/compass reuse)
 using UnityEngine;
 
@@ -42,6 +43,13 @@ internal abstract class ScanItem
 
     /// <summary>Interact with this thing (loot/open/transition). Base: not interactable.</summary>
     public virtual bool Interact() => false;
+
+    /// <summary>Whether this thing IS a unit — the cheap predicate the cursor-target resolver filters on.</summary>
+    public virtual bool IsUnit => false;
+
+    /// <summary>The unit this thing IS (for the game's unit-targeted ability click, which wants the unit's
+    /// <c>GameObject</c>); null for anything that isn't a unit — targeting then falls back to the world point.</summary>
+    public virtual BaseUnitEntity TargetUnit => null;
 
     public bool HasNode(string key)
     {
