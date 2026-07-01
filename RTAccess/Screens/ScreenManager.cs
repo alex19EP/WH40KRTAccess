@@ -147,6 +147,11 @@ namespace RTAccess.Screens
             Register(new EscMenuScreen());
             // Save/Load window (CommonVM.SaveLoadVM) — layer 22, launched from the Esc menu or main menu.
             Register(new SaveLoadScreen());
+            // Variative-interaction chooser (SurfaceDynamicPartVM.VariativeInteractionVM) — layer 24, an Exclusive
+            // modal raised when interacting with a locked/variative object, so a blind player picks the actor
+            // (skill / Tech-Use / Key / Destroy, each with its chance) instead of the game auto-running the first.
+            // Raised by RTAccess.Exploration.ProxyMapObject.Interact; outcome voiced by InteractionEvents.
+            Register(new VariativeInteractionScreen());
             // TODO: Vendor, Loot, Encyclopedia + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }

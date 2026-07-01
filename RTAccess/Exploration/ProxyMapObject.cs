@@ -1,7 +1,10 @@
 using Kingmaker;                                          // Game
+using Kingmaker.Code.UI.MVVM.VM.VariativeInteraction;    // VariativeInteractionVM.HasVariativeInteraction
 using Kingmaker.Controllers.Clicks.Handlers;              // ClickMapObjectHandler (the game's own click dispatch)
 using Kingmaker.EntitySystem.Entities;                    // MapObjectEntity, BaseUnitEntity
 using Kingmaker.GameCommands;                             // AreaTransitionHelper
+using Kingmaker.PubSubSystem;                             // IVariativeInteractionUIHandler
+using Kingmaker.PubSubSystem.Core;                        // EventBus
 using Kingmaker.View.MapObjects;                          // InteractionDoorPart/LootPart/SkillCheckPart, AreaTransitionPart
 using Kingmaker.View.MapObjects.InteractionComponentBase; // InteractionPart
 using RTAccess.Accessibility;                             // InteractableDescriber (name/verb reuse)
@@ -13,10 +16,12 @@ namespace RTAccess.Exploration;
 /// A scannable interactable map object. Its categories come from the interaction parts it carries (loot →
 /// containers, door → doors, skill check → search points, anything else → mechanisms; an area transition adds
 /// exits; nothing → scenery). Name + verb are resolved by <see cref="InteractableDescriber"/> (the same mapping
-/// the overtip uses). Interact mirrors a click: an exit runs the area-transition flow, everything else is dispatched
-/// through the game's own click handler (<see cref="ClickMapObjectHandler.Interact"/>) — the same path a mouse click
-/// takes once an object is chosen, so unit-selection, Direct-vs-Approach, trap handling and AP/range warnings all
-/// match the base game.
+/// the overtip uses). Interact mirrors a click: an exit runs the area-transition flow; a locked/variative object
+/// (one offering a choice of actor — skill vs Tech-Use vs Key vs Destroy) raises the game's variative-interaction
+/// request so our <see cref="RTAccess.Screens.VariativeInteractionScreen"/> can surface the choice; everything else
+/// is dispatched through the game's own click handler (<see cref="ClickMapObjectHandler.Interact"/>) — the same
+/// path a mouse click takes once an object is chosen, so unit-selection, Direct-vs-Approach, trap handling and
+/// AP/range warnings all match the base game.
 /// </summary>
 internal sealed class ProxyMapObject : ScanItem
 {
@@ -126,6 +131,18 @@ internal sealed class ProxyMapObject : ScanItem
 
         var view = _obj.View;
         if (view == null) return false;
+
+        // A locked/variative object offers a CHOICE of actor (a skill check vs Tech-Use vs a Key vs a Melta charge
+        // vs Destroy, each with its own success chance). The static ClickMapObjectHandler.Interact below would
+        // auto-run the first available actor and skip that choice — the choice branch lives only in the mouse
+        // OnClick / overtip paths, not the static entry the mod calls. So raise the request ourselves: the game
+        // builds SurfaceDynamicPartVM.VariativeInteractionVM.Value and our VariativeInteractionScreen mirrors it
+        // into accessible buttons (mirrors WrathAccess's lockpick guard). Outcome is voiced by InteractionEvents.
+        if (VariativeInteractionVM.HasVariativeInteraction(view))
+        {
+            EventBus.RaiseEvent<IVariativeInteractionUIHandler>(h => h.HandleInteractionRequest(view));
+            return true;
+        }
 
         var units = Game.Instance?.SelectionCharacter?.SelectedUnits?.ToList();
         if (units == null || units.Count == 0)

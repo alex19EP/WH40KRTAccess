@@ -413,6 +413,23 @@ Closes three of the five R2 deferrals (recon done by a 5-lens `Explore` workflow
 
 ---
 
+### R2-deferred wave B — variative-interaction (lockpick) choice window — **CODE-COMPLETE, build 0/0, in-harness verified** (2026-07-01)
+
+Closes the last R2 deferral. RT has **no `LockpickVM`** — a locked/variative object (a choice of skill vs Tech-Use vs Key vs Melta vs Destroy, each with a chance) is the generic **variative-interaction** system.
+
+**Shipped:**
+- **Trigger** — `ProxyMapObject.Interact` now guards the static dispatch: when `VariativeInteractionVM.HasVariativeInteraction(view)` it raises `EventBus.RaiseEvent<IVariativeInteractionUIHandler>(h => h.HandleInteractionRequest(view))` and returns (instead of `ClickMapObjectHandler.Interact`, whose static entry **skips** the choice branch — that branch lives only in the mouse `OnClick` / overtip paths). Mirrors WrathAccess's `ProxyMapObject` lockpick guard. The game then builds `SurfaceDynamicPartVM.VariativeInteractionVM.Value`.
+- **`VariativeInteractionScreen`** (new; `RTAccess/Screens/`, registered layer 24, `Exclusive`) — polls `Game.Instance.RootUiContext.SurfaceVM.DynamicPartVM.VariativeInteractionVM.Value` (same `IsActive`/`Rebuild`/`GetActions` pattern as `EscMenuScreen`), mirroring its live `Variants` (`InteractionVariantVM`) into `ProxyActionButton`s: label = `InteractionName.Value` (already "\<name\>: \<chance\>% [\<unit\>]") + tool/ammo requirement + a spoken "unavailable" note; enabled = `!Disabled`; activate = `variant.Interact()` (the game's own `ClickMapObjectHandler.TryInteract` + close). `ScreenName` resolves the object name ("Дверь, interaction"). Escape/Back → `vm.Close()`. Outcome still voiced by `InteractionEvents` (`IPickLockHandler`).
+
+**In-harness verification (2026-07-01, ship-deck save; `/eval` found 3 variative objects in-area):**
+- Raising the request on the rich door (`imperial_voidship_door_02_rich_ClubToTechRoom`, the identical call `ProxyMapObject.Interact` makes) → `has=True vmBuilt=True variants=3`.
+- `/gui` then showed **`screen: variative_interaction | Дверь, interaction`** with the 3 choices: **"Техника: 100% [Багардор]"** (enabled, focused), **"Техника: 100% [Багардор], 0 of 1 Мультиключ, unavailable"** (disabled — Key), **"Взрывотехника: 100% [Багардор], 0 of 1 Мельта-заряд, unavailable"** (disabled — Melta). Labels, chance %, resource counts, and enabled/disabled state all correct.
+- `/input ui.back` → `vm.Close()` nulled the Value → screen deactivated → back to `ctx.ingame`. (Live button-activation not force-pressed — it's wired to the game's own `InteractionVariantVM.Interact`, and `/gui` confirmed the Activate action exists.)
+
+**Note:** committed on top of an unrelated in-tree uncommitted "tutorial popups" feature (`TutorialScreen`/`ProxyBoolToggle` + one `ScreenManager` line, a prior session's WIP) — left untouched; only this feature's `ScreenManager` registration hunk was staged.
+
+---
+
 ## Appendix A — WA → RT explorer key audit
 
 Every WrathAccess (Pathfinder) in-area-explorer key, grouped, with its RT status **verified against the current RT source** (not from memory; via a 5-reader verification pass). Status tags: `shipped <id/key>` (live in RT) · `R1`/`R2`/`R3` (this plan closes it) · `echoing <phase>` (a later `echoing-charting-lovelace.md` phase) · `N/A` (no RT equivalent — TB-only or feature-absent) · `gap` (unported, no phase yet) · `verify` (reports unsure). Where a key ships on a different RT key, the RT key is given.
