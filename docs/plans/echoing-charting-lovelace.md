@@ -519,3 +519,22 @@ and the actual cast command are reused verbatim — we add zero combat rules.
     auto-announce simply calls `PathInfo.Preview` behind a toggle; the computation/phrasing is already the reusable
     half. **Deferred to that pass:** the MP-remaining nuance ("uses all your movement") — tiles alone is an
     unambiguous v1, and a reachable tile is affordable by definition.
+
+### C–E thread status — **CONCLUDED at C+D (maintainer decision, 2026-07-01). Phase E deferred to the audio pass.**
+
+The exploration scanner/targeting thread (Phases C–E) delivered its high-value, live capabilities in C and D:
+**Phase C** (footprint-aware bearing, live AoE/hazard zones, persistent `WorldModel` registry, party visibility) and
+**Phase D** (ability targeting from the cursor/scanner, path-aware move preview). **Phase E — the overlay framework
+(`Overlay`/`OverlaySystem`/`OverlayManager` + the ~525-line settings registry + `MovementMode`/`Cursor` wrapper +
+`AudioSystem`/`OverlayAudio`) — is deferred to the audio-tuning pass**, together with the F–I systems it hosts
+(Sonar/WallTones/Fog/ObjectCue).
+
+Rationale (from reading the WA source in full): the framework is a composition-and-play-mode abstraction (tri-state
+Off/WhenMoving/Continuous modes, `ShouldPlay`, per-overlay customization subtrees) whose machinery earns its keep only
+with **multiple** overlay systems — and every one of them except `PathInfoSystem` is a Phase F–I **audio** system that
+this plan already defers pending the maintainer's audio-tuning pass. `PathInfoSystem` itself uses only Off/Continuous
+(not the WhenMoving audio path), fires once on cursor-stop, and its RT-native computation already ships as
+`PathInfo.Preview` (used live by the move-to preview). So porting ~700–900 lines of near-verbatim scaffolding now would
+serve a single fire-once speech system that already works. Building the framework **with** the audio systems (F–I),
+against real consumers, is the better sequencing. The PathInfo auto-announce-on-stop overlay is the natural first
+consumer to add when that pass begins — it wraps `PathInfo.Preview` behind an `overlays.path` mode toggle.
