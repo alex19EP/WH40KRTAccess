@@ -3,7 +3,6 @@ using Kingmaker.Controllers.Units;
 using Kingmaker.EntitySystem.Entities;
 using Kingmaker.Pathfinding;
 using Kingmaker.UI.Common;          // IsDirectlyControllable() extension
-using Kingmaker.UnitLogic;
 using Kingmaker.View;
 using RTAccess.Exploration; // MapCursor (the shared world cursor)
 using RTAccess.Speech;
@@ -219,9 +218,11 @@ internal static class TileExplorer
             if (!EnsurePlanted(out bool fresh)) return;
             if (fresh) { Announce(); return; }
             var obj = InteractableDescriber.InteractableAt(MapCursor.Node);
-            if (obj == null) { Speaker.Speak("Nothing to interact with nearby.", interrupt: true); return; }
+            if (obj == null) { Speaker.Speak(Loc.T("scan.nothing_nearby"), interrupt: true); return; }
             var item = new ProxyMapObject(obj);
-            Speaker.Speak(item.Interact() ? "Interacting with " + item.Name + "." : "Can't interact with " + item.Name + ".", interrupt: true);
+            // Same localized outcome line the scanner's I key speaks (scan.interacting / scan.cant_interact), so
+            // activation reads identically whether the object was reached by the cursor or the review selection.
+            Speaker.Speak(Loc.T(item.Interact() ? "scan.interacting" : "scan.cant_interact", new { name = item.Name }), interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.InteractAtCursor failed: " + e); }
     }

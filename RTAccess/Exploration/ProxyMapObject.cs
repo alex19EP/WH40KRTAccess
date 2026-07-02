@@ -6,7 +6,6 @@ using Kingmaker.GameCommands;                             // AreaTransitionHelpe
 using Kingmaker.PubSubSystem;                             // IVariativeInteractionUIHandler
 using Kingmaker.PubSubSystem.Core;                        // EventBus
 using Kingmaker.View.MapObjects;                          // InteractionDoorPart/LootPart/SkillCheckPart, AreaTransitionPart
-using Kingmaker.View.MapObjects.InteractionComponentBase; // InteractionPart
 using RTAccess.Accessibility;                             // InteractableDescriber (name/verb reuse)
 using UnityEngine;
 
@@ -115,6 +114,19 @@ internal sealed class ProxyMapObject : ScanItem
         if (_obj.GetOptional<AreaTransitionPart>() != null) nodes.Add(ScanTaxonomy.Exits);
         if (nodes.Count == 0) nodes.Add(ScanTaxonomy.Scenery);
         return nodes;
+    }
+
+    // The game's own actionability gate — an available interaction, or an area-transition exit (which carries no
+    // InteractionPart). Mirrors InteractableDescriber.IsActionable exactly so the scanner's I key and the cursor's
+    // Enter share ONE notion of "actionable" (Interact() then routes exits / variative / plain clicks identically).
+    public override bool CanInteract
+    {
+        get
+        {
+            var view = _obj.View;
+            if (view != null && ClickMapObjectHandler.HasAvailableInteractions(view.gameObject)) return true;
+            return _obj.GetOptional<AreaTransitionPart>() != null;
+        }
     }
 
     // Same as clicking the object: an exit runs the party area-transition flow; everything else is dispatched

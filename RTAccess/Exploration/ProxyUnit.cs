@@ -37,6 +37,11 @@ internal sealed class ProxyUnit : ScanItem
 
     public override bool CurrentlySeen => _unit.IsPlayerFaction || (_unit.IsVisibleForPlayer && !_unit.IsInFogOfWar);
 
+    // A corpse — dropped from the party/enemy/neutral review cycles and the unit category browse (Scanner), matching
+    // the game's own enemy navigation (SurfaceCombatInputLayer.IsValidEnemy gates the same !LifeState.IsDead). Death
+    // is State==Dead only, so downed-but-unconscious (revivable) companions are NOT corpses and stay listed/inspectable.
+    public override bool IsDead => _unit.LifeState.IsDead;
+
     public override string Primary => FactionNode();
 
     public override IEnumerable<string> Nodes

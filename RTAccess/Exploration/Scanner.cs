@@ -1,5 +1,6 @@
 using Kingmaker;                       // Game
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.LocalMap.Utils; // LocalMapModel, ILocalMapMarker, LocalMapMarkType
+using Kingmaker.Controllers.Units;     // UnitCommandsRunner (landmark travel)
 using Kingmaker.EntitySystem;          // DistanceToInCells (EntityHelper ext)
 using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
 using Kingmaker.UnitLogic;             // IsThreat (AttackOfOpportunityHelper ext)
@@ -12,8 +13,11 @@ namespace RTAccess.Exploration;
 /// <summary>
 /// The scanner / review cursor: a keyboard-driven, categorized, distance-sorted browse of everything in the
 /// current area (units + interactable map objects), plus tactical "nearest party / enemy / neutral / object"
-/// review cycles. Its selection is a look-without-moving cursor — I interacts with it and never moves your
-/// position; walking the party to a tile is the tile cursor's job (Backspace; see TileExplorer). Distances and
+/// review cycles. Its selection is a look-without-moving cursor — I interacts with it (and never moves your
+/// position), falling back to the object at the tile cursor when the selection isn't itself an actionable object,
+/// so the same key activates any object the same way; walking the party to a tile is the tile cursor's job
+/// (Backspace; see TileExplorer). Both interact keys drive the game's own object activation
+/// (<see cref="ProxyMapObject.Interact"/>). Distances and
 /// bearings are relative to the selected (or lead) unit and
 /// are spoken via <see cref="InteractableDescriber"/> so the compass matches the other navigators.
 ///
@@ -23,37 +27,46 @@ namespace RTAccess.Exploration;
 /// and the dev harness's /input), so they are live only while the in-game screen has world control — dead in
 /// windows/dialogue/cutscenes — and work in exploration AND surface tactical combat.
 ///
+/// Landmarks (area exits and points of interest) are the local-map markers: exits are surfaced as their real
+/// (activatable) world objects in the Exits category, and the marker-only pins (objective / point of interest /
+/// important / loot) live in the "Points of interest" category — both browsed like every other category, with no
+/// dedicated cycle keys. A landmark isn't a reach-interactable (the game's map pin isn't clickable — verified), so
+/// I on one WALKS the party toward it (the only thing a landmark supports).
+///
 /// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Comma/Period/N/M = cycle
-/// nearest party/enemy/neutral/object of interest (Shift reverses); V/B = cycle area-wide exits / points of
-/// interest (the local-map landmarks, Shift reverses); Z = cycle live area effects (hazards + buff zones, Shift
-/// reverses); I = interact with selection; O = re-announce the current
+/// nearest party/enemy/neutral/object of interest (Shift reverses); Z = cycle live area effects (hazards + buff
+/// zones, Shift reverses); I = interact with selection (an object; a landmark → walk to it; otherwise the object at
+/// the cursor); O = re-announce the current
 /// selection; Home/Slash = plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y
 /// inspect the cursor / the selection (see <see cref="Inspect"/>).
 /// </summary>
 internal static class Scanner
 {
-    // The browse categories cycled by Ctrl+PageUp/Down, each a label + a membership predicate over a ScanItem.
-    private static readonly (string Label, Func<ScanItem, bool> Pred)[] Categories =
+    // The browse categories cycled by Ctrl+PageUp/Down. Most filter the WorldModel registry by a taxonomy predicate;
+    // the "points of interest" category is instead marker-sourced (Marker == true) — the area-wide local-map pins
+    // (objective / POI / important / loot) that have no interaction part to bin on. Area exits appear as their real
+    // world objects under "taxonomy.exits" (activatable), so there is no separate marker-exits category.
+    private static readonly (string Key, bool Marker, Func<ScanItem, bool> Pred)[] Categories =
     {
-        ("Party",         it => it.Primary == ScanTaxonomy.UnitsParty),
-        ("Enemies",       it => it.Primary == ScanTaxonomy.UnitsEnemies),
-        ("Neutrals",      it => it.Primary == ScanTaxonomy.UnitsNeutrals),
-        ("Containers",    it => it.HasNode(ScanTaxonomy.Containers)),
-        ("Doors",         it => it.HasNode(ScanTaxonomy.Doors)),
-        ("Exits",         it => it.HasNode(ScanTaxonomy.Exits)),
-        ("Search points", it => it.HasNode(ScanTaxonomy.SearchPoints)),
-        ("Traps",         it => it.HasNode(ScanTaxonomy.Traps)),
-        ("Mechanisms",    it => it.HasNode(ScanTaxonomy.Mechanisms)),
-        ("Scenery",       it => it.HasNode(ScanTaxonomy.Scenery)),
-        ("Hazards",       it => it.HasNode(ScanTaxonomy.Hazards)),
-        ("Buff zones",    it => it.HasNode(ScanTaxonomy.BuffZones)),
+        ("taxonomy.units.party",    false, it => it.Primary == ScanTaxonomy.UnitsParty),
+        ("taxonomy.units.enemies",  false, it => it.Primary == ScanTaxonomy.UnitsEnemies),
+        ("taxonomy.units.neutrals", false, it => it.Primary == ScanTaxonomy.UnitsNeutrals),
+        ("taxonomy.containers",     false, it => it.HasNode(ScanTaxonomy.Containers)),
+        ("taxonomy.doors",          false, it => it.HasNode(ScanTaxonomy.Doors)),
+        ("taxonomy.exits",          false, it => it.HasNode(ScanTaxonomy.Exits)),
+        ("taxonomy.poi",            true,  null),   // area-wide local-map landmark pins (travel-to; see MarkerList)
+        ("taxonomy.searchpoints",   false, it => it.HasNode(ScanTaxonomy.SearchPoints)),
+        ("taxonomy.traps",          false, it => it.HasNode(ScanTaxonomy.Traps)),
+        ("taxonomy.mechanisms",     false, it => it.HasNode(ScanTaxonomy.Mechanisms)),
+        ("taxonomy.scenery",        false, it => it.HasNode(ScanTaxonomy.Scenery)),
+        ("taxonomy.hazards",        false, it => it.HasNode(ScanTaxonomy.Hazards)),
+        ("taxonomy.buffzones",      false, it => it.HasNode(ScanTaxonomy.BuffZones)),
     };
 
     // Party/Enemies/Neutrals/Objects/Zones come from the WorldModel snapshot (units + reachable interactables +
-    // live area effects); Exits/Poi are area-wide local-map landmarks sourced from LocalMapModel.Markers instead
-    // (see GroupList / MarkerList). Zones covers ALL area effects (hazards + buff zones) so one cycle answers "what
-    // AoEs are near me" — the Detail says which.
-    private enum Group { Party, Enemies, Neutrals, Objects, Exits, Poi, Zones }
+    // live area effects). Zones covers ALL area effects (hazards + buff zones) so one cycle answers "what AoEs are
+    // near me" — the Detail says which. (Landmarks are NOT a review group — they live only in the category browse.)
+    private enum Group { Party, Enemies, Neutrals, Objects, Zones }
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
@@ -75,11 +88,6 @@ internal static class Scanner
     internal static void ReviewEnemies(bool back) => Safe(() => Review(Group.Enemies, back ? -1 : 1));
     internal static void ReviewNeutrals(bool back) => Safe(() => Review(Group.Neutrals, back ? -1 : 1));
     internal static void ReviewObjects(bool back) => Safe(() => Review(Group.Objects, back ? -1 : 1));
-    // Area-wide landmark cycles (V / B, Shift reverses) — the coupled, reversible, cursor-relative twin of
-    // LandmarkNav's raw [ / ] ring: they sort from the cursor, land as the review selection, and Home/Slash plants
-    // the cursor on them (see the marker source branch in GroupList).
-    internal static void ReviewExits(bool back) => Safe(() => Review(Group.Exits, back ? -1 : 1));
-    internal static void ReviewPoi(bool back) => Safe(() => Review(Group.Poi, back ? -1 : 1));
     // Cycle the live area effects (hazards + buff zones) nearest the cursor — the AoE-awareness cycle for combat.
     internal static void ReviewZones(bool back) => Safe(() => Review(Group.Zones, back ? -1 : 1));
     internal static void InteractSelected() => Safe(() =>
@@ -94,7 +102,7 @@ internal static class Scanner
     internal static void ReadParty() => Safe(PartyReadout);
     // Re-speak the current selection from the live cursor origin (any group — unit, object, or landmark), so the
     // player can recover what they last cycled without stepping the list. Resolves through ResolveSelected (which
-    // is marker-aware), so it works after a V/B landmark cycle too; drops the "N of M" ordinal (contextual to a cycle).
+    // is marker-aware), so it works on a landmark (points-of-interest) selection too; drops the "N of M" ordinal.
     internal static void AnnounceSelection() => Safe(ReSpeakSelection);
     // Battlefield summary (C5): one aggregate sentence — enemy/ally counts, and in combat how many enemies the
     // acting unit can reach and how many threaten it, plus the nearest enemy's range. The whole-board glance a
@@ -112,11 +120,11 @@ internal static class Scanner
     private static void StepItem(int dir)
     {
         var anchor = Anchor();
-        if (anchor == null) { Speak("No character selected."); return; }
+        if (anchor == null) { Speak(Loc.T("status.no_selection")); return; }
         var refPos = ScanFrom();
 
         var list = CategoryList(_categoryIndex, refPos);
-        if (list.Count == 0) { _selectedKey = null; Speak(CategoryLabel + ", empty."); return; }
+        if (list.Count == 0) { _selectedKey = null; Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
 
         int idx = IndexOfSelected(list);
         idx = idx < 0 ? 0 : Wrap(idx + dir, list.Count);
@@ -126,12 +134,12 @@ internal static class Scanner
     private static void StepCategory(int dir)
     {
         var anchor = Anchor();
-        if (anchor == null) { Speak("No character selected."); return; }
+        if (anchor == null) { Speak(Loc.T("status.no_selection")); return; }
         var refPos = ScanFrom();
 
         _categoryIndex = Wrap(_categoryIndex + dir, Categories.Length);
         var list = CategoryList(_categoryIndex, refPos);
-        if (list.Count == 0) { _selectedKey = null; Speak(CategoryLabel + ", empty."); return; }
+        if (list.Count == 0) { _selectedKey = null; Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
 
         Select(list, 0, refPos, CategoryLabel + ", " + list.Count + ". ");
     }
@@ -139,11 +147,11 @@ internal static class Scanner
     private static void Review(Group group, int dir)
     {
         var anchor = Anchor();
-        if (anchor == null) { Speak("No character selected."); return; }
+        if (anchor == null) { Speak(Loc.T("status.no_selection")); return; }
         var refPos = ScanFrom();
 
         var list = GroupList(group, refPos);
-        if (list.Count == 0) { Speak(GroupLabel(group) + ", none in sight."); return; }
+        if (list.Count == 0) { Speak(Loc.T("scan.none_in_sight", new { label = GroupLabel(group) })); return; }
 
         int idx = IndexOfSelected(list);
         idx = idx < 0 ? (dir >= 0 ? 0 : list.Count - 1) : Wrap(idx + dir, list.Count);
@@ -152,20 +160,60 @@ internal static class Scanner
 
     // ---- actions on the selection ----
 
+    // I interacts with the review selection when it's an actionable object, and otherwise falls back to the object
+    // at the cursor — so it never dead-ends. Both branches drive the SAME in-game activation (ProxyMapObject.Interact
+    // → area-transition / variative / ClickMapObjectHandler), which is also exactly what the cursor's Enter fires.
     private static void Interact()
     {
-        var item = ResolveSelected();
-        if (item == null) { Speak("No item selected."); return; }
-        // Landmarks aren't reach-interactables — you travel TO them. Point the player at the coupling verbs
-        // rather than saying "can't interact", which reads as an error for a valid landmark.
-        if (item is ProxyMarker) { Speak(item.Name + ", landmark. Press Home to move the cursor there, then Backspace to walk."); return; }
-        var anchor = Anchor();
-        if (anchor == null) { Speak("No character selected."); return; }
+        var sel = ResolveSelected();
 
-        if (!Geo.SameArea(anchor.Position, item.Position)) { Speak("Can't reach " + item.Name + "."); return; }
+        // 1. Primary: the review selection, when it is an actionable interactable object (CanInteract is the game's
+        //    own gate — see ProxyMapObject). Distance-agnostic — you can act on a cycled object across the room —
+        //    so only a genuinely cross-area selection is refused.
+        if (sel != null && sel.CanInteract)
+        {
+            var anchor = Anchor();
+            if (anchor != null && !Geo.SameArea(anchor.Position, sel.Position))
+            { Speak(Loc.T("scan.cant_reach_area", new { name = sel.Name })); return; }
+            SpeakOutcome(sel.Interact(), sel.Name);
+            return;
+        }
 
-        if (item.Interact()) Speak("Interacting with " + item.Name + ".");
-        else Speak("Can't interact with " + item.Name + ".");
+        // 2. A landmark's only supported action is to TRAVEL to it — the game's local-map pin isn't clickable
+        //    (verified: no marker view handles a click; LocalMapVM.OnClick just walks the party to the point), so
+        //    I walks the party toward it rather than trying to "activate" it.
+        if (sel is ProxyMarker) { TravelTo(sel); return; }
+
+        // 3. Fallback: the nearest actionable object to the tile cursor (or, when the cursor is unplanted, to the
+        //    anchor unit) — the SAME object the cursor's Enter acts on. So I still activates the object you're
+        //    pointing at when the selection is a unit / area effect / non-actionable object / nothing.
+        var near = InteractableDescriber.InteractableAt(MapCursor.Node ?? Anchor()?.CurrentUnwalkableNode);
+        if (near != null) { var item = new ProxyMapObject(near); SpeakOutcome(item.Interact(), item.Name); return; }
+
+        Speak(Loc.T("scan.nothing_nearby"));
+    }
+
+    /// <summary>The shared interaction-outcome line — "Interacting with X." / "Can't interact with X." — spoken by
+    /// both the I key here and the cursor's Enter (<see cref="TileExplorer.InteractAtCursor"/>), so activation reads
+    /// identically however the object was reached.</summary>
+    private static void SpeakOutcome(bool ok, string name)
+        => Speak(Loc.T(ok ? "scan.interacting" : "scan.cant_interact", new { name }));
+
+    /// <summary>Walk the party toward a landmark — the only action a local-map pin supports. Off-mesh pins (far
+    /// exits, floating markers) would make the pathfinder drop a direct move, so it heads as far toward the pin as
+    /// continuous walkable floor allows (<see cref="Geo.SnapToWalkable"/>) and issues the game's own formation move.
+    /// Refused in combat (travelling across the area mid-fight makes no sense — mirrors the old landmark walk gate).</summary>
+    private static void TravelTo(ScanItem landmark)
+    {
+        if (Game.Instance?.Player?.IsInCombat == true) { Speak(Loc.T("travel.combat")); return; }
+        var self = Anchor();
+        if (self == null) { Speak(Loc.T("status.no_selection")); return; }
+
+        var from = Geo.Live(self);
+        var dest = Geo.SnapToWalkable(landmark.Position, from);
+        if (Geo.Distance(from, dest) < 1.5f) { Speak(Loc.T("landmark.cant_head")); return; }
+        UnitCommandsRunner.MoveSelectedUnitsToPoint(dest);
+        Speak(Loc.T("landmark.walking_to", new { dest = landmark.Name }));
     }
 
     /// <summary>Re-speak the resolved selection (any group) from the current scan origin — the O key. While aiming
@@ -174,7 +222,7 @@ internal static class Scanner
     private static void ReSpeakSelection()
     {
         var item = ResolveSelected();
-        if (item == null) { Speak("No selection."); return; }
+        if (item == null) { Speak(Loc.T("scan.no_selection")); return; }
         var line = item.Describe(ScanFrom());
         var pred = Targeting.PredictLine(item, verbose: true);
         if (!string.IsNullOrEmpty(pred)) line += ". " + pred;
@@ -187,7 +235,7 @@ internal static class Scanner
     private static void PlantCursorOnSelection()
     {
         var item = ResolveSelected();
-        if (item == null) { Speak("No selection to plant the cursor on."); return; }
+        if (item == null) { Speak(Loc.T("scan.no_selection_plant")); return; }
         TileExplorer.PlantOn(item.Position);
     }
 
@@ -211,14 +259,14 @@ internal static class Scanner
                 parts.Add(Geo.RegionWord(fx, fz));
             }
         }
-        Speak(parts.Count > 0 ? string.Join(", ", parts) : "Unknown location.");
+        Speak(parts.Count > 0 ? string.Join(", ", parts) : Loc.T("where.unknown"));
     }
 
     private static void PartyReadout()
     {
         var player = Game.Instance?.Player;
         var members = player?.PartyAndPets;
-        if (members == null || members.Count == 0) { Speak("No party."); return; }
+        if (members == null || members.Count == 0) { Speak(Loc.T("scan.no_party")); return; }
 
         var reference = player.MainCharacterEntity;
         var refPos = reference != null ? reference.Position : members[0].Position;
@@ -227,9 +275,14 @@ internal static class Scanner
         foreach (var member in members)
         {
             if (member == null) continue;
-            parts.Add(member.CharacterName + ", " + InteractableDescriber.DirectionAndDistance(refPos, member.Position));
+            // Tag a downed/dead companion so the roster doesn't read them as a healthy member — the Party review cycle
+            // (comma) now skips the dead entirely, but this roster still lists everyone, so it must say who is down.
+            var line = member.CharacterName;
+            if (member.LifeState.IsDead) line += ", dead";
+            else if (!member.LifeState.IsConscious) line += ", unconscious";
+            parts.Add(line + ", " + InteractableDescriber.DirectionAndDistance(refPos, member.Position));
         }
-        Speak("Party: " + string.Join("; ", parts));
+        Speak(Loc.T("scan.party", new { list = string.Join("; ", parts) }));
     }
 
     // Battlefield summary (C5): counts + combat reach/threat vs the acting unit, in one sentence. Enemies must be
@@ -266,18 +319,18 @@ internal static class Scanner
             }
         }
 
-        if (enemies == 0 && allies == 0) { Speak("No one in sight."); return; }
+        if (enemies == 0 && allies == 0) { Speak(Loc.T("scan.no_one")); return; }
 
         var sb = new System.Text.StringBuilder();
-        sb.Append(enemies).Append(enemies == 1 ? " enemy" : " enemies");
+        sb.Append(Loc.T(enemies == 1 ? "scan.sum_enemy_one" : "scan.sum_enemies", new { count = enemies }));
         if (combat && enemies > 0)
         {
-            sb.Append(", ").Append(inRange).Append(" in range");
-            if (threats > 0) sb.Append(", ").Append(threats).Append(" threatening you");
+            sb.Append(", ").Append(Loc.T("scan.sum_in_range", new { count = inRange }));
+            if (threats > 0) sb.Append(", ").Append(Loc.T("scan.sum_threatening", new { count = threats }));
         }
-        sb.Append(". ").Append(allies).Append(allies == 1 ? " ally" : " allies").Append('.');
+        sb.Append(". ").Append(Loc.T(allies == 1 ? "scan.sum_ally_one" : "scan.sum_allies", new { count = allies })).Append('.');
         if (haveNearest)
-            sb.Append(" Nearest enemy ").Append(nearestCells).Append(" cells.");
+            sb.Append(' ').Append(Loc.T("scan.sum_nearest", new { cells = nearestCells }));
         Speak(sb.ToString());
     }
 
@@ -285,11 +338,16 @@ internal static class Scanner
 
     private static List<ScanItem> CategoryList(int categoryIndex, Vector3 refPos)
     {
-        var pred = Categories[categoryIndex].Pred;
+        var cat = Categories[categoryIndex];
+        // The points-of-interest category is area-wide local-map pins, not WorldModel entities (see MarkerList).
+        if (cat.Marker) return MarkerList(refPos);
+
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Items)
         {
-            if (it.IsVisible && pred(it)) list.Add(it);
+            // !IsDead keeps corpses out of the party/enemy/neutral categories too (the unit categories); the object
+            // categories are unaffected (a map object is never dead). Corpses stay under the tile cursor, labelled dead.
+            if (it.IsVisible && !it.IsDead && cat.Pred(it)) list.Add(it);
         }
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
@@ -297,36 +355,33 @@ internal static class Scanner
 
     private static List<ScanItem> GroupList(Group group, Vector3 refPos)
     {
-        if (group == Group.Exits || group == Group.Poi) return MarkerList(group, refPos);
-
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Items)
         {
-            if (it.IsVisible && it.CurrentlySeen && InGroup(it, group)) list.Add(it);
+            // !IsDead drops corpses from the party/enemy/neutral review cycles (comma/period/N/M) — you don't cycle to
+            // the dead. Only affects units (objects/zones report IsDead false), and matches Summarize's count filter.
+            if (it.IsVisible && it.CurrentlySeen && !it.IsDead && InGroup(it, group)) list.Add(it);
         }
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
     }
 
-    // Area-wide local-map landmarks (the same set LandmarkNav reads), wrapped as ScanItems so the Exits/Poi review
-    // groups behave like the unit/object cycles. Sourced from LocalMapModel.Markers, NOT the WorldModel snapshot.
-    // Do NOT filter on marker.IsVisible() — it's a perception check that hides ordinary exits (see
-    // LandmarkNav.BuildList). Exits group = Exit markers; Poi group = Poi/Loot/objective/important (creature/Unit
-    // markers are excluded — they belong to the party/enemies/neutrals cycles).
-    private static List<ScanItem> MarkerList(Group group, Vector3 refPos)
+    // The "points of interest" category: area-wide local-map landmark pins (objective / POI / important / loot),
+    // wrapped as ScanItems and sourced from LocalMapModel.Markers, NOT the WorldModel snapshot. Do NOT filter on
+    // marker.IsVisible() — it's a perception check that hides ordinary markers. Exit markers are deliberately
+    // excluded: area exits are surfaced as their real (activatable) world objects in the Exits category. Creature/Unit
+    // markers are excluded too — they belong to the party/enemies/neutrals cycles.
+    private static List<ScanItem> MarkerList(Vector3 refPos)
     {
         var list = new List<ScanItem>();
         foreach (var m in LocalMapModel.Markers)
         {
             if (m == null) continue;
             var type = m.GetMarkerType();
-            if (type == LocalMapMarkType.Invalid || type == LocalMapMarkType.PlayerCharacter) continue;
             if (!LocalMapModel.IsInCurrentArea(m.GetPosition())) continue;
-            bool match = group == Group.Exits
-                ? type == LocalMapMarkType.Exit
-                : type == LocalMapMarkType.Poi || type == LocalMapMarkType.Loot
-                  || type == LocalMapMarkType.DestinationMark || type == LocalMapMarkType.VeryImportantThing;
-            if (match) list.Add(new ProxyMarker(m));
+            if (type == LocalMapMarkType.Poi || type == LocalMapMarkType.Loot
+                || type == LocalMapMarkType.DestinationMark || type == LocalMapMarkType.VeryImportantThing)
+                list.Add(new ProxyMarker(m));
         }
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
@@ -341,8 +396,14 @@ internal static class Scanner
             case Group.Neutrals: return it.Primary == ScanTaxonomy.UnitsNeutrals;
             case Group.Zones: return it.HasNode(ScanTaxonomy.Hazards) || it.HasNode(ScanTaxonomy.BuffZones);
             default:
+                // Objects (M): EVERY interactable map object, so any object is reachable by cycle + I — not just
+                // containers/doors/exits/search points. Mechanisms (levers/consoles/buttons) and traps (disarm)
+                // carry real interactions too; they used to be reachable only via the cursor's Enter or the
+                // Ctrl+PageUp/Down category browse, which is what made activation feel inconsistent. Scenery (an
+                // object with no interaction) is still excluded — there is nothing to activate.
                 return it.HasNode(ScanTaxonomy.Containers) || it.HasNode(ScanTaxonomy.Doors)
-                    || it.HasNode(ScanTaxonomy.Exits) || it.HasNode(ScanTaxonomy.SearchPoints);
+                    || it.HasNode(ScanTaxonomy.Exits) || it.HasNode(ScanTaxonomy.SearchPoints)
+                    || it.HasNode(ScanTaxonomy.Mechanisms) || it.HasNode(ScanTaxonomy.Traps);
         }
     }
 
@@ -352,7 +413,7 @@ internal static class Scanner
     {
         var item = list[idx];
         _selectedKey = item.Key;
-        var line = item.Describe(refPos) + ", " + (idx + 1) + " of " + list.Count;
+        var line = item.Describe(refPos) + ", " + Loc.T("nav.position", new { index = idx + 1, count = list.Count });
         if (!string.IsNullOrEmpty(prefix)) line = prefix + line;
         // While aiming an attack, cycling doubles as picking a target: append the terse hit prediction (B3/B4).
         var pred = Targeting.PredictLine(item, verbose: false);
@@ -373,8 +434,8 @@ internal static class Scanner
     private static ScanItem ResolveSelected()
     {
         if (_selectedKey == null) return null;
-        // Landmark selections (Exits/Poi groups) aren't in the WorldModel registry — re-wrap the live marker so
-        // Home-plant and the O re-announce keep working on them; null once it leaves the current area's set.
+        // Landmark selections (the points-of-interest category) aren't in the WorldModel registry — re-wrap the live
+        // marker so Home-plant and the O re-announce keep working on them; null once it leaves the current area's set.
         if (_selectedKey is ILocalMapMarker marker)
             return LocalMapModel.Markers.Contains(marker) ? new ProxyMarker(marker) : null;
         // Everything else keys on its backing entity — the persistent registry re-finds the SAME stable proxy in
@@ -404,19 +465,17 @@ internal static class Scanner
         return a != null ? Geo.Live(a) : Vector3.zero;
     }
 
-    private static string CategoryLabel => Categories[_categoryIndex].Label;
+    private static string CategoryLabel => Loc.T(Categories[_categoryIndex].Key);
 
     private static string GroupLabel(Group group)
     {
         switch (group)
         {
-            case Group.Party: return "Party";
-            case Group.Enemies: return "Enemies";
-            case Group.Neutrals: return "Neutrals";
-            case Group.Exits: return "Exits";
-            case Group.Poi: return "Points of interest";
-            case Group.Zones: return "Zones";
-            default: return "Objects";
+            case Group.Party: return Loc.T("taxonomy.units.party");
+            case Group.Enemies: return Loc.T("taxonomy.units.enemies");
+            case Group.Neutrals: return Loc.T("taxonomy.units.neutrals");
+            case Group.Zones: return Loc.T("taxonomy.zones");
+            default: return Loc.T("review.others");
         }
     }
 

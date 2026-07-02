@@ -44,12 +44,28 @@ internal abstract class ScanItem
     /// <summary>Interact with this thing (loot/open/transition). Base: not interactable.</summary>
     public virtual bool Interact() => false;
 
+    /// <summary>Whether this thing is an actionable interactable right now — the game's own availability gate. Base:
+    /// no (units, area effects, landmarks). Only <see cref="ProxyMapObject"/> overrides, mirroring the same
+    /// HasAvailableInteractions / area-transition gate the cursor's Enter uses (see
+    /// <see cref="RTAccess.Accessibility.InteractableDescriber.InteractableAt"/>), so the scanner's I key and the
+    /// cursor's Enter agree on which objects can be acted on. Lets the scanner interact with the review selection
+    /// only when it is actionable and otherwise fall back to the object at the cursor, without a type check.</summary>
+    public virtual bool CanInteract => false;
+
     /// <summary>Whether this thing IS a unit — the cheap predicate the cursor-target resolver filters on.</summary>
     public virtual bool IsUnit => false;
 
     /// <summary>The unit this thing IS (for the game's unit-targeted ability click, which wants the unit's
     /// <c>GameObject</c>); null for anything that isn't a unit — targeting then falls back to the world point.</summary>
     public virtual BaseUnitEntity TargetUnit => null;
+
+    /// <summary>Whether this thing is a DEAD unit (a corpse). Corpses are dropped from the party/enemy/neutral review
+    /// cycles and the unit category browse (you don't cycle to the dead — the game's own enemy navigation gates the
+    /// same <c>!LifeState.IsDead</c>), but they STAY in the registry: the tile cursor still reads a corpse (labelled
+    /// "dead") and the deliberate cursor/selection commit still resolves it, so the game can still validate the rare
+    /// corpse-targeting ability. Downed-but-unconscious (revivable) units are NOT dead. Non-units and living units are
+    /// never dead; overridden by <c>ProxyUnit</c>.</summary>
+    public virtual bool IsDead => false;
 
     public bool HasNode(string key)
     {

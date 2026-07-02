@@ -88,6 +88,11 @@ internal static class InteractableDescriber
         {
             sb.Append(unit.CharacterName);
             Append(sb, unit.Faction != null && unit.Faction.IsPlayerEnemy ? "enemy" : "ally");
+            // The tile cursor sits ON the tile, so a corpse must be READ (not hidden) — but tagged so it doesn't read
+            // as a live enemy. GetUnit() returns corpses (they stay in the grid's awake set until destroyed), and the
+            // scanner cycles now skip the dead, so the tile cursor is the one place a corpse is still announced.
+            if (unit.LifeState.IsDead) Append(sb, "dead");
+            else if (!unit.LifeState.IsConscious) Append(sb, "unconscious");
         }
         if (TryNameMapObject(node, out var objectName, out var objectVerb))
         {

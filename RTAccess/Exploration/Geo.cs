@@ -48,7 +48,7 @@ internal static class Geo
     }
 
     /// <summary>Is this point on walkable ground? — its nearest grid node exists and lies within ~2 m on the
-    /// XZ plane (the same tolerance LandmarkNav uses to decide a point is "really on-mesh").</summary>
+    /// XZ plane (the same tolerance <see cref="SnapToWalkable"/> uses to decide a point is "really on-mesh").</summary>
     public static bool OnNavmesh(Vector3 p)
     {
         var node = p.GetNearestNodeXZ();
@@ -56,6 +56,32 @@ internal static class Geo
         var d = node.Vector3Position - p;
         d.y = 0f;
         return d.sqrMagnitude <= 4f;
+    }
+
+    /// <summary>
+    /// March from <paramref name="from"/> toward <paramref name="target"/> ~2 m at a time and return the farthest
+    /// point still on the navmesh (its nearest node within ~2 m), stopping at the first gap. Local-map landmark pins
+    /// sit off the navmesh (far exits, floating markers), so targeting one directly makes the pathfinder report "no
+    /// node near the end point" and the move is silently dropped; this instead heads as far toward the pin as
+    /// continuous walkable floor allows. Returns <paramref name="from"/> when no floor leads toward the target
+    /// (callers treat a near-zero advance as blocked). Used by the scanner's landmark travel.
+    /// </summary>
+    public static Vector3 SnapToWalkable(Vector3 target, Vector3 from)
+    {
+        float dist = Vector3.Distance(from, target);
+        if (dist < 0.1f) return from;
+        int steps = Mathf.Clamp(Mathf.RoundToInt(dist / 2f), 1, 200);
+        Vector3 best = from;
+        for (int i = 1; i <= steps; i++)
+        {
+            var p = Vector3.Lerp(from, target, (float)i / steps);
+            var node = p.GetNearestNodeXZ();
+            if (node == null) break;                          // off-graph here — navmesh ended
+            var d = node.Vector3Position - p; d.y = 0f;
+            if (d.sqrMagnitude > 4f) break;                   // nearest floor is >2 m away — not really on-mesh
+            best = p;                                         // still on walkable floor; keep advancing
+        }
+        return best;
     }
 
     /// <summary>A 3x3 grid over the area bounds -> "centre" or a compass word (+Z = north, +X = east).
