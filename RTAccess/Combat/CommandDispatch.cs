@@ -18,7 +18,7 @@ namespace RTAccess.Combat;
 /// All paths are the game's OWN command paths, chosen because they survive mouse mode (the
 /// <c>!IsControllerMouse</c> gate on <c>SurfaceMainInputLayer</c> only touches the interactable input LAYER, not
 /// pointer-controller calls — see [[rt-mouse-mode-engine-gate]]) and are verified to execute end-to-end: a
-/// dispatched pistol shot dropped the target's HP and was narrated by the combat log (<see cref="Accessibility.CombatLogReader"/>).
+/// dispatched pistol shot dropped the target's HP and was narrated by the combat log (<see cref="Accessibility.LogTap"/>).
 ///
 /// Abilities go through <c>ClickWithSelectedAbilityHandler</c> (<c>SetAbility</c> → <c>OnClick</c>) — byte-for-byte
 /// the mouse-click path, so ALL of the game's range/LOS/target-restriction validation runs and refusals surface as
