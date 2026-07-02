@@ -4,22 +4,24 @@ using Kingmaker.PubSubSystem.Core;
 using UnityEngine;
 using UnityModManagerNet;
 using RTAccess.Speech;
-using RTAccess.Diagnostics;
 using RTAccess.Accessibility;
 
 namespace RTAccess;
 
 public static class Main {
     internal static Harmony HarmonyInstance;
-    internal static UnityModManager.ModEntry.ModLogger Log;
+    /// <summary>Mod logger — forwards to UMM's ModLogger AND mirrors to rtaccess_log.txt (see <see cref="ModLog"/>).</summary>
+    internal static ModLog Log;
     /// <summary>The mod's install directory (UMM modEntry.Path) — root for bundled assets (locale JSON, …).</summary>
     internal static string ModDir;
     // Engage focus mode once, on the first frame the game's keyboard exists (it doesn't yet at Load).
     private static bool _bootFocusPending = true;
 
     public static bool Load(UnityModManager.ModEntry modEntry) {
-        Log = modEntry.Logger;
         ModDir = modEntry.Path;
+        // Wrap UMM's logger so everything we log also lands in rtaccess_log.txt (there is no UnityModManager.log
+        // on disk here). Set up before the try below so an early init crash is captured too.
+        Log = new ModLog(modEntry.Logger, modEntry.Path);
         try {
             Logs.Init(modEntry.Path); // fresh logs each game launch
             Speaker.Initialize(modEntry);
@@ -55,6 +57,10 @@ public static class Main {
             // Voice interaction outcomes the player can't see — currently lock-pick success/fail (an interaction runs
             // a skill check with no audible result of its own). Persistent session subscriber; unsubscribed below.
             EventBus.Subscribe(InteractionEvents.Instance);
+            // Voice conviction (soul-mark) shifts — the one dialogue notification the game never logs, so it
+            // can't ride LogTap like the rest; everything else in the message log is voiced by LogTap (the
+            // universal AddMessage tap) into CombatEvents' queue. Persistent subscriber; unsubscribed below.
+            EventBus.Subscribe(ConvictionEvents.Instance);
             // Build the review-buffer set (Alt+arrows query a unit's live HP/AP/defenses/buffs without losing
             // UI focus); resolvers read the live selected unit / combat target each refresh.
             Buffers.BufferManager.Instance.RegisterDefaults();
@@ -71,7 +77,22 @@ public static class Main {
 
         modEntry.OnUpdate = OnUpdate;
         modEntry.OnUnload = OnUnload;
+        modEntry.OnToggle = OnToggle;
         Log.Log("RTAccess loaded. Speech backend: " + Speaker.ActiveBackend);
+        return true;
+    }
+
+    // Enable/disable from the UMM UI. Disabling must leave the player with a VANILLA keyboard: drop focus mode
+    // (so the KeyboardArbitration prefix stops claiming chords) and hand the game's service-window keys back to
+    // their bare letters (GameKeybinds.Revert un-does the Ctrl+letter rebind it persisted). Re-enabling re-engages
+    // focus mode; OnUpdate re-applies the rebind (Revert cleared GameKeybinds' applied-guard).
+    private static bool OnToggle(UnityModManager.ModEntry modEntry, bool enabled) {
+        try {
+            FocusMode.Set(enabled);
+            if (!enabled) Input.GameKeybinds.Revert();
+        } catch (Exception e) {
+            Log.Error("OnToggle failed: " + e);
+        }
         return true;
     }
 
@@ -112,25 +133,43 @@ public static class Main {
         Exploration.Targeting.Tick();
 
         // ---- Parallel accessible-UI framework (Phase 2) ----
-        // Engage focus mode once the keyboard exists (suppresses the game's own KeyboardAccess hotkeys so
-        // our navigator owns the keys), and re-assert it across scene reloads.
+        // Engage focus mode once the keyboard exists. Focus mode no longer blanket-mutes the game keyboard;
+        // the KeyboardArbitration patch suppresses only the chords the mod claims each frame (see FocusMode /
+        // RTAccess.Accessibility.KeyboardArbitration). The patch targets the KeyboardAccess method, so it
+        // automatically covers a fresh KeyboardAccess after a scene reload — no re-assert tick needed.
         if (_bootFocusPending && KeyboardReady()) {
             _bootFocusPending = false;
             FocusMode.Set(true);
         }
-        FocusMode.Tick();
+
+        // Vacate the game's bare-letter service-window keys onto Ctrl+letter (C/I/J/M/L/Y/V/B/N), via the game's
+        // own keybinding-settings path, so the mod's exploration verbs can own the bare letters and the game's
+        // window/tutorial hints auto-update. Idempotent + self-guarded until settings/keyboard are ready. See
+        // RTAccess.Input.GameKeybinds and docs/input-system-architecture-review.md.
+        Input.GameKeybinds.ApplyWindowOpenerRebinds();
         Input.InputManager.Tick();        // poll our input → navigator (UI) / handlers
         Screens.ScreenManager.Tick();     // resolve the screen stack from RootUiContext + attach the navigator
         UI.Navigation.TickTypeahead();    // typed letters → type-ahead search (after dispatch)
 
-        // Service-window keys (I/C/J/M/L/Y/V/B) are handled by the GAME's own KeyboardAccess in console mode —
-        // we don't open them ourselves (a duplicate open toggled the window shut). We only announce the real
-        // open via the ServiceWindowAnnounce patch. See the rt-radial-menus memory.
+        // Announce the primary selection when it changes from a source the keyboard paths don't already speak
+        // (mouse click, HUD portrait, or the game re-selecting on its own). Deduped against the explicit selectors
+        // (which set the same guard) and silenced in turn-based combat. See RTAccess.Accessibility.SelectionAnnouncer.
+        SelectionAnnouncer.Tick();
 
-        // Shift+A/D + Alt+1..6 — switch the selected character in console mode (the keyboard equivalent of the
-        // gamepad L2 party selector). The game's own select keys live in the PC HUD, which is inactive in
-        // console mode, so this is the sole handler — no double-fire. Gated to console mode.
-        PartyHotkeys.Update();
+        // Announce a weapon-set swap (index + weapons now in hand). The game's ChangeWeaponSet (now on Ctrl+X after
+        // the P/X/R relocation) gives no audio; this polls the controlled unit's active set and speaks the change.
+        WeaponSetAnnouncer.Tick();
+
+        // Service windows currently open via the mod's own HUD nav buttons (InGameScreen WindowButtons →
+        // HandleOpenWindowOfType); ServiceWindowAnnounce voices the open. Their bare game keys (C/I/J/M/L/Y/V/B/N)
+        // are muted while FocusMode holds KeyboardAccess.Disabled — the GameKeybinds rebind above moves them to
+        // Ctrl+letter so they come back (and free the bare letters for exploration) once the blanket mute is
+        // replaced by per-chord arbitration.
+
+        // Party member-select (Shift+A/D + Alt+1..6) is now REGISTERED in the Exploration input category and
+        // driven by InputManager.Tick above — no direct poll here. Registering it (rather than raw-polling) is
+        // what lets the keyboard-arbitration patch see the claim and suppress the game's own Prev/NextCharacter
+        // + SelectCharacter on the same chords, so they don't double-fire. See RTAccess.Accessibility.PartyHotkeys.
 
         // The scanner / review cursor (the self-built replacement for the engine's mouse-mode-dead interactable
         // ring) is now registered in the Exploration input category and driven by InputManager.Tick above — no
@@ -140,13 +179,8 @@ public static class Main {
         // location, ' / Y inspect the cursor / the selection, P reads the party. See RTAccess.Exploration.Scanner /
         // RTAccess.Input.InputBindings.
 
-        // [ / ] — cycle whole-area local-map landmarks (exits/POI/objective); \ — walk the party to the
-        // selected one. Map-relative directions. Gated to console mode + exploration (see LandmarkNav).
-        LandmarkNav.Update();
-
-        // Ctrl+P — re-announce the current character-creation phase (name + position + progress). Gated to
-        // CharGen being open; phase changes auto-announce (see CharGenAnnounce).
-        CharGenAnnounce.Update();
+        // Landmark cycling ([ / ] / \) and the CharGen phase re-announce (Ctrl+P) are now REGISTERED actions
+        // driven by InputManager.Tick above — no direct poll here. See RTAccess.Input.InputBindings.
 
         // The tile explorer (the always-active virtual grid cursor) is registered in the Exploration input category
         // and driven by InputManager.Tick above — no direct poll here, and no toggle. Arrow keys step it tile by
@@ -154,34 +188,8 @@ public static class Main {
         // Backspace issues the guarded move-to, and Enter / KeypadEnter interact with the nearest interactable to the
         // cursor. See RTAccess.Accessibility.TileExplorer / RTAccess.Input.InputBindings.
 
-        // Ctrl+I — read the full tooltip / details of the focused element (item/ability description, etc.).
-        // Controller trigger is still TBD.
-        if ((UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl)) && UnityEngine.Input.GetKeyDown(KeyCode.I))
-            SetFocusedPatch.ReadDetailsOfCurrent();
-
-        // F6 — toggle the game between console (gamepad) UI mode and mouse mode. The mod no longer forces
-        // console mode: the game boots in mouse mode and we drive our own parallel tree; F6 flips the live
-        // mode for A/B testing vs the game's console focus ring (see ConsoleMode).
-        if (UnityEngine.Input.GetKeyDown(KeyCode.F6)) ConsoleMode.Toggle();
-
-        // F7 — re-read the currently focused element.
-        if (UnityEngine.Input.GetKeyDown(KeyCode.F7)) SetFocusedPatch.RereadCurrent();
-
-        // F9 / F10 — diagnostics dumps (Rewired config / keybindings). Key-driven, so interrupt
-        // ([[rt-interrupt-speech-rule]]).
-        if (UnityEngine.Input.GetKeyDown(KeyCode.F9)) {
-            RewiredDump.Dump(modEntry.Path);
-            Speaker.Speak("Rewired config dumped.", interrupt: true);
-        }
-        if (UnityEngine.Input.GetKeyDown(KeyCode.F10)) {
-            KeybindingsDump.Dump(modEntry.Path);
-            Speaker.Speak("Keybindings dumped.", interrupt: true);
-        }
-
-        // F12 — speech self-test (moved off F8, which is the game's QuickLoad).
-        if (UnityEngine.Input.GetKeyDown(KeyCode.F12)) {
-            Speaker.Speak("RTAccess speech test. Backend is " + Speaker.ActiveBackend + ".", interrupt: true);
-        }
+        // Diagnostics keys (F9 Rewired dump / F10 keybindings dump / F12 speech self-test) are now REGISTERED
+        // Global actions driven by InputManager.Tick above — no direct poll here. See RTAccess.Input.InputBindings.
     }
 
     private static bool OnUnload(UnityModManager.ModEntry modEntry) {
@@ -190,6 +198,7 @@ public static class Main {
         EventBus.Unsubscribe(CombatEvents.Instance);
         EventBus.Unsubscribe(WarningReader.Instance);
         EventBus.Unsubscribe(InteractionEvents.Instance);
+        EventBus.Unsubscribe(ConvictionEvents.Instance);
         Speaker.Stop();
         Speaker.Shutdown();
         HarmonyInstance?.UnpatchAll(HarmonyInstance.Id);

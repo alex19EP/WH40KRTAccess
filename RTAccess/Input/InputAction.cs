@@ -82,6 +82,15 @@ namespace RTAccess.Input
 
         public InputAction Grouped(string group) { Group = group; return this; }
 
+        /// <summary>A context-split chord: when NOTHING is focused, this action does not CLAIM its chord, so the
+        /// game's binding on the same key is left alone (see <see cref="InputManager.ClaimsChord"/>). Used for
+        /// Space — it reads the focused item when the HUD is focused, but yields to the game's Pause / End-turn
+        /// when the player is out in the world with nothing focused (the mod still offers F1 as an always-on
+        /// tooltip key). Only affects arbitration; the mod's own dispatch already no-ops these when unfocused.</summary>
+        public bool YieldToGameWhenUnfocused { get; private set; }
+
+        public InputAction YieldsWhenUnfocused() { YieldToGameWhenUnfocused = true; return this; }
+
         internal void InvokePerformed() => Performed?.Invoke();
     }
 }

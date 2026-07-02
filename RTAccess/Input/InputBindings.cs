@@ -37,6 +37,38 @@ namespace RTAccess.Input
             InputManager.Register("buffer.line_next", "Next review line", InputCategory.Global,
                 () => { if (InAGame()) RTAccess.Buffers.BufferControls.NextItem(); }).AddBinding(KeyCode.DownArrow, alt: true).Repeating();
 
+            // L — open the message-log review (a child overlay: channel tabs + newest-first history, with
+            // per-line tooltip / glossary drill-in). Global + self-gated so it opens in surface/space and over
+            // windows/dialogue; bare L is free — GameKeybinds moved the game's Encyclopedia onto Ctrl+L.
+            InputManager.Register("log.review", "Open the message log", InputCategory.Global,
+                () => { if (InAGame()) RTAccess.Screens.LogReviewScreen.Open(); }).AddBinding(KeyCode.L);
+
+            // Ctrl+P — re-announce the current character-creation phase (name + position + progress). Global +
+            // self-gated (CharGenAnnounce.ReAnnounce no-ops unless CharGen is open); registered rather than
+            // raw-polled so it rides the one category/arbitration path. See RTAccess.Accessibility.CharGenAnnounce.
+            InputManager.Register("chargen.reannounce", "Re-announce character-creation phase", InputCategory.Global,
+                Ax.CharGenAnnounce.ReAnnounce).AddBinding(KeyCode.P, ctrl: true);
+
+            // F12 speech self-test (was a bare UnityEngine.Input poll in Main.OnUpdate). Global so it works
+            // anywhere; a useful first-run "is my TTS alive" check for end users, and bare F12 is free in the game.
+            InputManager.Register("diag.speech_test", "Speech self-test", InputCategory.Global, () =>
+                Tts.Speak("RTAccess speech test. Backend is " + RTAccess.Speech.Speaker.ActiveBackend + ".", interrupt: true))
+                .AddBinding(KeyCode.F12);
+#if DEBUG
+            // Dev-only config dumps (F9 Rewired, F10 keybindings). Debug-gated so a Release build neither ships the
+            // dev tooling nor permanently claims F9/F10 from the game. Were bare polls in Main.OnUpdate.
+            InputManager.Register("diag.dump_rewired", "Dump Rewired config", InputCategory.Global, () =>
+            {
+                RTAccess.Diagnostics.RewiredDump.Dump(RTAccess.Main.ModDir);
+                Tts.Speak("Rewired config dumped.", interrupt: true);
+            }).AddBinding(KeyCode.F9);
+            InputManager.Register("diag.dump_keybinds", "Dump keybindings", InputCategory.Global, () =>
+            {
+                RTAccess.Diagnostics.KeybindingsDump.Dump(RTAccess.Main.ModDir);
+                Tts.Speak("Keybindings dumped.", interrupt: true);
+            }).AddBinding(KeyCode.F10);
+#endif
+
             // ---- UI: screen/menu navigation (dispatched into the active navigator) ----
             InputManager.Register("ui.up", "Navigate up", InputCategory.UI).AddBinding(KeyCode.UpArrow).Repeating();
             InputManager.Register("ui.down", "Navigate down", InputCategory.UI).AddBinding(KeyCode.DownArrow).Repeating();
@@ -47,9 +79,22 @@ namespace RTAccess.Input
             InputManager.Register("ui.activate", "Activate control", InputCategory.UI)
                 .AddBinding(KeyCode.Return).AddBinding(KeyCode.KeypadEnter);
             InputManager.Register("ui.secondary", "Secondary action", InputCategory.UI).AddBinding(KeyCode.Backspace);
-            InputManager.Register("ui.back", "Back / close", InputCategory.UI).AddBinding(KeyCode.Escape);
-            InputManager.Register("ui.tooltip", "Read tooltip", InputCategory.UI)
-                .AddBinding(KeyCode.Space).AddBinding(KeyCode.F1);
+            // Escape closes the focused mod screen (window / dialogue / Esc menu / settings) via its Back action —
+            // but a context-split (YieldsWhenUnfocused): out on the bare HUD with nothing focused the mod has
+            // nothing to back out of, so it yields Escape to the game's own EscHotkeyManager. That opens the game's
+            // pause menu (RequestEscMenu) OR closes the topmost native window on the game's back-stack — and the
+            // mod's EscMenuScreen then wraps the opened menu (announces "Game Menu", navigable). Without the yield,
+            // ui.back claims Escape every frame (InGameScreen always declares the UI category) but can't consume it
+            // on the HUD (no Back handler there), so Escape was a dead key — the pause menu was unreachable.
+            InputManager.Register("ui.back", "Back / close", InputCategory.UI).AddBinding(KeyCode.Escape).YieldsWhenUnfocused();
+            // F1 always reads the focused item's tooltip (a mod-owned, always-safe key). Space ALSO reads it
+            // when the HUD is focused, but is a context-split (YieldsWhenUnfocused): out in the world with
+            // nothing focused it yields to the game's Space (Pause / End-turn) instead of being eaten. F1 is
+            // deliberately NOT split — it stays claimed so it never triggers the game's ActionBar consumable
+            // slot 1 (also F1) by accident. Both route to the same tooltip read in the navigator.
+            InputManager.Register("ui.tooltip", "Read tooltip", InputCategory.UI).AddBinding(KeyCode.F1);
+            InputManager.Register("ui.tooltip.space", "Read tooltip (Space)", InputCategory.UI)
+                .AddBinding(KeyCode.Space).YieldsWhenUnfocused();
             InputManager.Register("ui.home", "Jump to first item", InputCategory.UI).AddBinding(KeyCode.Home);
             InputManager.Register("ui.end", "Jump to last item", InputCategory.UI).AddBinding(KeyCode.End);
 
@@ -84,18 +129,10 @@ namespace RTAccess.Input
                 () => Ex.Scanner.ReviewObjects(false)).AddBinding(KeyCode.M).Grouped("scanner");
             InputManager.Register("scan.review_objects_back", "Scanner: cycle objects (reverse)", InputCategory.Exploration,
                 () => Ex.Scanner.ReviewObjects(true)).AddBinding(KeyCode.M, shift: true).Grouped("scanner");
-            // Area-wide landmark cycles (the local-map markers): V = exits/transitions, B = points of interest
-            // (loot/objective/important). The coupled twin of LandmarkNav's raw [ / ] ring — reversible (Shift),
-            // cursor-relative, and Home/Slash-plantable. V/B are game service-window keys the mod suppresses under
-            // focus mode (same as the already-shipped M/Y), so this is the sole handler.
-            InputManager.Register("scan.review_exits", "Scanner: cycle exits", InputCategory.Exploration,
-                () => Ex.Scanner.ReviewExits(false)).AddBinding(KeyCode.V).Grouped("scanner");
-            InputManager.Register("scan.review_exits_back", "Scanner: cycle exits (reverse)", InputCategory.Exploration,
-                () => Ex.Scanner.ReviewExits(true)).AddBinding(KeyCode.V, shift: true).Grouped("scanner");
-            InputManager.Register("scan.review_poi", "Scanner: cycle points of interest", InputCategory.Exploration,
-                () => Ex.Scanner.ReviewPoi(false)).AddBinding(KeyCode.B).Grouped("scanner");
-            InputManager.Register("scan.review_poi_back", "Scanner: cycle points of interest (reverse)", InputCategory.Exploration,
-                () => Ex.Scanner.ReviewPoi(true)).AddBinding(KeyCode.B, shift: true).Grouped("scanner");
+            // (Landmarks — area exits and points of interest — are no longer a dedicated V/B cycle: exits appear as
+            // their real world objects in the Objects/Exits browse, and the marker-only pins live in the
+            // "Points of interest" category. Both are reached via the Ctrl+PageUp/Down category browse; I on a
+            // landmark walks the party toward it. V and B are therefore free.)
             // Z = cycle live area effects (hazards + buff zones) nearest the cursor — the AoE-awareness cycle for
             // turn-based combat (stepping one tile into a cloud is a real cost). Z is a free letter key (see the
             // PartyHotkeys keymap notes); Shift reverses like the other review cycles.
@@ -177,6 +214,25 @@ namespace RTAccess.Input
                 Ax.PartyHotkeys.Stop).AddBinding(KeyCode.G).Grouped("party");
             InputManager.Register("combat.status", "Read status (AP / MP / turn)", InputCategory.Exploration,
                 Ax.PartyHotkeys.CombatStatus).AddBinding(KeyCode.R).Grouped("party");
+            // Member selection — the keyboard L2-selector. Registered (not raw-polled) so the keyboard-arbitration
+            // patch claims these chords and the game's own Prev/NextCharacter (Shift+A/D) + SelectCharacter
+            // (Alt+1..6) on the same keys don't ALSO fire. See RTAccess.Accessibility.PartyHotkeys.
+            InputManager.Register("party.member_next", "Select next party member", InputCategory.Exploration,
+                Ax.PartyHotkeys.MemberNext).AddBinding(KeyCode.D, shift: true).Grouped("party");
+            InputManager.Register("party.member_prev", "Select previous party member", InputCategory.Exploration,
+                Ax.PartyHotkeys.MemberPrev).AddBinding(KeyCode.A, shift: true).Grouped("party");
+            for (int i = 0; i < 6; i++)
+            {
+                int slot = i; // capture per iteration
+                InputManager.Register("party.member_" + (i + 1), "Select party member " + (i + 1),
+                    InputCategory.Exploration, () => Ax.PartyHotkeys.SelectMember(slot))
+                    .AddBinding((KeyCode)((int)KeyCode.Alpha1 + i), alt: true).Grouped("party");
+            }
+            // K — read the RT resource / pressure gauges the Tab tree doesn't carry (momentum, veil,
+            // profit factor, boss HP, turn / Necron timers, objective counter). Read-only, self-filtering
+            // by each gauge's visibility. K is a confirmed-free letter (see PartyHotkeys keymap notes).
+            InputManager.Register("hud.gauges", "Read HUD gauges (momentum / veil / profit factor / timers)",
+                InputCategory.Exploration, Ax.HudGauges.ReadAll).AddBinding(KeyCode.K).Grouped("party");
         }
 
         // The review-buffer keys are Global (always polled), so their handlers stand down when not in a

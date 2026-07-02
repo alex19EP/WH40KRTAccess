@@ -13,42 +13,30 @@ namespace RTAccess.Accessibility;
 /// Keyboard party control while the in-game screen owns the world — the keyboard equivalents of HUD/gamepad party
 /// functions that our parallel UI tree leaves without a live handler.
 ///
-/// <para><see cref="Update"/> is the raw-polled member selector (the gamepad-hold L2 selector's function): the
-/// radial itself stays gamepad-only (per the user's decision), but the keyboard player gets the same outcome —
-/// pick the active character and hear their name. It reuses the game's own documented combos (inactive in our tree,
-/// like the I/C/J/M window keys): <c>Shift+D</c> / <c>Shift+A</c> = next / previous, <c>Alt+1..6</c> = select that
-/// party slot directly. <c>Alt+digit</c> does not collide with console nav's <c>Alt+Arrow</c> mapping. Selection
-/// goes through <c>Game.Instance.SelectionCharacter.SetSelected</c>.</para>
-///
-/// <para>The remaining handlers are REGISTERED <see cref="RTAccess.Input.InputCategory.Exploration"/> actions (see
-/// <see cref="RTAccess.Input.InputBindings"/>), not raw-polled: <see cref="SelectAll"/> (Ctrl+A),
-/// <see cref="Hold"/> (H), <see cref="Stop"/> (G), <see cref="CombatStatus"/> (R). The game's own Select-all /
-/// Hold / Stop / status keys live in the PC HUD (dead in our tree), so these drive
-/// <see cref="SelectionManagerBase"/> directly — the same calls the in-game menu's "Select whole party" /
-/// "Hold position" / "Stop" buttons make — and are the sole handler (focus mode suppresses the game's duplicates).</para>
+/// <para>All keyboard party functions are REGISTERED <see cref="RTAccess.Input.InputCategory.Exploration"/>
+/// actions (see <see cref="RTAccess.Input.InputBindings"/>), not raw-polled. Member selection —
+/// <see cref="MemberNext"/> (Shift+D) / <see cref="MemberPrev"/> (Shift+A) / <see cref="SelectMember"/> (Alt+1..6)
+/// — reuses the game's own documented combos and speaks the picked name; registering it (rather than raw-polling)
+/// is what lets the keyboard-arbitration patch claim those chords and suppress the game's Prev/NextCharacter +
+/// SelectCharacter so they don't double-fire. Party orders — <see cref="SelectAll"/> (Ctrl+A), <see cref="Hold"/>
+/// (H), <see cref="Stop"/> (G) — and the <see cref="CombatStatus"/> (R) readout drive
+/// <see cref="SelectionManagerBase"/> / the HUD status directly, the same calls the in-game menu buttons make.
+/// The mod claims all these chords, so its handler is the sole responder.</para>
 /// </summary>
 internal static class PartyHotkeys
 {
-    public static void Update()
-    {
-        // Re-gated for the mouse-mode parallel UI: live whenever the InGameScreen owns the world (was
-        // ControllerMode == Gamepad). Shift+D/A + Alt+1-6 don't collide with UI nav, so this runs whether or
-        // not the HUD is focused; the game's own duplicate keys are suppressed by FocusMode (Keyboard.Disabled).
-        if (!RTAccess.Screens.InGameScreen.ExplorationActive) return;
+    // ---- registered member selector (InputCategory.Exploration; see InputBindings) ----
+    // The radial itself stays gamepad-only (per the user's decision), but the keyboard player gets the same
+    // outcome — pick the active character and hear their name.
 
-        bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
-        bool alt = UnityEngine.Input.GetKey(KeyCode.LeftAlt) || UnityEngine.Input.GetKey(KeyCode.RightAlt);
+    /// <summary>Shift+D — select the next directly-controllable party member.</summary>
+    public static void MemberNext() { if (RTAccess.Screens.InGameScreen.ExplorationActive) Step(next: true); }
 
-        if (shift && UnityEngine.Input.GetKeyDown(KeyCode.D)) Step(next: true);
-        else if (shift && UnityEngine.Input.GetKeyDown(KeyCode.A)) Step(next: false);
-        else if (alt)
-        {
-            for (int i = 0; i < 6; i++)
-            {
-                if (UnityEngine.Input.GetKeyDown(KeyCode.Alpha1 + i)) { SelectIndex(i); break; }
-            }
-        }
-    }
+    /// <summary>Shift+A — select the previous directly-controllable party member.</summary>
+    public static void MemberPrev() { if (RTAccess.Screens.InGameScreen.ExplorationActive) Step(next: false); }
+
+    /// <summary>Alt+1..6 — select that party slot directly (index is 0-based).</summary>
+    public static void SelectMember(int index) { if (RTAccess.Screens.InGameScreen.ExplorationActive) SelectIndex(index); }
 
     /// <summary>The directly-controllable party members, in party order — the selectable set.</summary>
     private static List<BaseUnitEntity> Controllable()
@@ -87,8 +75,9 @@ internal static class PartyHotkeys
         try
         {
             Game.Instance.SelectionCharacter.SetSelected(unit);
-            // Key-driven selection — interrupt so stepping through the party stays responsive ([[rt-interrupt-speech-rule]]).
-            Speaker.Speak(unit.CharacterName, interrupt: true);
+            // Route the confirmation through the one selection-announce path (force → always speaks, and marks the
+            // unit so the per-frame poll doesn't echo it). See SelectionAnnouncer.
+            SelectionAnnouncer.Announce(unit, force: true);
         }
         catch (Exception e)
         {
@@ -111,7 +100,7 @@ internal static class PartyHotkeys
         {
             SelectionManagerBase.Instance?.SelectAll();
             int n = Game.Instance?.SelectionCharacter?.SelectedUnits?.Count ?? 0;
-            Speaker.Speak(n > 1 ? "Whole party selected, " + n + " characters." : "Party selected.", interrupt: true);
+            Speaker.Speak(n > 1 ? Loc.T("party.selected_all", new { count = n }) : Loc.T("party.selected_all_one"), interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("PartyHotkeys.SelectAll failed: " + e); }
     }
@@ -119,14 +108,14 @@ internal static class PartyHotkeys
     /// <summary>H — order the current selection to hold position (the menu's "Hold position" button).</summary>
     public static void Hold()
     {
-        try { SelectionManagerBase.Instance?.Hold(); Speaker.Speak("Holding position.", interrupt: true); }
+        try { SelectionManagerBase.Instance?.Hold(); Speaker.Speak(Loc.T("party.holding"), interrupt: true); }
         catch (Exception e) { Main.Log?.Error("PartyHotkeys.Hold failed: " + e); }
     }
 
     /// <summary>G — stop the current selection's current orders (the menu's "Stop" button).</summary>
     public static void Stop()
     {
-        try { SelectionManagerBase.Instance?.Stop(); Speaker.Speak("Stopped.", interrupt: true); }
+        try { SelectionManagerBase.Instance?.Stop(); Speaker.Speak(Loc.T("party.stopped"), interrupt: true); }
         catch (Exception e) { Main.Log?.Error("PartyHotkeys.Stop failed: " + e); }
     }
 
@@ -140,7 +129,7 @@ internal static class PartyHotkeys
         try
         {
             var line = RTAccess.Screens.InGameScreen.StatusLine();
-            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? "No status." : line, interrupt: true);
+            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("status.none") : line, interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("PartyHotkeys.CombatStatus failed: " + e); }
     }

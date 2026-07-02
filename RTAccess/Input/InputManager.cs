@@ -34,6 +34,50 @@ namespace RTAccess.Input
         private static readonly HashSet<InputBinding> _live = new HashSet<InputBinding>();
         private static readonly Dictionary<string, int> _chordRank = new Dictionary<string, int>();
 
+        // The frame the live set was last rebuilt for. ClaimsChord (queried from the GAME's KeyboardAccess tick,
+        // which may run before or after our own Tick) and Tick both go through EnsureLive so the live set is always
+        // current-frame regardless of loop order — the mod and the game agree on who owns a chord this frame.
+        private static int _liveFrame = -1;
+        // Focus state SNAPSHOT for the frame, taken alongside the live-set rebuild. ClaimsChord must give the same
+        // answer for the whole frame regardless of call order (mod Tick vs the game's KeyboardAccess tick). Reading
+        // Navigation.HasFocus live broke that: a handler dispatched during our Tick can flip focus mid-frame (the
+        // HUD Escape/Back → Navigation.Blur), so a later same-frame ClaimsChord for a YieldsWhenUnfocused chord
+        // (ui.back) would flip from claim to yield — making one Escape both blur AND open the game pause menu.
+        private static bool _hasFocus;
+
+        private static void EnsureLive()
+        {
+            int f = UnityEngine.Time.frameCount;
+            if (_liveFrame == f) return;
+            _hasFocus = RTAccess.UI.Navigation.HasFocus; // snapshot with the same live read RebuildLive uses
+            RebuildLive();
+            _liveFrame = f;
+        }
+
+        /// <summary>Whether the mod actively CLAIMS this exact chord this frame — i.e. a live (unshadowed,
+        /// active-category) binding matches it. The keyboard-arbitration patch calls this from the game's own
+        /// KeyboardAccess dispatch: if we claim the chord, the game's binding on the same key is suppressed;
+        /// if we don't, the game keeps it (that's how the merge lets un-overridden game keys through). An action
+        /// flagged <see cref="InputAction.YieldToGameWhenUnfocused"/> (Space) does not count as a claim while
+        /// nothing is focused, so the game's Pause / End-turn survives out in the world. Only meaningful with
+        /// focus mode active (the caller gates on it); when off, RebuildLive leaves only Global live.</summary>
+        public static bool ClaimsChord(UnityEngine.KeyCode key, bool ctrl, bool alt, bool shift)
+        {
+            EnsureLive();
+            for (int i = 0; i < _actions.Count; i++)
+            {
+                var a = _actions[i];
+                if (a.YieldToGameWhenUnfocused && !_hasFocus) continue;
+                for (int j = 0; j < a.Bindings.Count; j++)
+                {
+                    if (!(a.Bindings[j] is KeyboardBinding b)) continue;
+                    if (b.Key == key && b.Ctrl == ctrl && b.Alt == alt && b.Shift == shift && _live.Contains(b))
+                        return true;
+                }
+            }
+            return false;
+        }
+
         /// <summary>Whether the action with this key is currently held via a LIVE (unshadowed, active-
         /// category) binding — for per-frame polling (e.g. the cursor's held-arrow vector). A held
         /// arrow stops counting the instant a higher claim takes the chord (a menu opening).</summary>
@@ -112,7 +156,7 @@ namespace RTAccess.Input
             var current = RTAccess.Screens.ScreenManager.Current;
             if (current != null && current.CapturesRawInput) return;
 
-            RebuildLive(); // this frame's category claims + chord shadowing
+            EnsureLive(); // this frame's category claims + chord shadowing (shared with ClaimsChord)
 
             // Typematic repeat: fire once, pause, then repeat while held — at the user's
             // own OS keyboard delay/rate (falls back to defaults off Windows).
