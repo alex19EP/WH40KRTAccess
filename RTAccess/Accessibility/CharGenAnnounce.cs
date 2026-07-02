@@ -8,7 +8,6 @@ using Kingmaker.UI.MVVM.VM.CharGen.Phases.Stats;
 using Kingmaker.UI.MVVM.View.CharGen.Common;
 using Owlcat.Runtime.UI.Tooltips;
 using RTAccess.Speech;
-using UnityEngine;
 
 namespace RTAccess.Accessibility;
 
@@ -17,8 +16,7 @@ namespace RTAccess.Accessibility;
 /// strip (<c>CharGenRoadmapMenuView</c>) that is NOT in the console focus ring — so nothing was ever spoken
 /// when entering a phase or moving Enter/Esc between phases; the player was dropped into a phase's content
 /// with no "where am I" cue. This adds three things, all key-driven and therefore interrupting per
-/// [[rt-interrupt-speech-rule]] (the phase line's first option focus, being automatic focus, queues behind it
-/// via SetFocusedPatch; the stat readout interrupts each prior value as you hold advance/retreat):
+/// [[rt-interrupt-speech-rule]] (the stat readout interrupts each prior value as you hold advance/retreat):
 ///
 /// 1. <b>Phase orientation</b> — announce phase name + position + completion whenever the phase changes
 ///    (postfix on <see cref="CharGenView.CurrentPhaseChangedImpl"/>, the choke point both the gamepad Next/Back
@@ -28,8 +26,9 @@ namespace RTAccess.Accessibility;
 ///    the remaining points (postfix on <c>CharGenAttributesPhaseVM.HandleTryAdvanceStat</c>, which runs once
 ///    per adjust after the VM's own state update).
 /// 3. <b>Phase description source</b> — <see cref="GetActivePhaseDescription"/> exposes the active phase's
-///    InfoVM tooltip so the Ctrl+I "details" key can read the description of options (Homeworld/Occupation/etc.)
-///    whose selector items carry no tooltip of their own (see <see cref="SetFocusedPatch.ReadDetailsOfCurrent"/>).
+///    InfoVM tooltip (the description of options like Homeworld/Occupation whose selector items carry no
+///    tooltip of their own). The console "details" key that consumed it was removed with the console-nav path;
+///    kept as the hook for a parallel-tree details reader.
 /// </summary>
 internal static class CharGenAnnounce
 {
@@ -39,12 +38,11 @@ internal static class CharGenAnnounce
     /// <summary>True while the CharGen window is open (a phase is active).</summary>
     public static bool IsActive => _phase != null;
 
-    /// <summary>Ctrl+P re-announces the current phase + position while CharGen is open.</summary>
-    public static void Update()
+    /// <summary>Ctrl+P (registered action; see InputBindings) — re-announce the current phase + position while
+    /// CharGen is open. No-op otherwise, so it's safe as an always-live Global binding.</summary>
+    public static void ReAnnounce()
     {
-        if (!IsActive) return;
-        if ((UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl)) && UnityEngine.Input.GetKeyDown(KeyCode.P))
-            Speak(reentry: false);
+        if (IsActive) Speak(reentry: false);
     }
 
     internal static void OnPhaseChanged(CharGenPhaseBaseVM phase, CharGenVM vm)
@@ -96,9 +94,8 @@ internal static class CharGenAnnounce
 
     private static void Speak(bool reentry)
     {
-        // Phase change (Next/Back/Confirm) and Ctrl+P are both key-driven, so interrupt. The new phase's first
-        // option focus follows and SetFocusedPatch queues it (a phase advance is not a directional nav move, so
-        // it's automatic focus), giving the orientation then the content. Per [[rt-interrupt-speech-rule]].
+        // Phase change (Next/Back/Confirm) and Ctrl+P are both key-driven, so interrupt. The orientation line is
+        // spoken first, then the phase's own screen reads its content. Per [[rt-interrupt-speech-rule]].
         try { Speaker.Speak(BuildPhaseLine(_phase, _vm, reentry), interrupt: true); }
         catch (Exception e) { Main.Log?.Log("chargen phase read failed: " + e.Message); }
     }
