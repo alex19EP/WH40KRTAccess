@@ -25,6 +25,14 @@
   "state.enabled": "enabled",
   "state.selected": "selected",
 
+  "tooltip.requires": "Requires: {text}",
+  "tooltip.requires_one": "Requires one of: {text}",
+  "tooltip.armor_deflection": "Deflection",
+  "tooltip.armor_absorption": "Absorption",
+  "tooltip.dodge": "Dodge",
+  "tooltip.shot": "shot {n}",
+  "tooltip.deviation": "deviation {value}, range {min} to {max}",
+
   "action.select": "Select",
   "action.toggle": "Toggle",
   "action.open": "Open",
