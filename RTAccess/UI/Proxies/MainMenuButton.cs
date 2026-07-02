@@ -25,7 +25,12 @@ namespace RTAccess.UI.Proxies
                 },
                 enabled,
                 () => vm?.Execute(),
-                canFocus: () => vm != null && !vm.IsSeparator);
+                canFocus: () => vm != null && !vm.IsSeparator,
+                // Match the sidebar's real per-entry sound (Analog for Continue/New Game/…, generic for
+                // License/Feedback) instead of the default generic hover/click — the game sets these on the
+                // OwlcatButton via SetClickSound/SetHoverSound from the same entity fields.
+                hoverSoundType: entity?.HoverSoundType,
+                clickSoundType: entity?.ClickSoundType);
         }
     }
 }

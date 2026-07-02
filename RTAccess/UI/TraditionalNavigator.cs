@@ -90,9 +90,10 @@ namespace RTAccess.UI
                     // Screen-level back/close (e.g. Settings → Close). Consume only if the screen handles it.
                     return Screen != null && Screen.InvokeAction(ActionIds.Back);
                 case "ui.tooltip":
+                case "ui.tooltip.space":
                 {
-                    // Nothing focused → don't consume (in exploration the Space chord resolves to
-                    // explore.pause before this dispatches; the guard is belt-and-braces).
+                    // Nothing focused → don't consume, and (for Space) don't claim: the arbitration patch then
+                    // lets the game's Space through as Pause / End-turn (ui.tooltip.space is YieldsWhenUnfocused).
                     if (Current == null) return false;
                     OpenTooltipOrLinks(Current);
                     return true;
@@ -109,20 +110,36 @@ namespace RTAccess.UI
         // focus and announces once (no separate chooser screen).
         private void OpenTooltipOrLinks(UIElement el)
         {
-            // Lightweight tooltip reader: open the focused element's description text in a child screen you
-            // can arrow through. (The rich brick/glossary drill reader — TooltipLinks + a FlowSheet-rendered
-            // TooltipScreen — is the deferred flagship; this covers the common header+body case.)
-            var body = el?.GetTooltipText();
-            // Icon-only in-game elements (action-bar slots, inventory/equipment items) carry no plain text —
-            // their name + stats + description live in a rich brick TEMPLATE. Read that to text via
-            // TooltipReader so Space speaks the full game tooltip instead of "no tooltip".
+            if (el == null) { Speak(Loc.T("nav.no_tooltip")); return; }
+
+            // The element's own tooltip: plain description text, or — for icon-only in-game elements
+            // (action-bar slots, inventory/equipment items) whose name + stats live in a rich brick TEMPLATE
+            // — that template read to text via TooltipReader.
+            var body = el.GetTooltipText();
             if (string.IsNullOrWhiteSpace(body))
             {
-                var tpl = el?.GetTooltipTemplate();
+                var tpl = el.GetTooltipTemplate();
                 if (tpl != null) body = RTAccess.Accessibility.TooltipReader.GetFull(tpl);
             }
-            if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip")); return; }
-            RTAccess.Screens.TooltipScreen.Open(el.GetLabelText(), body);
+
+            // Inline glossary terms embedded in the element's game text (dialogue cues wrap terms like
+            // "psyker" / "Golden Throne" as <link>s), resolved to their definitions.
+            var links = RTAccess.Accessibility.GlossaryLinks.Gather(el);
+
+            if (links.Count == 0)
+            {
+                // No terms → the single-tooltip case (unchanged): open the body directly, or say there's none.
+                if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip")); return; }
+                RTAccess.Screens.TooltipScreen.Open(el.GetLabelText(), body);
+                return;
+            }
+
+            // Terms present → a drill chooser: the element's own tooltip first (if any), then each glossary term.
+            var items = new List<(string, string)>();
+            if (!string.IsNullOrWhiteSpace(body))
+                items.Add((el.GetLabelText() ?? Loc.T("nav.details"), body));
+            foreach (var e in links) items.Add((e.Label, e.Body));
+            RTAccess.Screens.DrillMenuScreen.Open(Loc.T("nav.references"), items);
         }
 
         private bool Arrow(NavDirection dir)
@@ -290,7 +307,7 @@ namespace RTAccess.UI
             var cell = next.GetLabelText();
             parts.Add(string.IsNullOrWhiteSpace(cell) ? "blank" : cell);
 
-            RTAccess.UiSound.Hover(); // a focus move, like AnnounceDelta's interrupt path
+            RTAccess.UiSound.Hover(next.HoverSoundType); // a focus move, like AnnounceDelta's interrupt path
             Speak(string.Join(", ", parts), interrupt: true);
             return true;
         }
@@ -420,8 +437,16 @@ namespace RTAccess.UI
         private bool TryActivate(UIElement e)
         {
             if (e == null || !e.InvokeAction(ActionIds.Activate)) return false;
-            var sound = e.ActivateSound; // game plays this in the view handler we bypass
-            if (sound != null) RTAccess.UiSound.Play(sound);
+            // Themed OwlcatButtons (main menu, window chrome) carry a click sound-TYPE the game replays
+            // via PlayButtonClickSound(type); everything else keeps the blueprint-typed ActivateSound.
+            // An element uses one or the other, so the type takes precedence when present.
+            if (e.ClickSoundType is Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum ct)
+                RTAccess.UiSound.Click(ct);
+            else
+            {
+                var sound = e.ActivateSound; // game plays this in the view handler we bypass
+                if (sound != null) RTAccess.UiSound.Play(sound);
+            }
             if (e.ReannounceOnActivate) Speak(e.GetStateMessage().Resolve(), interrupt: true);
             return true;
         }
@@ -451,7 +476,7 @@ namespace RTAccess.UI
                     parts.Add(region.Label);
                 var msg = next.GetFocusMessage().Resolve();
                 parts.Add(string.IsNullOrWhiteSpace(msg) ? "blank" : msg);
-                RTAccess.UiSound.Hover();
+                RTAccess.UiSound.Hover(next.HoverSoundType);
                 Speak(string.Join(", ", parts), interrupt: true);
                 return;
             }
@@ -463,7 +488,7 @@ namespace RTAccess.UI
             if (nr != r)
             {
                 var assoc = sheet.ComposeAssociatedReadout(next, withRegionLabel: entered);
-                if (assoc != null) { RTAccess.UiSound.Hover(); Speak(assoc, interrupt: true); return; }
+                if (assoc != null) { RTAccess.UiSound.Hover(next.HoverSoundType); Speak(assoc, interrupt: true); return; }
             }
 
             if (entered && region != null && !string.IsNullOrEmpty(region.Label))
@@ -473,7 +498,7 @@ namespace RTAccess.UI
             if (!string.IsNullOrEmpty(next.Role)) parts.Add(next.Role);
             var text = next.GetLabelText();
             parts.Add(string.IsNullOrWhiteSpace(text) ? "blank" : text);
-            RTAccess.UiSound.Hover(); // a focus move
+            RTAccess.UiSound.Hover(next.HoverSoundType); // a focus move
             Speak(string.Join(", ", parts), interrupt: true);
         }
 

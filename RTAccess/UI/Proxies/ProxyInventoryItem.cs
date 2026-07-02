@@ -32,6 +32,12 @@ namespace RTAccess.UI.Proxies
 
         public override bool CanFocus => _slot != null && _slot.HasItem;
 
+        // The game silences item-slot hover on PC (InventorySlotPCView.SetMainButtonHoverSound(NoSound)) —
+        // a dense grid the devs keep quiet — so we don't machine-gun a hover sound arrowing the stash. Click
+        // stays the generic ButtonClick (the slot's NormalSound); equip/move play their own item sounds.
+        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? HoverSoundType
+            => Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound;
+
         private string Name()
         {
             var name = _slot.DisplayName.Value;

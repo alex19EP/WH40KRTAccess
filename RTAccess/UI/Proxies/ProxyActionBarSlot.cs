@@ -25,11 +25,25 @@ namespace RTAccess.UI.Proxies
     public sealed class ProxyActionBarSlot : UIElement
     {
         private readonly ActionBarSlotVM _slot;
+        private readonly bool _isOverdrive;
 
-        public ProxyActionBarSlot(ActionBarSlotVM slot) { _slot = slot; }
+        public ProxyActionBarSlot(ActionBarSlotVM slot, bool isOverdrive = false)
+        {
+            _slot = slot;
+            _isOverdrive = isOverdrive;
+        }
 
         // OnMainClick plays the action-bar click sound itself; don't double it.
         public override Kingmaker.UI.Sound.BlueprintUISound.UISound ActivateSound => null;
+
+        // Only the augmentation-overdrive slot carries a themed hover/click in the game
+        // (SurfaceActionBarPartAbilitiesPCView SetHoverSound/SetClickSound); regular slots use the generic
+        // hover (null) and delegate their click to OnMainClick's own sound. For overdrive the themed click
+        // LAYERS on top of that mechanic sound, matching the game.
+        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? HoverSoundType
+            => _isOverdrive ? Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.AugmentationsOverdriveHover : (Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum?)null;
+        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? ClickSoundType
+            => _isOverdrive ? Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.AugmentationsOverdriveClick : (Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum?)null;
 
         public override Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate GetTooltipTemplate()
             => _slot?.Tooltip?.Value;
@@ -72,28 +86,28 @@ namespace RTAccess.UI.Proxies
             try
             {
                 int ap = _slot.ActionPointCost.Value;
-                if (ap > 0) Append(sb, ap + (ap == 1 ? " action point" : " action points"));
+                if (ap > 0) Append(sb, Loc.T(ap == 1 ? "slot.action_point" : "slot.action_points", new { ap }));
 
                 var ab = _slot.AbilityData;
                 if (ab != null) AppendAbilityDetails(sb, ab);
 
                 if (_slot.IsReload.Value)
-                    Append(sb, _slot.CurrentAmmo.Value + " of " + _slot.MaxAmmo.Value + " ammo");
+                    Append(sb, Loc.T("slot.ammo", new { current = _slot.CurrentAmmo.Value, max = _slot.MaxAmmo.Value }));
                 if (_slot.IsOnCooldown.Value)
                 {
                     var cd = _slot.CooldownText.Value;
-                    Append(sb, string.IsNullOrEmpty(cd) ? "on cooldown" : "cooldown " + cd);
+                    Append(sb, string.IsNullOrEmpty(cd) ? Loc.T("slot.on_cooldown") : Loc.T("slot.cooldown", new { turns = cd }));
                 }
-                if (_slot.IsSelected.Value) Append(sb, "targeting");
+                if (_slot.IsSelected.Value) Append(sb, Loc.T("value.targeting"));
                 else if (_slot.MechanicActionBarSlot != null && _slot.MechanicActionBarSlot.IsActive())
-                    Append(sb, "active");
+                    Append(sb, Loc.T("combat.active_marker"));
 
                 // Why it's greyed out — the game's own reason (not enough AP, on cooldown, out of range, …), so a
                 // disabled slot says the cause instead of a bare "disabled".
                 if (ab != null && !Enabled)
                 {
                     var why = UnavailableReason(ab);
-                    if (why != null) Append(sb, "unavailable, " + why);
+                    if (why != null) Append(sb, Loc.T("slot.unavailable", new { reason = why }));
                 }
             }
             catch { }
@@ -110,22 +124,22 @@ namespace RTAccess.UI.Proxies
                 // Range is meaningless for a self/owner ability; melee reads better as "melee" than "range 1 cell".
                 if (anchor != AbilityTargetAnchor.Owner)
                 {
-                    if (ab.IsMelee) Append(sb, "melee");
+                    if (ab.IsMelee) Append(sb, Loc.T("slot.melee"));
                     else
                     {
                         int r = 0; try { r = ab.RangeCells; } catch { }
-                        if (r > 1) Append(sb, "range " + r + " cells");
+                        if (r > 1) Append(sb, Loc.T("slot.range", new { cells = r }));
                         int min = 0; try { min = ab.MinRangeCells; } catch { }
-                        if (min > 0) Append(sb, "minimum range " + min);
+                        if (min > 0) Append(sb, Loc.T("slot.min_range", new { cells = min }));
                     }
                 }
 
                 // What activating it will ask for.
                 switch (anchor)
                 {
-                    case AbilityTargetAnchor.Owner: Append(sb, "self"); break;
-                    case AbilityTargetAnchor.Unit: Append(sb, "targets a unit"); break;
-                    case AbilityTargetAnchor.Point: Append(sb, ab.IsAOE ? "area effect" : "targets a point"); break;
+                    case AbilityTargetAnchor.Owner: Append(sb, Loc.T("slot.self")); break;
+                    case AbilityTargetAnchor.Unit: Append(sb, Loc.T("slot.targets_unit")); break;
+                    case AbilityTargetAnchor.Point: Append(sb, ab.IsAOE ? Loc.T("slot.area_effect") : Loc.T("slot.targets_point")); break;
                 }
 
                 // Limited uses (charges / per-day resource); -1 == at-will. Ammo weapons already read their ammo
@@ -133,7 +147,7 @@ namespace RTAccess.UI.Proxies
                 if (!_slot.IsReload.Value)
                 {
                     int uses = -1; try { uses = ab.GetAvailableForCastCount(); } catch { }
-                    if (uses >= 0) Append(sb, uses + (uses == 1 ? " use left" : " uses left"));
+                    if (uses >= 0) Append(sb, Loc.T(uses == 1 ? "slot.use_left" : "slot.uses_left", new { uses }));
                 }
             }
             catch { }

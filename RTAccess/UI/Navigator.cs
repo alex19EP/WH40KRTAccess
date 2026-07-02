@@ -225,8 +225,10 @@ namespace RTAccess.UI
         protected void AnnounceDelta(List<UIElement> oldPath, bool interrupt = false)
         {
             // interrupt == true marks an actual focus MOVE (arrow/tab), not a screen-entry readout —
-            // so it's where the game would play its control-hover sound.
-            if (interrupt) RTAccess.UiSound.Hover();
+            // so it's where the game would play its control-hover sound. Current is already the
+            // destination here, so its HoverSoundType picks the themed sound (Analog/Plastick/…) the
+            // mouse would produce on that control (null ⇒ generic hover).
+            if (interrupt) RTAccess.UiSound.Hover(Current?.HoverSoundType);
 
             int i = 0;
             while (i < oldPath.Count && i < Path.Count && oldPath[i] == Path[i]) i++;

@@ -21,12 +21,17 @@ namespace RTAccess.UI.Proxies
         private readonly string _actionVerb;
         private readonly Func<string, string[], Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> _linkResolver;
         private readonly Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> _tooltip;
+        private readonly Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? _hoverSoundType;
+        private readonly Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? _clickSoundType;
 
         public ProxyActionButton(string label, Func<bool> enabled, Action activate,
             Func<bool> canFocus = null, bool suppressActivateSound = false, string actionVerb = "activate",
             Func<string, string[], Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> linkResolver = null,
-            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> tooltip = null)
-            : this(() => label, enabled, activate, canFocus, suppressActivateSound, actionVerb, linkResolver, tooltip) { }
+            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> tooltip = null,
+            Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? hoverSoundType = null,
+            Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? clickSoundType = null)
+            : this(() => label, enabled, activate, canFocus, suppressActivateSound, actionVerb, linkResolver, tooltip,
+                hoverSoundType, clickSoundType) { }
 
         // Live label — for buttons whose text changes (e.g. a wizard's Next → "Start"). canFocus skips
         // structural entries (e.g. a context-menu separator); suppressActivateSound is for buttons whose
@@ -38,7 +43,9 @@ namespace RTAccess.UI.Proxies
         public ProxyActionButton(Func<string> label, Func<bool> enabled, Action activate,
             Func<bool> canFocus = null, bool suppressActivateSound = false, string actionVerb = "activate",
             Func<string, string[], Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> linkResolver = null,
-            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> tooltip = null)
+            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> tooltip = null,
+            Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? hoverSoundType = null,
+            Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? clickSoundType = null)
         {
             _label = label;
             _enabled = enabled;
@@ -48,6 +55,8 @@ namespace RTAccess.UI.Proxies
             _actionVerb = actionVerb;
             _linkResolver = linkResolver;
             _tooltip = tooltip;
+            _hoverSoundType = hoverSoundType;
+            _clickSoundType = clickSoundType;
         }
 
         public override Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate GetTooltipTemplate()
@@ -61,6 +70,9 @@ namespace RTAccess.UI.Proxies
         public override Kingmaker.UI.Sound.BlueprintUISound.UISound ActivateSound
             => _suppressSound ? null : base.ActivateSound;
 
+        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? HoverSoundType => _hoverSoundType;
+        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? ClickSoundType => _clickSoundType;
+
         private bool Enabled => _enabled == null || _enabled();
 
         public override IEnumerable<Announcement> GetFocusAnnouncements()
@@ -73,7 +85,7 @@ namespace RTAccess.UI.Proxies
         public override IEnumerable<ElementAction> GetActions()
         {
             if (Enabled)
-                yield return new ElementAction(ActionIds.Activate, Message.Localized("ui", "action." + _actionVerb), _ => _activate?.Invoke());
+                yield return new ElementAction(ActionIds.Activate, Message.Raw(GameText.Action(_actionVerb)), _ => _activate?.Invoke());
         }
     }
 }

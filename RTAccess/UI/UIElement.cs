@@ -61,9 +61,25 @@ namespace RTAccess.UI
         /// <summary>The game UI sound to play when this element is activated (its sound normally
         /// lived in the view's click handler, which we bypass). Default is a generic button click;
         /// controls override for their real sound (e.g. toggles → SettingsSwitchToggle), or return
-        /// null when the element already plays its own sound (e.g. portraits) so we don't double it.</summary>
+        /// null when the element already plays its own sound (e.g. portraits) so we don't double it.
+        /// Superseded by <see cref="ClickSoundType"/> when that is set (themed OwlcatButtons).</summary>
         public virtual Kingmaker.UI.Sound.BlueprintUISound.UISound ActivateSound =>
             Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick;
+
+        /// <summary>The game's themed button "sound type" for this control's HOVER (main-menu Analog,
+        /// window Plastick, …), or null for the generic button hover. The game sets this per
+        /// OwlcatSelectable via <c>UISounds.SetHoverSound</c> and replays it on mouse-over as
+        /// <c>PlayHoverSound(type)</c>; we replay the same on a focus MOVE because we bypass the view.
+        /// <c>NoSound</c> is a real value here — it silences hover (matching dense item/ability grids
+        /// the game deliberately keeps quiet). Null ⇒ the generic <c>ButtonHover</c>.</summary>
+        public virtual Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? HoverSoundType => null;
+
+        /// <summary>Like <see cref="HoverSoundType"/> but for activation: the themed
+        /// <c>PlayButtonClickSound(type)</c>. When set it takes precedence over the blueprint-typed
+        /// <see cref="ActivateSound"/> (the two model the game's two distinct sound mechanisms —
+        /// themed-type vs. one-off blueprint — and an element uses one or the other). Null ⇒ fall back
+        /// to <see cref="ActivateSound"/>.</summary>
+        public virtual Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? ClickSoundType => null;
 
         /// <summary>Find an advertised action by id and execute it. Returns true if found.</summary>
         public bool InvokeAction(string id, object args = null)

@@ -40,10 +40,15 @@ namespace RTAccess.UI.Proxies
         public override IEnumerable<ElementAction> GetActions()
         {
             if (!Enabled) yield break;
-            yield return new ElementAction(ActionIds.Decrease, Message.Localized("ui", "action.decrease"), _ => _vm.SetPrevValue());
-            yield return new ElementAction(ActionIds.Increase, Message.Localized("ui", "action.increase"), _ => _vm.SetNextValue());
+            yield return new ElementAction(ActionIds.Decrease, Message.Localized("ui", "action.decrease"), _ => { _vm.SetPrevValue(); PlayMove(); });
+            yield return new ElementAction(ActionIds.Increase, Message.Localized("ui", "action.increase"), _ => { _vm.SetNextValue(); PlayMove(); });
             yield return new ElementAction(ActionIds.SetValue, Message.Localized("ui", "action.set_value"),
-                a => _vm.SetTempValue((float)ActionArgs.Get<double>(a, "value")));
+                a => { _vm.SetTempValue((float)ActionArgs.Get<double>(a, "value")); PlayMove(); });
         }
+
+        // The game plays SettingsSliderMove from the slider view's SetValueFromUI; our VM-direct adjust
+        // (SetPrev/SetNext/SetTempValue) bypasses the view, so replay the move tick on each step.
+        private static void PlayMove()
+            => RTAccess.UiSound.Play(Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Settings?.SettingsSliderMove);
     }
 }

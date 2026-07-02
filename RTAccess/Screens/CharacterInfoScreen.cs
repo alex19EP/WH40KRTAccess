@@ -150,7 +150,15 @@ namespace RTAccess.Screens
             var mv = unit.Stats.GetStatOptional(stat);
             if (mv == null) return null;
             var label = LocalizedTexts.Instance.Stats.GetText(stat);
-            var node = new TreeGroup { LabelProvider = () => label + " " + mv.ModifiedValue };
+            // The game silences ability-score/skill stat cells on PC (CharInfoAbilityScore/SkillPCView set
+            // hover+click NoSound) — a dense grid kept quiet — so arrowing the stat list is TTS-only, matching
+            // the mouse. The expanded per-source modifier lines below stay generic (sparse, one per source).
+            var node = new TreeGroup
+            {
+                LabelProvider = () => label + " " + mv.ModifiedValue,
+                HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
+                ClickSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
+            };
             foreach (var mod in mv.GetDisplayModifiers())
                 node.Add(new TextElement(ModifierLine(mod)));
             return node;

@@ -9,5 +9,14 @@ namespace RTAccess.UI
     public sealed class TreeGroup : Container
     {
         public TreeGroup(string label = null) : base(ContainerShape.Tree, label) { }
+
+        /// <summary>Optional themed hover/click sound-type for this node — e.g. <c>NoSound</c> to silence a
+        /// node the game deliberately keeps quiet (dense stat grids). Null ⇒ the generic hover / default
+        /// click. Settable so a build-site can tag nodes without a bespoke subclass.</summary>
+        public Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? HoverSound { get; set; }
+        public Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? ClickSound { get; set; }
+
+        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? HoverSoundType => HoverSound;
+        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? ClickSoundType => ClickSound;
     }
 }

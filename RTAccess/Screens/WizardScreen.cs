@@ -87,9 +87,14 @@ namespace RTAccess.Screens
             BuildContent(content);
             Add(content);
 
-            // Footer: Back then Next (label + availability track the current phase live).
-            Add(new ProxyActionButton(() => Loc.T("wizard.back"), BackEnabled, OnBack));
-            Add(new ProxyActionButton(NextLabel, NextEnabled, OnNext));
+            // Footer: Back then Next (label + availability track the current phase live). Both wizards that
+            // share this shell (New Game setup and character generation) give these Plastick chrome sounds
+            // (NewGamePCView / CharGenPCView SetButtonsSounds), so the sound is intrinsic to the footer here.
+            var plastick = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound;
+            Add(new ProxyActionButton(() => Loc.T("wizard.back"), BackEnabled, OnBack,
+                hoverSoundType: plastick, clickSoundType: plastick));
+            Add(new ProxyActionButton(NextLabel, NextEnabled, OnNext,
+                hoverSoundType: plastick, clickSoundType: plastick));
 
             // Land initial focus on the phase content, not the header — so advancing/jumping phases
             // drops you onto the new phase, not back on the roadmap (the header is first in tab order).

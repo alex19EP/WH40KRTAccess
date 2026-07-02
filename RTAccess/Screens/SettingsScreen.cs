@@ -81,12 +81,16 @@ namespace RTAccess.Screens
             // Apply / Reset-to-default — each opens the game's own confirm dialog (the MessageBoxScreen
             // makes it navigable). Apply is live-gated on there being unsaved changes; Default on the tab
             // supporting it. Close (and Escape) prompts the same save dialog if there are unsaved changes.
+            // The game's settings chrome buttons are Plastick (SettingsPCView.SetButtonsSounds).
+            var plastick = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound;
             Add(new ProxyActionButton(() => Loc.T("settings.apply"),
                 () => Kingmaker.Settings.SettingsController.Instance.HasUnconfirmedSettings(),
-                () => vm.OpenApplySettingsDialog()));
+                () => vm.OpenApplySettingsDialog(), hoverSoundType: plastick, clickSoundType: plastick));
             Add(new ProxyActionButton(() => Loc.T("action.reset"),
-                () => vm.IsDefaultButtonInteractable.Value, () => vm.OpenDefaultSettingsDialog()));
-            Add(new ProxyActionButton(() => Loc.T("action.close"), () => true, () => vm.Close()));
+                () => vm.IsDefaultButtonInteractable.Value, () => vm.OpenDefaultSettingsDialog(),
+                hoverSoundType: plastick, clickSoundType: plastick));
+            Add(new ProxyActionButton(() => Loc.T("action.close"), () => true, () => vm.Close(),
+                hoverSoundType: plastick, clickSoundType: plastick));
         }
 
         // Refills only the content (tabs/Close stay put), so tab-list focus survives a tab switch.

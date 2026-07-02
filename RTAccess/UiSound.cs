@@ -14,11 +14,28 @@ namespace RTAccess
             try { UISounds.Instance?.PlayButtonClickSound(); } catch { }
         }
 
+        /// <summary>Play a themed button CLICK sound by the game's sound-type (Analog, Plastick, …),
+        /// mirroring what the view's handler would play via <c>PlayButtonClickSound(type)</c>.
+        /// <c>NoSound</c> is a genuine value — the game maps it to a no-op, so it silences the click.</summary>
+        public static void Click(UISounds.ButtonSoundsEnum type)
+        {
+            try { UISounds.Instance?.PlayButtonClickSound((int)type); } catch { }
+        }
+
         /// <summary>The game's control-hover sound — played when our focus moves to a new element
-        /// (our equivalent of a mouseover).</summary>
+        /// (our equivalent of a mouseover). The generic <c>ButtonHover</c>.</summary>
         public static void Hover()
         {
             try { UISounds.Instance?.PlayHoverSound(); } catch { }
+        }
+
+        /// <summary>Hover sound for a specific themed button type (Analog for the main menu, Plastick
+        /// for window chrome, …); null ⇒ the generic <see cref="Hover()"/>. <c>NoSound</c> silences it
+        /// (the game maps type -2 to a no-op), matching the dense grids the game keeps quiet.</summary>
+        public static void Hover(UISounds.ButtonSoundsEnum? type)
+        {
+            if (type == null) { Hover(); return; }
+            try { UISounds.Instance?.PlayHoverSound((int)type.Value); } catch { }
         }
 
         /// <summary>Play a specific UI sound (an element's <see cref="UI.UIElement.ActivateSound"/>); null
