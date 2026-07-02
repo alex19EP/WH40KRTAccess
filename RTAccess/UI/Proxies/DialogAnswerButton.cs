@@ -22,13 +22,14 @@ namespace RTAccess.UI.Proxies
             => new ProxyActionButton(
                 label: () => AnswerText(vm),
                 enabled: () => vm != null && vm.Enable.Value,
-                activate: () => vm?.OnChooseAnswer(),
+                activate: () => DialogChoiceGate.Choose(vm),
                 actionVerb: "choose",
                 tooltip: () => vm?.AnswerTooltip?.Value);
 
         // Returns the game's own TMP rich-text answer label ((<link>)-wrapped DC tags); Tts strips that at
         // speak time. System/continue answers carry no DisplayText — they read a plain "Continue", UNNUMBERED.
-        private static string AnswerText(AnswerVM vm)
+        // Internal so number-key quick-select (DialogueScreen) can voice the chosen answer as confirmation.
+        internal static string AnswerText(AnswerVM vm)
         {
             var bp = vm?.Answer?.Value;
             if (bp == null) return "";
@@ -36,6 +37,29 @@ namespace RTAccess.UI.Proxies
                 return Message.Localized("ui", "label.continue").Resolve();
             try { return UIConstsExtensions.GetAnswerFormattedString(bp, "DialogChoice" + vm.Index, vm.Index); }
             catch { return vm.Index + ". " + bp.DisplayText; }
+        }
+    }
+
+    /// <summary>
+    /// The single sanctioned gateway for choosing a dialogue answer from our parallel tree. The game's own
+    /// dialogue view stays live underneath and reacts to Unity's EventSystem "Submit" (Enter) on its selected
+    /// button — a path parallel to BOTH our navigator and KeyboardAccess — so the SAME Enter that e.g. dismissed
+    /// a tutorial popped over the cue would fire <see cref="AnswerVM.OnChooseAnswer"/> and pick an answer the
+    /// player never navigated to. <see cref="Choose"/> wraps our own call in a flag the arbitration prefix
+    /// (DialogChoiceGuard) reads to let OUR selection through and block every other source while a dialogue is
+    /// live under focus mode. Main-thread only (Unity UI), so a plain static flag suffices.
+    /// </summary>
+    internal static class DialogChoiceGate
+    {
+        /// <summary>True only for the duration of an OUR-initiated OnChooseAnswer call.</summary>
+        public static bool MineNow { get; private set; }
+
+        public static void Choose(AnswerVM vm)
+        {
+            if (vm == null) return;
+            MineNow = true;
+            try { vm.OnChooseAnswer(); }
+            finally { MineNow = false; }
         }
     }
 }
