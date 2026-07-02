@@ -294,6 +294,8 @@
   "save.requires_dlc": "Requires downloadable content: {dlc}",
   "save.requires_dlc_unknown": "Requires additional downloadable content",
   "save.group_disambig": "{name}, most recent {date}",
+  "save.group_label": "{name}, {count} saves",
+  "save.group_label_one": "{name}, 1 save",
   "modal.name": "Name",
   "modal.edit_name": "Name: {value}",
   "modal.text": "Text",

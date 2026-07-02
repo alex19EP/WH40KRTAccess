@@ -150,6 +150,7 @@ public static class Main {
         Input.InputManager.Tick();        // poll our input → navigator (UI) / handlers
         Screens.ScreenManager.Tick();     // resolve the screen stack from RootUiContext + attach the navigator
         UI.Navigation.TickTypeahead();    // typed letters → type-ahead search (after dispatch)
+        UI.Navigation.PumpFocus();        // settled focus → OnFocusEnter (focus-selects for opt-in controls, e.g. save slots)
 
         // Announce the primary selection when it changes from a source the keyboard paths don't already speak
         // (mouse click, HUD portrait, or the game re-selecting on its own). Deduped against the explicit selectors

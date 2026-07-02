@@ -37,6 +37,13 @@ namespace RTAccess.UI
         /// </summary>
         public virtual bool ReannounceOnActivate => false;
 
+        /// <summary>Called once, on the frame this element becomes the SETTLED focus (after a navigation move
+        /// completes) — never on the intermediate descent hops a single move passes through. Default no-op.
+        /// Controls that mirror the game's focus-selects behaviour override it to COMMIT a selection on focus
+        /// (e.g. a save slot: the game's own gamepad view selects the slot in <c>SetFocus</c>). Keep it
+        /// non-destructive — selection, never activation — since it fires on mere navigation.</summary>
+        public virtual void OnFocusEnter() { }
+
         /// <summary>
         /// A "complex" (brick) tooltip template for this element, or null. The tooltip key (Space)
         /// opens the reader screen with it. Override on elements that carry a game tooltip.

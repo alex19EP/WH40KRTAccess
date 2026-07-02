@@ -26,6 +26,10 @@ namespace RTAccess.UI
         /// <summary>Feed typed characters to the active navigator's type-ahead search (per frame).</summary>
         public static void TickTypeahead() => Active?.TickTypeahead();
 
+        /// <summary>Per-frame: notify the settled focus target's <see cref="UIElement.OnFocusEnter"/> (once,
+        /// on change) — the hook that lets focus drive selection for controls that opt in (e.g. save slots).</summary>
+        public static void PumpFocus() => Active?.PumpFocus();
+
         public static void AnnounceCurrent() => Active?.AnnounceCurrent();
 
         /// <summary>Re-establish initial focus if the focused screen has focusable content but nothing is

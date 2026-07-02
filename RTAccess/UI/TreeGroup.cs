@@ -18,5 +18,19 @@ namespace RTAccess.UI
 
         public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? HoverSoundType => HoverSound;
         public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? ClickSoundType => ClickSound;
+
+        /// <summary>Optional secondary (Backspace/context) action on the group node itself — e.g. a save
+        /// playthrough's "delete all". Expand/collapse stays on Right/Left; this is an extra verb on the
+        /// header, mirroring the game (whose delete-all lives on the group's expandable title). Null ⇒ none.</summary>
+        public System.Action ContextAction { get; set; }
+        public System.Func<string> ContextLabel { get; set; }
+
+        public override System.Collections.Generic.IEnumerable<ElementAction> GetActions()
+        {
+            if (ContextAction != null)
+                yield return new ElementAction(ActionIds.Context,
+                    ContextLabel != null ? Message.Raw(ContextLabel()) : Message.Localized("ui", "action.menu"),
+                    _ => ContextAction());
+        }
     }
 }

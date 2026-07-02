@@ -26,6 +26,11 @@ namespace RTAccess.UI
         // on" after the screen name.
         private Screen _awaitingAnnounce;
 
+        // The element we last delivered OnFocusEnter to (the row's associated control when the cursor sits on
+        // a value cell). Change-guards the per-frame focus pump so the hook fires exactly once per settled
+        // target, across every move path (arrow/tab/jump/search/region) without threading a call through each.
+        private UIElement _focusEntered;
+
         public UIElement Current => Path.Count > 0 ? Path[Path.Count - 1] : null;
 
         /// <summary>Bind to a screen and set initial focus (silently). Subclass decides how. A NEW screen
@@ -36,6 +41,7 @@ namespace RTAccess.UI
             if (!ReferenceEquals(screen, Screen)) _awaitingAnnounce = screen;
             Screen = screen;
             Path.Clear();
+            _focusEntered = null; // a (re)attach re-arms the focus pump, so it re-fires on the new landing
             if (screen != null) BuildInitialFocus();
         }
 
@@ -105,6 +111,24 @@ namespace RTAccess.UI
         {
             _awaitingAnnounce = null; // announcing settles the initial-focus debt
             AnnounceDelta(EmptyPath);
+        }
+
+        /// <summary>Per-frame: deliver <see cref="UIElement.OnFocusEnter"/> to the settled focus target once
+        /// it changes. A value cell in an associated-element <see cref="FlowSheet"/> defers to its row's
+        /// control, so focus on ANY column of a row hits that row's control — mirroring the game, whose
+        /// focusable unit is the whole row (its slot view's SetFocus selects the slot). Called after input +
+        /// screen resolution each frame; idempotent while focus is unchanged, so it's safe to call blindly and
+        /// it catches every move path without a hook threaded through each. Elements that don't opt in (the
+        /// default no-op) are unaffected, so this is inert on every screen but the ones that want it.</summary>
+        public void PumpFocus()
+        {
+            // Dormant when Focus Mode is off — the mod must not touch game VM state then (the same gate every
+            // sibling per-frame hook uses; without it, focus-selects would clobber a mouse user's SelectedSaveSlot).
+            if (!FocusMode.Active) return;
+            var target = (Current?.Parent as FlowSheet)?.AssociatedElementForCell(Current) ?? Current;
+            if (ReferenceEquals(target, _focusEntered)) return;
+            _focusEntered = target;
+            target?.OnFocusEnter();
         }
 
         /// <summary>Move focus to a specific element (e.g. a node just inserted into the tree) and announce
