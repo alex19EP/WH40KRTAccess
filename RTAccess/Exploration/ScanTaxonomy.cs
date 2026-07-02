@@ -12,6 +12,10 @@ internal static class ScanTaxonomy
     public const string UnitsEnemies = "units.enemies";
     public const string UnitsNeutrals = "units.neutrals";
     public const string Containers = "containers";
+    // A dead unit that still has loot (IsDeadAndHasLoot). A corpse is surfaced as a container-type interactable —
+    // its Primary flips from faction to this node so it leaves the enemy cycle and browses/loots like a chest
+    // (mirrors WrathAccess "containers.corpse"). An emptied corpse (no loot) carries no node and drops out.
+    public const string Corpses = "corpses";
     public const string Doors = "doors";
     public const string Exits = "exits";
     public const string SearchPoints = "searchpoints";

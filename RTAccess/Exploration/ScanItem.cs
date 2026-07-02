@@ -67,6 +67,13 @@ internal abstract class ScanItem
     /// never dead; overridden by <c>ProxyUnit</c>.</summary>
     public virtual bool IsDead => false;
 
+    /// <summary>Whether this thing is a DEAD unit that still has loot to take (the game's <c>IsDeadAndHasLoot</c>) and
+    /// can be looted right now (out of combat). Such a corpse is surfaced like a container — it leaves the faction
+    /// cycles and appears in the Corpses category / object cycle, and <see cref="Interact"/> loots it — so a blind
+    /// player reaches a body the same way they reach a chest (mirrors WrathAccess). An emptied corpse is never
+    /// lootable, so it drops out of the scanner entirely. Only <c>ProxyUnit</c> overrides.</summary>
+    public virtual bool LootableCorpse => false;
+
     public bool HasNode(string key)
     {
         foreach (var n in Nodes)

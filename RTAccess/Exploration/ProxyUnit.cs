@@ -1,13 +1,18 @@
-using Kingmaker;                       // Game
-using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
+using Kingmaker;                                 // Game
+using Kingmaker.Controllers.Clicks.Handlers;     // ClickUnitHandler (loot a corpse)
+using Kingmaker.EntitySystem.Entities;           // BaseUnitEntity
 using UnityEngine;
 
 namespace RTAccess.Exploration;
 
 /// <summary>
-/// A scannable unit (party member, NPC, enemy). Faction decides its single primary node and the review group it
-/// cycles under; the spoken detail is faction word + condition (dead/unconscious) or HP (+ in combat). Not
-/// interactable in v1 (no talk/attack) — interaction is map-objects-only.
+/// A scannable unit (party member, NPC, enemy). While alive, faction decides its single primary node and the review
+/// group it cycles under; the spoken detail is faction word + condition (dead/unconscious) or HP (+ in combat).
+/// Living units aren't interactable (no talk/attack) — interaction is map-objects-only. A DEAD unit that still has
+/// loot is the one exception: it flips its primary node to <see cref="ScanTaxonomy.Corpses"/> (leaving the faction
+/// cycles) and becomes interactable, so <c>I</c> loots it via the game's own unit click — a blind player reaches a
+/// body exactly like a chest (mirrors WrathAccess; no dedicated corpse key). An emptied/lootless corpse carries no
+/// node and drops out of the scanner entirely.
 /// </summary>
 internal sealed class ProxyUnit : ScanItem
 {
@@ -42,11 +47,35 @@ internal sealed class ProxyUnit : ScanItem
     // is State==Dead only, so downed-but-unconscious (revivable) companions are NOT corpses and stay listed/inspectable.
     public override bool IsDead => _unit.LifeState.IsDead;
 
-    public override string Primary => FactionNode();
+    // A dead unit that still has loot and can be looted now (out of combat) — the game's own gate: looting a body
+    // is blocked in combat (ClickUnitHandler), and a dead unit isn't even clickable then. So in combat a corpse is
+    // simply absent from the scanner; out of combat, a lootable body appears (and an emptied one never does).
+    public override bool LootableCorpse
+        => _unit.IsDeadAndHasLoot && Game.Instance?.Player?.IsInCombat != true;
+
+    // A lootable corpse classifies as a CORPSE (a container-like thing), not by faction — that pulls it out of the
+    // party/enemy/neutral cycles (which key on Primary) and into the Corpses category / object cycle. Living units
+    // (and dead-but-lootless ones, which the scanner filters out anyway) keep their faction node.
+    public override string Primary => LootableCorpse ? ScanTaxonomy.Corpses : FactionNode();
 
     public override IEnumerable<string> Nodes
     {
-        get { yield return FactionNode(); }
+        get { yield return Primary; }
+    }
+
+    // A lootable corpse is an actionable interactable (like a chest), so the scanner's generic I acts on it; a
+    // living unit / emptied corpse is not.
+    public override bool CanInteract => LootableCorpse;
+
+    // Loot the body through the game's OWN unit-click dispatch — the same context-sensitive handler a mouse click
+    // hits, which for a dead-and-has-loot unit out of combat walks the nearest selected party member over and opens
+    // its loot window (the ShortUnit LootScreen). Reused verbatim (as ProxyMapObject reuses ClickMapObjectHandler),
+    // so approach, coop, and acting-unit selection all match the sighted click. Mirrors WrathAccess's ProxyUnit.
+    public override bool Interact()
+    {
+        var view = _unit.View;
+        if (view == null) return false;
+        return new ClickUnitHandler().OnClick(view.gameObject, view.transform.position, 0);
     }
 
     public override string Detail
