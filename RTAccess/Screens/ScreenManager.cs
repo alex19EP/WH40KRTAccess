@@ -34,6 +34,14 @@ namespace RTAccess.Screens
             }
         }
 
+        /// <summary>True when a modal (Exclusive) mod screen is in the active focused chain — the mod owns the
+        /// WHOLE keyboard then (the keyboard-arbitration patch mutes every game key), so a stray game hotkey
+        /// can't fire under one of our modals (e.g. Ctrl+C popping the character sheet over the New Game wizard).</summary>
+        public static bool ExclusiveActive
+        {
+            get { foreach (var s in FocusedFirst()) if (s.Exclusive) return true; return false; }
+        }
+
         public static void Register(Screen screen) => _registered.Add(screen);
 
         public static void Tick()
@@ -129,12 +137,16 @@ namespace RTAccess.Screens
             Register(new CharGenScreen());
             // Settings (CommonVM.SettingsVM) — layer 25, sits above the menu/in-game context when opened.
             Register(new SettingsScreen());
+            // Tutorial popup (CommonVM.TutorialVM, big modal + small hint) — layer 28, a blocking popup that
+            // reads its text on appearance even with Focus Mode off. Above windows/dialogue/settings, below
+            // the confirm modal (30).
+            Register(new TutorialScreen());
             // Message/confirm modal (CommonVM.MessageBoxVM) — layer 30, e.g. the settings save-changes prompt.
             Register(new MessageBoxScreen());
             // Chargen character/ship name-entry modal — layer 32, lets the player type a custom name.
             Register(new NameEntryScreen());
             // Dialogue + book-event readers (DialogContextVM under Surface/Space) — layer 15, above the
-            // in-game context. Subsume the console-era DialogCuePatch as the cue reader in mouse mode.
+            // in-game context. These are the cue readers in mouse mode (the console-era cue path was removed).
             Register(new DialogueScreen());
             Register(new BookEventScreen());
             // Service windows (CurrentServiceWindow-driven, Surface OR Space) — layer 10, above the in-game
@@ -152,6 +164,11 @@ namespace RTAccess.Screens
             // (skill / Tech-Use / Key / Destroy, each with its chance) instead of the game auto-running the first.
             // Raised by RTAccess.Exploration.ProxyMapObject.Interact; outcome voiced by InteractionEvents.
             Register(new VariativeInteractionScreen());
+            // Area-transition / ship-deck fast-travel map (SurfaceStaticPartVM.TransitionVM, a BlueprintMultiEntrance)
+            // — layer 24, Exclusive. The window the map key opens inside a ship (Local Map is unbound there) and
+            // any multi-entrance object raises. Mirrors the reachable rooms; activating one runs the real
+            // AreaTransition. Not a ServiceWindowsType, so it carries its own ScreenName announce.
+            Register(new TransitionScreen());
             // TODO: Vendor, Loot, Encyclopedia + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }
