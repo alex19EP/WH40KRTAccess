@@ -83,7 +83,17 @@ internal static class InteractableDescriber
         //    share the tile with a unit — interactables are off-grid, so this is a nearest-within-reach hint, not a
         //    per-tile lookup. With neither a unit nor an interactable, walkability fills in (unwalkable = "wall",
         //    empty walkable = "clear").
-        var unit = node.GetUnit();
+        // Visual parity: gate the layout/occupant readout by the tile's fog state so a blind player hears only what a
+        // sighted player could perceive on the local map. A never-seen tile reveals nothing but "unexplored"; an
+        // explored-but-not-currently-visible tile reveals its static layout (walls / doors / containers) but NOT a
+        // live creature now standing in the fog; a currently-visible (or fog-off / off-map) tile reads in full. The
+        // cursor's own POSITION is never fog-hidden (the player drives it), so the offset (section 3) is always spoken.
+        var fog = RTAccess.Exploration.FogProbe.Classify((Vector3)node.position);
+        bool seen = fog != RTAccess.Exploration.FogProbe.FogState.NeverSeen;
+        bool hideUnits = fog == RTAccess.Exploration.FogProbe.FogState.Explored;   // explored-not-visible: static layout only
+        if (!seen) sb.Append("unexplored");
+
+        var unit = seen && !hideUnits ? node.GetUnit() : null;
         if (unit != null)
         {
             sb.Append(unit.CharacterName);
@@ -94,22 +104,45 @@ internal static class InteractableDescriber
             if (unit.LifeState.IsDead) Append(sb, "dead");
             else if (!unit.LifeState.IsConscious) Append(sb, "unconscious");
         }
-        if (TryNameMapObject(node, out var objectName, out var objectVerb))
+        if (seen && TryNameMapObject(node, out var objectName, out var objectVerb))
         {
             Append(sb, objectName);
             if (objectVerb != null) Append(sb, objectVerb);
         }
-        else if (unit == null)
+        else if (seen && unit == null)
         {
             if (DestructibleEntity.FindByNode(node) != null) sb.Append("obstacle");
             else sb.Append(node.Walkable ? "clear" : "wall");
         }
 
-        // 2. Cover on each cardinal edge (N/E/S/W = dirs 2/1/0/3 — the same source the game's CoverVisualizer reads).
-        AppendCover(sb, node, 2, "north");
-        AppendCover(sb, node, 1, "east");
-        AppendCover(sb, node, 0, "south");
-        AppendCover(sb, node, 3, "west");
+        // 2. Combat-only tactical overlay, mirroring the game's own cover meshes exactly. Cover is a combat-only
+        //    mechanic and the CoverVisualizer only paints it on the tiles the acting unit can REACH this turn (the
+        //    movable-area set) — never out of combat, never on out-of-range tiles. So we read the same set: a
+        //    reachable tile gets its per-edge cover (N/E/S/W = dirs 2/1/0/3, the same LosCalculations source the
+        //    mesh reads); an unreachable tile is flagged "unreachable" instead and never carries cover — the cue a
+        //    sighted player reads from the ABSENCE of the blue reachable-highlight on that tile. CurrentUnit is
+        //    non-null only on a directly-controllable unit's turn, so it tells a live area from one left stale after
+        //    the unit changed; when there is none (enemy turn, between turns, or no movement left) we say neither,
+        //    exactly as the game shows no mesh.
+        if (seen && Game.Instance?.Player?.IsInCombat == true)
+        {
+            var controller = Game.Instance?.UnitMovableAreaController;
+            var area = controller?.CurrentUnit != null ? controller.CurrentUnitMovableArea : null;
+            if (area != null)
+            {
+                if (area.Contains(node))
+                {
+                    AppendCover(sb, node, 2, "north");
+                    AppendCover(sb, node, 1, "east");
+                    AppendCover(sb, node, 0, "south");
+                    AppendCover(sb, node, 3, "west");
+                }
+                else
+                {
+                    Append(sb, "unreachable");
+                }
+            }
+        }
 
         // 3. Offset from the anchor unit, in tiles (+Z = north, +X = east — matches the compass above).
         Append(sb, RelativeTile(node, anchor));
@@ -144,34 +177,49 @@ internal static class InteractableDescriber
     private static float InteractReach => GraphParamsMechanicsCache.GridCellSize * 1.5f;
 
     /// <summary>The interactable map object nearest <paramref name="node"/> within <see cref="InteractReach"/>, or
-    /// null — the resolver behind the cursor's Enter "interact at cursor" and <see cref="DescribeTile"/>'s object
-    /// headline. Interactables are off-grid, so this is a proximity query (not grid-footprint containment), gated by
-    /// the game's own <see cref="ClickMapObjectHandler.HasAvailableInteractions"/> (plus area-transition exits, which
-    /// carry no InteractionPart). The chosen object is driven through the game's click handler by
+    /// null — the single-object resolver behind <see cref="DescribeTile"/>'s object headline. A thin "nearest = first"
+    /// wrapper over <see cref="InteractablesAt"/>, so both share one gate and one distance metric.</summary>
+    public static MapObjectEntity InteractableAt(CustomGridNodeBase node) => InteractablesAt(node).FirstOrDefault();
+
+    /// <summary>EVERY actionable map object within <see cref="InteractReach"/> of <paramref name="node"/>, nearest
+    /// first (empty when none) — the resolver behind the interact keys. Interactables are off-grid, so this is a
+    /// proximity query (not grid-footprint containment) and more than one can sit within reach of a single tile
+    /// (clustered loot, a door beside a lever); the cursor's Enter pops a chooser when there is more than one (see
+    /// <see cref="RTAccess.Exploration.Activation"/>). Gated by the game's own
+    /// <see cref="ClickMapObjectHandler.HasAvailableInteractions"/> (plus area-transition exits, which carry no
+    /// InteractionPart). Each chosen object is driven through the game's click handler by
     /// <see cref="RTAccess.Exploration.ProxyMapObject.Interact"/>.</summary>
-    public static MapObjectEntity InteractableAt(CustomGridNodeBase node)
+    public static List<MapObjectEntity> InteractablesAt(CustomGridNodeBase node)
+        => node == null ? new List<MapObjectEntity>() : InteractablesAt((Vector3)node.position);
+
+    /// <summary>As <see cref="InteractablesAt(CustomGridNodeBase)"/> but around an arbitrary world point — lets the
+    /// scanner's I key resolve the interactable(s) co-located with the review SELECTION (its position), reproducing
+    /// the manual "plant the cursor on the selection, then Enter" without stepping the movement cursor there.</summary>
+    public static List<MapObjectEntity> InteractablesAt(Vector3 origin)
     {
-        if (node == null) return null;
-        MapObjectEntity best = null;
-        float bestSqr = InteractReach * InteractReach;
-        var origin = (Vector3)node.position;
+        var list = new List<MapObjectEntity>();
         try
         {
             foreach (var mapObject in EntityBoundsHelper.FindEntitiesInRange(origin, InteractReach).OfType<MapObjectEntity>())
-            {
-                if (!IsActionable(mapObject)) continue;
-                var d = mapObject.Position - origin;
-                d.y = 0f;
-                float sqr = d.sqrMagnitude;
-                if (sqr <= bestSqr) { bestSqr = sqr; best = mapObject; }
-            }
+                if (IsActionable(mapObject)) list.Add(mapObject);
+            list.Sort((a, b) => SqrXZ(a.Position, origin).CompareTo(SqrXZ(b.Position, origin)));
         }
-        catch (Exception e) { Main.Log?.Error("InteractableAt failed: " + e); }
-        return best;
+        catch (Exception e) { Main.Log?.Error("InteractablesAt failed: " + e); }
+        return list;
+    }
+
+    /// <summary>Squared XZ (planar) distance — the ground-plane metric the interact reach uses, ignoring height.</summary>
+    private static float SqrXZ(Vector3 a, Vector3 b)
+    {
+        float dx = a.x - b.x, dz = a.z - b.z;
+        return dx * dx + dz * dz;
     }
 
     /// <summary>Can the player act on this map object right now — the game's own gate (an available interaction, or
-    /// an area-transition exit, which carries no InteractionPart)?</summary>
+    /// an area-transition exit, which carries no InteractionPart)? This mirrors ClickMapObjectHandler exactly, so the
+    /// tile cursor surfaces precisely what a sighted player could click — including bark/examine interactions, which
+    /// are genuine UIInteractionType.Info interactions (see the scanner gate in
+    /// <see cref="RTAccess.Exploration.ProxyMapObject"/>).</summary>
     private static bool IsActionable(MapObjectEntity o)
     {
         if (o?.View == null) return false;

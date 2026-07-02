@@ -45,7 +45,7 @@ internal static class MapCursor
     /// did not move rather than falsely re-announcing the old tile.</summary>
     public static bool Set(Vector3 worldPos)
     {
-        var node = worldPos.GetNearestNodeXZ() as CustomGridNodeBase;
+        var node = NavmeshProbe.NodeAt(worldPos);
         if (node == null) return false;
         _node = node;
         return true;

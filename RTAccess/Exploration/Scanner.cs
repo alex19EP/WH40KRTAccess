@@ -52,13 +52,16 @@ internal static class Scanner
         ("taxonomy.units.enemies",  false, it => it.Primary == ScanTaxonomy.UnitsEnemies),
         ("taxonomy.units.neutrals", false, it => it.Primary == ScanTaxonomy.UnitsNeutrals),
         ("taxonomy.containers",     false, it => it.HasNode(ScanTaxonomy.Containers)),
+        ("taxonomy.corpses",        false, it => it.HasNode(ScanTaxonomy.Corpses)),   // dead-with-loot bodies (I loots)
         ("taxonomy.doors",          false, it => it.HasNode(ScanTaxonomy.Doors)),
         ("taxonomy.exits",          false, it => it.HasNode(ScanTaxonomy.Exits)),
         ("taxonomy.poi",            true,  null),   // area-wide local-map landmark pins (travel-to; see MarkerList)
         ("taxonomy.searchpoints",   false, it => it.HasNode(ScanTaxonomy.SearchPoints)),
         ("taxonomy.traps",          false, it => it.HasNode(ScanTaxonomy.Traps)),
         ("taxonomy.mechanisms",     false, it => it.HasNode(ScanTaxonomy.Mechanisms)),
-        ("taxonomy.scenery",        false, it => it.HasNode(ScanTaxonomy.Scenery)),
+        // No "scenery" category: a map object with no live interaction / exit / marker is no longer scannable
+        // (see ProxyMapObject.IsScannable) and NodeSet has no Scenery fallback, so nothing produces that node.
+        // Real interactions (incl. bark/examine volumes) land in their own bucket — bark → Mechanisms.
         ("taxonomy.hazards",        false, it => it.HasNode(ScanTaxonomy.Hazards)),
         ("taxonomy.buffzones",      false, it => it.HasNode(ScanTaxonomy.BuffZones)),
     };
@@ -70,6 +73,11 @@ internal static class Scanner
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
+
+    // Cached reflection handle for the indoors flag — BlueprintAreaPart.m_IndoorType is private with no public
+    // accessor. Resolved once at load; null (→ treated as outdoors) if a game update ever renames the field.
+    private static readonly System.Reflection.FieldInfo _indoorTypeField =
+        HarmonyLib.AccessTools.Field(typeof(Kingmaker.Blueprints.Area.BlueprintAreaPart), "m_IndoorType");
 
     // ---- registered action entry points (InputCategory.Exploration; see InputBindings.RegisterDefaults) ----
     // Each is wired to an InputAction so the dev harness /input can drive it and the framework's chord shadowing
@@ -137,11 +145,29 @@ internal static class Scanner
         if (anchor == null) { Speak(Loc.T("status.no_selection")); return; }
         var refPos = ScanFrom();
 
-        _categoryIndex = Wrap(_categoryIndex + dir, Categories.Length);
-        var list = CategoryList(_categoryIndex, refPos);
-        if (list.Count == 0) { _selectedKey = null; Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
+        // Skip empty categories: land on the next category (in the step direction) that currently has
+        // something to browse, so the player never cycles onto a dead "…, empty" stop (mirrors WrathAccess's
+        // NextCategoryIndex). When NOTHING in the area populates any category, stay put and say so.
+        int next = NextNonEmptyCategory(_categoryIndex, dir, refPos);
+        if (next < 0) { _selectedKey = null; Speak(Loc.T("scan.nothing_to_scan")); return; }
 
+        _categoryIndex = next;
+        var list = CategoryList(_categoryIndex, refPos);
         Select(list, 0, refPos, CategoryLabel + ", " + list.Count + ". ");
+    }
+
+    /// <summary>The index of the next category (from <paramref name="from"/>, stepping by <paramref name="dir"/>)
+    /// that currently holds at least one item, or -1 when every category is empty. Scans at most one full loop, so
+    /// it always terminates. Category lists are cheap to rebuild (a single pass over the live registry), so we probe
+    /// them directly rather than caching counts.</summary>
+    private static int NextNonEmptyCategory(int from, int dir, Vector3 refPos)
+    {
+        for (int step = 1; step <= Categories.Length; step++)
+        {
+            int i = Wrap(from + dir * step, Categories.Length);
+            if (CategoryList(i, refPos).Count > 0) return i;
+        }
+        return -1;
     }
 
     private static void Review(Group group, int dir)
@@ -160,44 +186,70 @@ internal static class Scanner
 
     // ---- actions on the selection ----
 
-    // I interacts with the review selection when it's an actionable object, and otherwise falls back to the object
-    // at the cursor — so it never dead-ends. Both branches drive the SAME in-game activation (ProxyMapObject.Interact
-    // → area-transition / variative / ClickMapObjectHandler), which is also exactly what the cursor's Enter fires.
+    // I is the review-selection half of the interact pair; Enter is the tile-cursor half (see TileExplorer). Both
+    // now funnel through ONE activation path (Activation / TryActivateSelection), so their capability is symmetric —
+    // whatever one key can activate, the other can too. They differ only in ORDER: I tries the review selection
+    // first, then the tile-cursor object; Enter the reverse. Every branch drives the SAME in-game activation
+    // (ProxyMapObject.Interact → area-transition / variative / ClickMapObjectHandler), so it never dead-ends.
     private static void Interact()
     {
         var sel = ResolveSelected();
 
-        // 1. Primary: the review selection, when it is an actionable interactable object (CanInteract is the game's
-        //    own gate — see ProxyMapObject). Distance-agnostic — you can act on a cycled object across the room —
-        //    so only a genuinely cross-area selection is refused.
-        if (sel != null && sel.CanInteract)
-        {
-            var anchor = Anchor();
-            if (anchor != null && !Geo.SameArea(anchor.Position, sel.Position))
-            { Speak(Loc.T("scan.cant_reach_area", new { name = sel.Name })); return; }
-            SpeakOutcome(sel.Interact(), sel.Name);
-            return;
-        }
-
-        // 2. A landmark's only supported action is to TRAVEL to it — the game's local-map pin isn't clickable
-        //    (verified: no marker view handles a click; LocalMapVM.OnClick just walks the party to the point), so
-        //    I walks the party toward it rather than trying to "activate" it.
+        // A landmark (local-map pin) isn't a reach-interactable — the only thing it supports is walking to it.
         if (sel is ProxyMarker) { TravelTo(sel); return; }
 
-        // 3. Fallback: the nearest actionable object to the tile cursor (or, when the cursor is unplanted, to the
-        //    anchor unit) — the SAME object the cursor's Enter acts on. So I still activates the object you're
-        //    pointing at when the selection is a unit / area effect / non-actionable object / nothing.
-        var near = InteractableDescriber.InteractableAt(MapCursor.Node ?? Anchor()?.CurrentUnwalkableNode);
-        if (near != null) { var item = new ProxyMapObject(near); SpeakOutcome(item.Interact(), item.Name); return; }
+        // 1) The review selection itself, when it's an actionable object. NO same-area/navmesh pre-guard: the
+        //    game's own Interact (ApproachAndInteract) walks a unit to the object and handles reachability itself,
+        //    and the selection is always in the current area (a cross-area key resolves to null in ResolveSelected).
+        //    The old Geo.SameArea guard compared navmesh CONNECTED COMPONENTS, so it wrongly refused same-area
+        //    objects whose position snaps to a disconnected island the party can't stand ON — a pedestal
+        //    (PostamentsObsidian), an object behind a low wall, an elevated prop — with a bogus "Can't reach". The
+        //    tile cursor's Enter never had this guard, which is exactly why it interacted those objects fine.
+        if (sel != null && sel.CanInteract)
+        {
+            if (sel.Interact()) { Activation.SpeakOutcome(true, sel.Name); return; }
+            // The selection reported actionable but its OWN interaction didn't fire — a co-located decorative /
+            // proxy object, a restriction, or the wrong actor picked up. Don't dead-end on "can't interact":
+            // fall through to the proximity resolve at its TILE — exactly the "plant the cursor on it, then
+            // Enter" the player was doing by hand (which is why that workaround succeeds where a bare I did not).
+        }
+
+        // 2) The interactable object(s) co-located with the selection (its tile) — or, with no usable selection,
+        //    the movement cursor / anchor tile. Proximity resolve; pops a chooser when several share reach.
+        Vector3? origin = sel?.Position;
+        if (origin == null)
+        {
+            var node = MapCursor.Node ?? Anchor()?.CurrentUnwalkableNode;
+            if (node != null) origin = (Vector3)node.position;
+        }
+        if (origin is Vector3 o && Activation.TryCursorObject(o)) return;
 
         Speak(Loc.T("scan.nothing_nearby"));
     }
 
-    /// <summary>The shared interaction-outcome line — "Interacting with X." / "Can't interact with X." — spoken by
-    /// both the I key here and the cursor's Enter (<see cref="TileExplorer.InteractAtCursor"/>), so activation reads
-    /// identically however the object was reached.</summary>
-    private static void SpeakOutcome(bool ok, string name)
-        => Speak(Loc.T(ok ? "scan.interacting" : "scan.cant_interact", new { name }));
+    /// <summary>
+    /// Selection-tier activation, shared with the tile cursor's Enter (<see cref="TileExplorer.InteractAtCursor"/>)
+    /// so both interact keys reach the same targets. An actionable review selection → interact through the game's
+    /// own click path — distance-agnostic (you can act on a cycled object across the room); reachability is left to
+    /// the game's own approach-and-interact rather than a pre-guard, so a same-area object on a disconnected navmesh
+    /// island (a pedestal, an elevated prop) is no longer wrongly refused. A landmark
+    /// → walk the party toward it (the local-map pin isn't clickable; that is all it supports). Returns true when it
+    /// handled the press, false when there is no selection to act on (null / a unit / a non-actionable object) so the
+    /// caller falls back to the tile cursor's object.
+    /// </summary>
+    internal static bool TryActivateSelection()
+    {
+        var sel = ResolveSelected();
+        if (sel != null && sel.CanInteract)
+        {
+            // No same-area pre-guard (see Interact): the game's Interact handles approach/reachability, and the
+            // Geo.SameArea navmesh-component test wrongly refused same-area objects on a disconnected island.
+            Activation.SpeakOutcome(sel.Interact(), sel.Name);
+            return true;
+        }
+        if (sel is ProxyMarker) { TravelTo(sel); return true; }
+        return false;
+    }
 
     /// <summary>Walk the party toward a landmark — the only action a local-map pin supports. Off-mesh pins (far
     /// exits, floating markers) would make the pathfinder drop a direct move, so it heads as far toward the pin as
@@ -245,6 +297,7 @@ internal static class Scanner
         var area = Game.Instance?.CurrentlyLoadedArea;
         var name = area != null ? TextUtil.StripRichText(area.AreaDisplayName) : null;
         if (!string.IsNullOrWhiteSpace(name)) parts.Add(name);
+        if (IsIndoors()) parts.Add(Loc.T("where.indoors"));
 
         var anchor = Anchor();
         var areaPart = Game.Instance?.CurrentlyLoadedAreaPart;
@@ -259,7 +312,32 @@ internal static class Scanner
                 parts.Add(Geo.RegionWord(fx, fz));
             }
         }
+
+        // Fog "unexplored": query the tile the player is oriented to — the planted cursor when the tile explorer is
+        // active (scouting ahead into the unknown), otherwise the anchor's live position (which, being a party unit,
+        // is always revealed, so the word only ever fires for a planted cursor sitting on never-seen ground).
+        Vector3? probe = MapCursor.Has ? (Vector3?)MapCursor.Position
+                       : anchor != null ? (Vector3?)Geo.Live(anchor)
+                       : null;
+        if (probe is Vector3 p && FogProbe.Classify(p) == FogProbe.FogState.NeverSeen)
+            parts.Add(Loc.T("where.unexplored"));
+
         Speak(parts.Count > 0 ? string.Join(", ", parts) : Loc.T("where.unknown"));
+    }
+
+    // Is the loaded area part flagged indoors? Read from the blueprint's private IndoorType (any value but None is an
+    // interior). Best-effort: a null field handle / missing area part / read failure → outdoors (the word is omitted).
+    // (The fog "unexplored" branch is now handled above via FogProbe; room name stays deferred — no RoomMap yet.)
+    private static bool IsIndoors()
+    {
+        try
+        {
+            var areaPart = Game.Instance?.CurrentlyLoadedAreaPart;
+            if (areaPart == null || _indoorTypeField == null) return false;
+            return _indoorTypeField.GetValue(areaPart) is Kingmaker.Blueprints.Area.IndoorType t
+                   && t != Kingmaker.Blueprints.Area.IndoorType.None;
+        }
+        catch { return false; }
     }
 
     private static void PartyReadout()
@@ -345,9 +423,11 @@ internal static class Scanner
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Items)
         {
-            // !IsDead keeps corpses out of the party/enemy/neutral categories too (the unit categories); the object
-            // categories are unaffected (a map object is never dead). Corpses stay under the tile cursor, labelled dead.
-            if (it.IsVisible && !it.IsDead && cat.Pred(it)) list.Add(it);
+            // Dead units are kept out of the party/enemy/neutral categories — EXCEPT a lootable corpse, which the
+            // game lets you loot: it flips its Primary to Corpses (so it never matches a faction category) and shows
+            // in the Corpses category instead. An emptied/lootless corpse stays hidden. Object categories are
+            // unaffected (a map object is never dead). Corpses also stay under the tile cursor, labelled dead.
+            if (it.IsVisible && (!it.IsDead || it.LootableCorpse) && cat.Pred(it)) list.Add(it);
         }
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
@@ -358,19 +438,27 @@ internal static class Scanner
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Items)
         {
-            // !IsDead drops corpses from the party/enemy/neutral review cycles (comma/period/N/M) — you don't cycle to
-            // the dead. Only affects units (objects/zones report IsDead false), and matches Summarize's count filter.
-            if (it.IsVisible && it.CurrentlySeen && !it.IsDead && InGroup(it, group)) list.Add(it);
+            // DetectableFrom = currently seen OR a remembered (reveal-latched) thing under fog with a CLEAR line of
+            // sight from the cursor — so a revealed-but-fogged interactable (a crime-scene skill check across the
+            // room) re-enters the review cycles once you'd actually have a straight path to it, instead of being
+            // hard-dropped by the old fog test. The category browse stays reveal-latched (IsVisible); this is the
+            // narrower tactical cycle. Dead units still drop (you don't cycle to the dead) — but a lootable corpse
+            // rides the OBJECT cycle (M) via its Corpses node. Only the dead gate affects units; objects/zones are
+            // never dead.
+            if (it.DetectableFrom(refPos) && (!it.IsDead || it.LootableCorpse) && InGroup(it, group)) list.Add(it);
         }
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
     }
 
     // The "points of interest" category: area-wide local-map landmark pins (objective / POI / important / loot),
-    // wrapped as ScanItems and sourced from LocalMapModel.Markers, NOT the WorldModel snapshot. Do NOT filter on
-    // marker.IsVisible() — it's a perception check that hides ordinary markers. Exit markers are deliberately
-    // excluded: area exits are surfaced as their real (activatable) world objects in the Exits category. Creature/Unit
-    // markers are excluded too — they belong to the party/enemies/neutrals cycles.
+    // wrapped as ScanItems and sourced from LocalMapModel.Markers, NOT the WorldModel snapshot. Objective / POI /
+    // important pins stay ungated (they are curated navigation aids the game means you to see, and marker.IsVisible()
+    // hides ordinary ones). LOOT pins, however, ARE perception-gated: an undiscovered loot pin leaks its location —
+    // verified in-game, two GoodLoot caches surfaced their pins with IsVisible()==false — so a Loot pin is listed
+    // only once the game says you can see it. Exit markers are deliberately excluded: area exits are surfaced as
+    // their real (activatable) world objects in the Exits category. Creature/Unit markers are excluded too — they
+    // belong to the party/enemies/neutrals cycles.
     private static List<ScanItem> MarkerList(Vector3 refPos)
     {
         var list = new List<ScanItem>();
@@ -379,12 +467,22 @@ internal static class Scanner
             if (m == null) continue;
             var type = m.GetMarkerType();
             if (!LocalMapModel.IsInCurrentArea(m.GetPosition())) continue;
-            if (type == LocalMapMarkType.Poi || type == LocalMapMarkType.Loot
-                || type == LocalMapMarkType.DestinationMark || type == LocalMapMarkType.VeryImportantThing)
+            // Undiscovered loot pins are a spoiler leak — gate them on the game's own perception check.
+            if (type == LocalMapMarkType.Loot) { if (SafeMarkerVisible(m)) list.Add(new ProxyMarker(m)); continue; }
+            if (type == LocalMapMarkType.Poi || type == LocalMapMarkType.DestinationMark
+                || type == LocalMapMarkType.VeryImportantThing)
                 list.Add(new ProxyMarker(m));
         }
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
+    }
+
+    // marker.IsVisible() is a perception check; guard it so a marker whose check throws doesn't sink the whole list
+    // (best-effort — treat an unreadable marker as hidden, the safe side for a spoiler-sensitive loot pin).
+    private static bool SafeMarkerVisible(ILocalMapMarker m)
+    {
+        try { return m.IsVisible(); }
+        catch { return false; }
     }
 
     private static bool InGroup(ScanItem it, Group group)
@@ -403,7 +501,8 @@ internal static class Scanner
                 // object with no interaction) is still excluded — there is nothing to activate.
                 return it.HasNode(ScanTaxonomy.Containers) || it.HasNode(ScanTaxonomy.Doors)
                     || it.HasNode(ScanTaxonomy.Exits) || it.HasNode(ScanTaxonomy.SearchPoints)
-                    || it.HasNode(ScanTaxonomy.Mechanisms) || it.HasNode(ScanTaxonomy.Traps);
+                    || it.HasNode(ScanTaxonomy.Mechanisms) || it.HasNode(ScanTaxonomy.Traps)
+                    || it.HasNode(ScanTaxonomy.Corpses);   // lootable bodies loot like containers via I
         }
     }
 
@@ -451,8 +550,89 @@ internal static class Scanner
     /// to inspect whatever the player is currently browsing in the scanner.</summary>
     internal static BaseUnitEntity SelectedUnit() => ResolveSelected()?.Key as BaseUnitEntity;
 
+#if DEBUG
+    // Read-only diagnostic (F8 / DevApi.DebugScannerInteract): explains why the review SELECTION's I key and the
+    // tile cursor's Enter can disagree — the "I can M-select it but I says can't interact, yet Home+Enter works"
+    // report. Dumps, for the current selection AND every interactable object co-located with it, each interaction
+    // part's Enabled vs live CanInteract() vs whether the game's own ClickMapObjectHandler.Interact could actually
+    // fire it (SelectUnit non-null + not preparation turn). No world mutation. See [[rt-scanner-consistency]].
+    internal static string DebugInteract()
+    {
+        var sb = new System.Text.StringBuilder();
+        var g = Game.Instance;
+        sb.Append("=== Scanner interact diagnostic ===\n");
+        sb.Append("combat=").Append(g?.Player?.IsInCombat)
+          .Append(" tb=").Append(g?.TurnController?.TurnBasedModeActive)
+          .Append(" playerTurn=").Append(g?.TurnController?.IsPlayerTurn)
+          .Append(" prep=").Append(g?.TurnController?.IsPreparationTurn)
+          .Append(" controllerMouse=").Append(g?.IsControllerMouse).Append('\n');
+
+        var units = new List<BaseUnitEntity>();
+        var su = g?.SelectionCharacter?.SelectedUnits;
+        if (su != null) foreach (var u in su) units.Add(u);
+        sb.Append("selectedUnits=");
+        for (int i = 0; i < units.Count; i++) { if (i > 0) sb.Append(", "); sb.Append(units[i]?.CharacterName); }
+        sb.Append('\n');
+
+        var sel = ResolveSelected();
+        sb.Append("selection=").Append(sel?.Name ?? "<none>")
+          .Append(" proxy=").Append(sel?.GetType().Name ?? "-")
+          .Append(" CanInteract=").Append(sel?.CanInteract).Append('\n');
+
+        if (sel?.Key is MapObjectEntity selEntity) DumpInteractObject(sb, "SELECTION", selEntity, units);
+        else sb.Append("  (selection is not a map object)\n");
+
+        if (sel != null)
+        {
+            sb.Append("-- InteractablesAt(selection.Position), reach~2m --\n");
+            var here = InteractableDescriber.InteractablesAt(sel.Position);
+            if (here.Count == 0) sb.Append("  (none)\n");
+            for (int i = 0; i < here.Count; i++) DumpInteractObject(sb, "TILE[" + i + "]", here[i], units);
+        }
+
+        var s = sb.ToString();
+        Main.Log?.Log(s);
+        return s;
+    }
+
+    private static void DumpInteractObject(System.Text.StringBuilder sb, string tag, MapObjectEntity o, List<BaseUnitEntity> units)
+    {
+        var view = o?.View;
+        bool has = view != null
+            && Kingmaker.Controllers.Clicks.Handlers.ClickMapObjectHandler.HasAvailableInteractions(view.gameObject);
+        sb.Append("  ").Append(tag).Append(" '").Append(view != null ? view.name : (o?.ToString() ?? "?"))
+          .Append("' HasAvailableInteractions=").Append(has).Append('\n');
+        if (o == null) return;
+        foreach (var part in o.Interactions)
+        {
+            if (part == null) continue;
+            BaseUnitEntity picked = null;
+            try { picked = part.SelectUnit(units); } catch { }
+            string can; try { can = part.CanInteract().ToString(); } catch (Exception e) { can = "err:" + e.GetType().Name; }
+            sb.Append("      part=").Append(part.GetType().Name)
+              .Append(" Enabled=").Append(part.Enabled)
+              .Append(" CanInteract=").Append(can)
+              .Append(" Type=").Append(part.Type)
+              .Append(" ShowOvertip=").Append(part.Settings.ShowOvertip)
+              .Append(" SelectUnit=").Append(picked != null ? picked.CharacterName : "null")
+              .Append('\n');
+        }
+    }
+#endif
+
     private static BaseUnitEntity Anchor()
-        => Game.Instance?.SelectionCharacter?.SelectedUnit?.Value ?? Game.Instance?.Player?.MainCharacterEntity;
+    {
+        var game = Game.Instance;
+        // In turn-based combat the scan origin follows the ACTING unit (whose turn it is) when it's one of yours, so
+        // distances / where-am-I / the unplanted sort measure from that unit even if the player hasn't (re)selected it
+        // — matching the combat cover/range tail (ProxyUnit.CombatSuffix / Summarize), which already reads CurrentUnit.
+        // On an enemy's turn (CurrentUnit not directly controllable) we fall back to the selection so the player keeps a
+        // stable own-unit origin instead of measuring from the enemy.
+        if (game?.TurnController?.TurnBasedModeActive == true
+            && game.TurnController.CurrentUnit is BaseUnitEntity acting && acting.IsDirectlyControllable)
+            return acting;
+        return game?.SelectionCharacter?.SelectedUnit?.Value ?? game?.Player?.MainCharacterEntity;
+    }
 
     /// <summary>The origin the scanner measures and sorts from: the shared <see cref="MapCursor"/> when it is
     /// planted (tile explorer active — you browse relative to where you are looking), otherwise the anchor unit's

@@ -12,10 +12,12 @@ namespace RTAccess.Accessibility;
 
 /// <summary>
 /// The always-active virtual grid cursor — the movement half of the WrathAccess "map viewer" coupling, on RT's
-/// discrete square grid. The player steps it tile-by-tile with the arrow keys and hears a full readout of each tile
+/// discrete square grid. The player steps it tile-by-tile with the arrow keys and hears a readout of each tile
 /// (occupant, walkability/reason, cover on every edge, offset from the anchor). Unlike the area scanner (which
 /// cycles the interactables the game itself surfaces) this reads ARBITRARY tiles, so a blind player can map a room
-/// or scout cover before moving. The readout is composed by <see cref="InteractableDescriber.DescribeTile"/>; the
+/// or scout cover before moving — but only within VISUAL PARITY: the readout is fog-gated so it reveals no more of an
+/// unexplored area than a sighted player sees on the local map (never-seen → just "unexplored"; explored-not-visible →
+/// static layout but no live creatures; visible → full). The readout is composed by <see cref="InteractableDescriber.DescribeTile"/>; the
 /// grid model is the game's pathfinding graph (<see cref="CustomGridGraph"/>, the square 1.35 m grid).
 ///
 /// There is no toggle. The cursor is live whenever the in-game screen owns world control: its keys are registered
@@ -93,8 +95,7 @@ internal static class TileExplorer
         {
             var cur = MapCursor.Node;
             if (cur == null) return;   // EnsurePlanted guarantees this; defensive only
-            var grid = cur.Graph as CustomGridGraph;
-            var next = grid?.GetNode(cur.XCoordinateInGrid + dx, cur.ZCoordinateInGrid + dz);
+            var next = NavmeshProbe.Neighbour(cur, dx, dz);
             if (next == null) { Speaker.Speak("Edge.", interrupt: true); return; }
             MapCursor.Set(next);
             _armedNode = null;   // any cursor step re-arms the move-to two-step confirm — no stale arm survives a move
@@ -201,13 +202,16 @@ internal static class TileExplorer
     }
 
     /// <summary>
-    /// Interact with the interactable NEAREST the cursor — the Enter / KeypadEnter half of the verb pair (the I key
-    /// interacts with the scanner SELECTION instead; see <see cref="RTAccess.Exploration.Scanner"/>). Interactables
-    /// live off-grid (not slotted per tile), so this resolves the nearest one within reach of the cursor via
-    /// <see cref="InteractableDescriber.InteractableAt"/> — the same object <see cref="Describe"/> just announced —
-    /// and drives it through the game's own click interaction (<see cref="RTAccess.Exploration.ProxyMapObject.Interact"/>,
-    /// i.e. ClickMapObjectHandler), the way a mouse click does. Lazy-plants like the other cursor verbs (a cold press
-    /// reads the tile rather than acting); speaks "nothing to interact with nearby" when there is none.
+    /// Interact — the Enter / KeypadEnter half of the verb pair (the I key leads with the scanner SELECTION instead;
+    /// see <see cref="RTAccess.Exploration.Scanner"/>). Both keys funnel through the SAME activation path and reach
+    /// the same targets — they differ only in order: Enter tries THIS key's cursor first (the object(s) at the tile
+    /// cursor, via <see cref="RTAccess.Exploration.Activation.TryCursorObject"/> — which pops a chooser when a tile
+    /// has several within reach), then falls back to the review selection
+    /// (<see cref="RTAccess.Exploration.Scanner.TryActivateSelection"/>). Interactables live off-grid, so the tile
+    /// resolve is a nearest-within-reach proximity query — the same object <see cref="Describe"/> just announced —
+    /// driven through the game's own click interaction (<see cref="RTAccess.Exploration.ProxyMapObject.Interact"/>),
+    /// the way a mouse click does. Lazy-plants like the other cursor verbs (a cold press reads the tile rather than
+    /// acting); speaks "nothing to interact with nearby" only when neither cursor has a target.
     /// </summary>
     public static void InteractAtCursor()
     {
@@ -217,12 +221,9 @@ internal static class TileExplorer
             if (RTAccess.Exploration.Targeting.Aiming) { RTAccess.Exploration.Targeting.CommitAtCursor(); return; }
             if (!EnsurePlanted(out bool fresh)) return;
             if (fresh) { Announce(); return; }
-            var obj = InteractableDescriber.InteractableAt(MapCursor.Node);
-            if (obj == null) { Speaker.Speak(Loc.T("scan.nothing_nearby"), interrupt: true); return; }
-            var item = new ProxyMapObject(obj);
-            // Same localized outcome line the scanner's I key speaks (scan.interacting / scan.cant_interact), so
-            // activation reads identically whether the object was reached by the cursor or the review selection.
-            Speaker.Speak(Loc.T(item.Interact() ? "scan.interacting" : "scan.cant_interact", new { name = item.Name }), interrupt: true);
+            if (RTAccess.Exploration.Activation.TryCursorObject(MapCursor.Node)) return;   // this key's cursor first
+            if (RTAccess.Exploration.Scanner.TryActivateSelection()) return;               // then the review selection
+            Speaker.Speak(Loc.T("scan.nothing_nearby"), interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.InteractAtCursor failed: " + e); }
     }

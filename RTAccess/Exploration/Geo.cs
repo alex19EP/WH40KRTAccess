@@ -1,25 +1,16 @@
 using Kingmaker.EntitySystem.Entities; // MechanicEntity (Live view position)
-using Kingmaker.Pathfinding; // GetNearestNodeXZ extension (GridAreaHelper)
-using Kingmaker.View;        // ObstacleAnalyzer
 using UnityEngine;
 
 namespace RTAccess.Exploration;
 
 /// <summary>
-/// Small spatial-readout helper shared by the scanner: planar XZ distance (for sorting), navmesh
-/// connected-component reachability, an on-mesh test, and a 3x3 compass region word. Bearing/distance
-/// announcement strings are produced by <see cref="RTAccess.Accessibility.InteractableDescriber"/> so the
-/// scanner speaks the same compass as the other navigators; this type owns only the math that has no home there.
-///
-/// Reachability mirrors the game's own cross-area block: two world points are mutually walkable iff their
-/// nearest navmesh nodes share an <c>Area</c> (connected component) — <see cref="ObstacleAnalyzer.GetArea"/>
-/// returns the sentinel <see cref="NoArea"/> when no node is near, which we treat as "don't block".
+/// Small spatial-readout helper shared by the scanner: planar XZ distance (for sorting), an on-mesh test, a
+/// walkable-snap march for landmark travel, and a 3x3 compass region word. Bearing/distance announcement strings
+/// are produced by <see cref="RTAccess.Accessibility.InteractableDescriber"/> so the scanner speaks the same
+/// compass as the other navigators; this type owns only the math that has no home there.
 /// </summary>
 internal static class Geo
 {
-    // ObstacleAnalyzer.GetArea's sentinel when no node is near (decompiled: GetNearestNode(pos).node?.Area ?? 999999).
-    private const uint NoArea = 999999u;
-
     /// <summary>The entity's live VIEW position — the interpolated transform the player sees — rather than the
     /// possibly-lagged logical <see cref="MechanicEntity.Position"/> (which can snap to the node mid-move), so
     /// bearings/distances stay accurate while a unit is walking. Falls back to the logical position when no view
@@ -36,26 +27,6 @@ internal static class Geo
     {
         float dx = to.x - from.x, dz = to.z - from.z;
         return Mathf.Sqrt(dx * dx + dz * dz);
-    }
-
-    /// <summary>True when a and b are mutually reachable (share a navmesh connected component). A point off
-    /// the mesh (NoArea) is treated as same, so an unclassifiable snap never wrongly blocks; callers that must
-    /// not path onto off-mesh points gate on <see cref="OnNavmesh"/> first.</summary>
-    public static bool SameArea(Vector3 a, Vector3 b)
-    {
-        uint ar = ObstacleAnalyzer.GetArea(a), br = ObstacleAnalyzer.GetArea(b);
-        return ar == NoArea || br == NoArea || ar == br;
-    }
-
-    /// <summary>Is this point on walkable ground? — its nearest grid node exists and lies within ~2 m on the
-    /// XZ plane (the same tolerance <see cref="SnapToWalkable"/> uses to decide a point is "really on-mesh").</summary>
-    public static bool OnNavmesh(Vector3 p)
-    {
-        var node = p.GetNearestNodeXZ();
-        if (node == null) return false;
-        var d = node.Vector3Position - p;
-        d.y = 0f;
-        return d.sqrMagnitude <= 4f;
     }
 
     /// <summary>
@@ -75,10 +46,7 @@ internal static class Geo
         for (int i = 1; i <= steps; i++)
         {
             var p = Vector3.Lerp(from, target, (float)i / steps);
-            var node = p.GetNearestNodeXZ();
-            if (node == null) break;                          // off-graph here — navmesh ended
-            var d = node.Vector3Position - p; d.y = 0f;
-            if (d.sqrMagnitude > 4f) break;                   // nearest floor is >2 m away — not really on-mesh
+            if (!NavmeshProbe.OnMesh(p, out _)) break;        // off-graph, or nearest floor >2 m away — navmesh ended
             best = p;                                         // still on walkable floor; keep advancing
         }
         return best;

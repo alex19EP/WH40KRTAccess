@@ -37,6 +37,28 @@ internal abstract class ScanItem
     /// <summary>Can the player perceive it right now (not in fog) — used by the review cycles.</summary>
     public virtual bool CurrentlySeen => true;
 
+    // Small tolerance so a target grazing a corner/edge still reads as detectable (matches WrathAccess's LosFudge).
+    private const float LosFudge = 0.2f;
+
+    /// <summary>Cycle-visibility for the review cycles (M / comma / period / N): currently seen, OR a remembered
+    /// (reveal-latched) thing under fog that has a CLEAR line of sight from <paramref name="cursor"/> — so a chest
+    /// behind a wall isn't offered until you'd actually have a straight path to it. The category browse stays
+    /// reveal-latched on <see cref="IsVisible"/> ("everything you know is here"); this is the narrower "what can I
+    /// make out from here" gate. Ported from WrathAccess (ScanItem.DetectableFrom); the fog case uses the game's own
+    /// line-of-sight geometry (<c>LineOfSightGeometry.HasObstacle</c>). A null LoS system (areas without one) admits;
+    /// a failed check refuses (conservative — don't re-admit a fogged thing we can't clear).</summary>
+    public bool DetectableFrom(Vector3 cursor)
+    {
+        if (!IsVisible) return false;
+        if (CurrentlySeen) return true;
+        try
+        {
+            var los = Kingmaker.Controllers.FogOfWar.LineOfSight.LineOfSightGeometry.Instance;
+            return los == null || !los.HasObstacle(cursor, NearestPoint(cursor), LosFudge);
+        }
+        catch { return false; }
+    }
+
     /// <summary>The state/qualifier words spoken after the name (faction + condition for units, verb + open
     /// state for objects); null or empty when there is nothing to add.</summary>
     public virtual string Detail => null;

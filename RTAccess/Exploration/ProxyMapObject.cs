@@ -13,8 +13,10 @@ namespace RTAccess.Exploration;
 
 /// <summary>
 /// A scannable interactable map object. Its categories come from the interaction parts it carries (loot →
-/// containers, door → doors, skill check → search points, anything else → mechanisms; an area transition adds
-/// exits; nothing → scenery). Name + verb are resolved by <see cref="InteractableDescriber"/> (the same mapping
+/// containers, door → doors, skill check → search points, any other live interaction — lever, bark/examine — →
+/// mechanisms; an area transition adds exits). An object with no live interaction, exit, or map marker — a
+/// script / trigger volume, a secret (disabled) door, a looted container, a decorative prop — is NOT scannable
+/// (see <see cref="IsScannable"/>) and never appears. Name + verb are resolved by <see cref="InteractableDescriber"/> (the same mapping
 /// the overtip uses). Interact mirrors a click: an exit runs the area-transition flow; a locked/variative object
 /// (one offering a choice of actor — skill vs Tech-Use vs Key vs Destroy) raises the game's variative-interaction
 /// request so our <see cref="RTAccess.Screens.VariativeInteractionScreen"/> can surface the choice; everything else
@@ -32,11 +34,73 @@ internal sealed class ProxyMapObject : ScanItem
 
     public override Vector3 Position => _obj.Position;
 
-    // Mirror the local map / overtip reveal gate: listed once seen, gated by perception (awareness) so secret
-    // objects don't leak. CurrentlySeen adds the live fog test for the review cycles.
-    public override bool IsVisible => _obj.IsInGame && _obj.IsRevealed && _obj.IsAwarenessCheckPassed;
+    // Nearest-edge footprint radius (metres), so distance/bearing report the object's nearest EDGE (a wide door /
+    // large console reads by its edge, not its authored centre). Derived from the collider NEAREST the object's
+    // Position (its clickable body), GUARDED: a probe of a live area found most objects have one body collider on
+    // Position, but a multi-part object (e.g. a warp-storm with 60 colliders) can have its tightest collider ~12 m
+    // off — using that would make it read "here" across the room. So we reject a collider whose centre is more than
+    // ~1 cell from Position (→ point, today's behaviour) and clamp the radius to ~2 cells. Cached: collider geometry
+    // is static per map object and this proxy is stable across frames (WorldModel keeps one per entity).
+    private const float FootprintOffsetCap = 1.5f;   // ~1 cell (1.35 m): collider must sit on the authored point
+    private const float FootprintRadiusCap = 2.75f;  // ~2 cells: never claim a wider body than that from a collider
+    private float? _footprint;
+    public override float Footprint => _footprint ??= ComputeFootprint();
+
+    private float ComputeFootprint()
+    {
+        try
+        {
+            var view = _obj.View;
+            if (view == null) return 0f;
+            var pos = _obj.Position;
+            Collider best = null; float bestOff = float.MaxValue;
+            foreach (var c in view.GetComponentsInChildren<Collider>())
+            {
+                if (c == null || c.isTrigger) continue;   // skip script-zone / trigger volumes; want the solid body
+                var ctr = c.bounds.center; float dx = ctr.x - pos.x, dz = ctr.z - pos.z;
+                float off = Mathf.Sqrt(dx * dx + dz * dz);
+                if (off < bestOff) { bestOff = off; best = c; }
+            }
+            if (best == null || bestOff > FootprintOffsetCap) return 0f;   // no body collider on the point → stay a point
+            var e = best.bounds.extents;
+            return Mathf.Clamp(Mathf.Max(e.x, e.z), 0f, FootprintRadiusCap);
+        }
+        catch { return 0f; }
+    }
+
+    // Mirror the local map / overtip reveal gate (revealed + awareness), AND require the object to be a real,
+    // player-relevant interactable (IsScannable) — so invisible trigger / script volumes (no interaction parts),
+    // SECRET doors, and looted/inactive containers (nothing to do, and a spoiler for a sighted player who hasn't
+    // found them) never leak into the scanner. Bark/examine volumes DO surface: they are clickable interactions a
+    // sighted player can use (see IsScannable). CurrentlySeen adds the live fog test for the review cycles;
+    // DetectableFrom (base) then re-admits a fogged-but-line-of-sight-clear object to those cycles.
+    public override bool IsVisible => _obj.IsInGame && _obj.IsRevealed && _obj.IsAwarenessCheckPassed && IsScannable;
 
     public override bool CurrentlySeen => IsVisible && !_obj.IsInFogOfWar;
+
+    // Is this a real, player-relevant interactable the scanner should surface? The gate mirrors the game's own click
+    // availability (ClickMapObjectHandler.HasAvailableInteractions = ANY interaction part CanInteract): a live
+    // (enabled) interaction — loot, skill check, lever, trap, OR a bark/examine (InteractionBarkPart is a genuine
+    // UIInteractionType.Info interaction a sighted player can click, verified in the decompiled InteractionPart) —
+    // an open door (a landmark opening), an area exit, or a local-map marker. That excludes exactly the sighted-
+    // invisible noise the scanner-visibility dump surfaced: 0-renderer script zones (no interaction parts), SECRET
+    // doors (door part disabled, not open), looted/inactive containers (loot part disabled), and props with no
+    // interaction at all — none of which a sighted player can interact with. Non-allocating — runs per item per key
+    // (and per sonar frame).
+    private bool IsScannable
+    {
+        get
+        {
+            foreach (var part in _obj.Interactions)
+            {
+                if (part == null) continue;
+                if (part is InteractionDoorPart door) { if (part.Enabled || door.IsOpen) return true; continue; }
+                if (part.Enabled) return true;
+            }
+            return _obj.GetOptional<AreaTransitionPart>() != null
+                || _obj.GetOptional<LocalMapMarkerPart>() != null;
+        }
+    }
 
     public override string Name
     {
@@ -65,13 +129,58 @@ internal sealed class ProxyMapObject : ScanItem
                 }
                 catch { /* name/verb best-effort; position still announces */ }
             }
+
+            // State qualifiers a blind player needs BEFORE walking over to interact: an open door, a container's
+            // kind (chest / environment / stash / single-slot / cargo), and an ARMED, detected trap. Per-part
+            // best-effort — a single part read that throws is skipped so the object still announces name + position.
             foreach (var part in _obj.Interactions)
             {
-                if (part is InteractionDoorPart door && door.IsOpen) { bits.Add("open"); break; }
+                try
+                {
+                    switch (part)
+                    {
+                        case InteractionDoorPart door when door.IsOpen:
+                            bits.Add("open");
+                            break;
+                        case InteractionLootPart loot:
+                            var kind = LootKindWord(loot.Settings.LootContainerType);
+                            if (kind != null) bits.Add(kind);
+                            break;
+                        // A trap is only flagged when its disarm interaction is live (part.Enabled == detected) and
+                        // still armed — an undetected trap never lists the object (awareness gate), so this is no spoiler.
+                        case DisableTrapInteractionPart trap when part.Enabled && trap.Owner?.TrapActive == true:
+                            bits.Add("trapped");
+                            break;
+                    }
+                }
+                catch { /* per-part best-effort */ }
             }
+
+            // "locked" — the object gates its interaction behind a CHOICE of actor (skill vs Tech-Use vs Key vs
+            // Destroy), the exact condition Interact() routes to the variative-interaction choice screen. Same signal
+            // the interact path uses, so the spoken label and the behaviour never diverge.
+            if (view != null)
+            {
+                try { if (VariativeInteractionVM.HasVariativeInteraction(view)) bits.Add("locked"); }
+                catch { /* best-effort */ }
+            }
+
             return bits.Count > 0 ? string.Join(", ", bits) : null;
         }
     }
+
+    // The container kind as a terse word, mirroring the game's own LootContainerType. DefaultLoot adds nothing (a
+    // plain container reads by its name/verb) and Unit is a corpse (ProxyUnit labels those), so both return null.
+    private static string LootKindWord(LootContainerType type)
+        => type switch
+        {
+            LootContainerType.Chest => "chest",
+            LootContainerType.Environment => "environment",
+            LootContainerType.PlayerChest => "stash",
+            LootContainerType.OneSlot => "single slot",
+            LootContainerType.StarSystemObject => "cargo",
+            _ => null, // DefaultLoot, Unit → no extra word
+        };
 
     public override IEnumerable<string> Nodes => NodeSet();
 
@@ -92,8 +201,11 @@ internal sealed class ProxyMapObject : ScanItem
 
     // Categories from the interaction parts. A door is kept as a door even when its part is disabled-but-open
     // (a one-way door is still a landmark); other disabled parts are skipped so hidden/secret interactions
-    // don't leak. Traps have no single concrete part type exposed, so detect by part type name (the same
-    // heuristic InteractableDescriber uses).
+    // don't leak. A bark/examine interaction falls into the "other interaction" bucket (mechanisms), since it is a
+    // real clickable interaction (see IsScannable). Traps have no single concrete part type exposed, so detect by
+    // part type name (the same heuristic InteractableDescriber uses). There is deliberately NO "scenery" fallback:
+    // an object with no live interaction / exit produces no node and so is not scannable (see IsScannable /
+    // IsVisible) — it never reaches a browse category.
     private HashSet<string> NodeSet()
     {
         var nodes = new HashSet<string>();
@@ -112,7 +224,6 @@ internal sealed class ProxyMapObject : ScanItem
             else nodes.Add(ScanTaxonomy.Mechanisms);
         }
         if (_obj.GetOptional<AreaTransitionPart>() != null) nodes.Add(ScanTaxonomy.Exits);
-        if (nodes.Count == 0) nodes.Add(ScanTaxonomy.Scenery);
         return nodes;
     }
 
