@@ -14,6 +14,10 @@ using Kingmaker.GameModes;                           // GameModeType
 using Kingmaker.Mechanics.Entities;                  // AbstractUnitEntity
 using Kingmaker.UI.Common;                           // IsDirectlyControllable() extension
 using Kingmaker.UI.Selection;                        // SelectionManagerBase (Hold/Stop/SelectAll)
+using Kingmaker.Blueprints.Root.Strings;             // UIStrings (reuse the game's localized HUD labels)
+using Kingmaker.UI.Models.SettingsUI;                // UISettingsRoot (keybind Description labels)
+using Kingmaker.Stores;                              // StoreManager (Augmentations DLC gate)
+using Kingmaker.Stores.DlcInterfaces;                // DlcNameEnum
 using RTAccess.UI;
 using RTAccess.UI.Proxies;
 using UnityEngine;                                   // Mathf
@@ -66,6 +70,21 @@ namespace RTAccess.Screens
           : Navigation.HasFocus     ? FocusedCats
           :                           UnfocusedCats;
 
+        // Escape backs out of the focused HUD to exploration — a direct exit (Tab off the last region does the
+        // same, but silently, since ScreenName is null). Only acts while something is focused: on the bare HUD
+        // nothing is focused, and ui.back is a context-split (YieldsWhenUnfocused) that hands Escape to the game
+        // there, so it opens the game's pause menu instead. The no-op guard means that yield path is untouched
+        // even though ui.back is still dispatched to us this frame.
+        public override IEnumerable<ElementAction> GetActions()
+        {
+            yield return new ElementAction(ActionIds.Back, Message.Raw("Back"), _ =>
+            {
+                if (Navigation.Current == null) return; // unfocused → let the yield reach the game (pause menu)
+                Navigation.Blur();
+                Tts.Speak(Loc.T("nav.exploration"), interrupt: true);
+            });
+        }
+
         /// <summary>The shared gate the exploration helpers ride: this screen is the live top screen (no window
         /// or dialogue layered over it), the game exists, and we're on-foot (Default = exploration AND surface
         /// tactical combat). Replaces the helpers' old <c>ControllerMode == Gamepad</c> check so they work in
@@ -88,11 +107,11 @@ namespace RTAccess.Screens
             Clear();
             _status = new TextElement(StatusLine);
             Add(_status);
-            _actions = new ListContainer("Actions");
+            _actions = new ListContainer(Loc.T("hud.actions"));
             Add(_actions);
-            _party = new ListContainer("Party");
+            _party = new ListContainer(Loc.T("hud.party"));
             Add(_party);
-            _combat = new ListContainer("Combat");
+            _combat = new ListContainer(Loc.T("hud.combat"));
             Add(_combat);
             BuildWindows();
             BuildMenu();
@@ -132,17 +151,27 @@ namespace RTAccess.Screens
         {
             ServiceWindowsType.Inventory, ServiceWindowsType.CharacterInfo, ServiceWindowsType.Journal,
             ServiceWindowsType.LocalMap, ServiceWindowsType.Encyclopedia,
+            // The Rogue-Trader-specific service windows the game gates on ship access / colonization / DLC.
+            ServiceWindowsType.ShipCustomization, ServiceWindowsType.ColonyManagement,
+            ServiceWindowsType.CargoManagement, ServiceWindowsType.Augmentations,
         };
 
         private void BuildWindows()
         {
-            var windows = new ListContainer("Windows");
+            var windows = new ListContainer(Loc.T("hud.windows"));
             foreach (var t in WindowButtons)
             {
                 var type = t; // capture for the live closure
-                windows.Add(new ProxyActionButton(WindowLabel(type), () => true,
-                    () => ServiceWindows()?.HandleOpenWindowOfType(type), actionVerb: "open"));
+                // The HUD service-window openers are Plastick in the game (IngameMenuNewPCView.SetClickAndHoverSound).
+                windows.Add(new ProxyActionButton(WindowLabel(type), () => WindowEnabled(type),
+                    () => ServiceWindows()?.HandleOpenWindowOfType(type), actionVerb: "open",
+                    hoverSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound,
+                    clickSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound));
             }
+            // The message-log review — our own overlay (not a game ServiceWindowsType), listed beside the game
+            // windows for discoverability. Also on bare L (see InputBindings). See LogReviewScreen.
+            windows.Add(new ProxyActionButton(() => Loc.T("hud.log"), () => true,
+                LogReviewScreen.Open, actionVerb: "open"));
             Add(windows);
         }
 
@@ -150,12 +179,54 @@ namespace RTAccess.Screens
         {
             switch (type)
             {
-                case ServiceWindowsType.Inventory: return "Inventory";
-                case ServiceWindowsType.CharacterInfo: return "Character";
-                case ServiceWindowsType.Journal: return "Journal";
-                case ServiceWindowsType.LocalMap: return "Map";
-                case ServiceWindowsType.Encyclopedia: return "Encyclopedia";
+                case ServiceWindowsType.Inventory: return GameText.Or(() => UIStrings.Instance.MainMenu.Inventory, "screen.inventory");
+                case ServiceWindowsType.CharacterInfo: return GameText.Or(() => UIStrings.Instance.MainMenu.CharacterInfo, "screen.character");
+                case ServiceWindowsType.Journal: return GameText.Or(() => UIStrings.Instance.MainMenu.Journal, "screen.journal");
+                case ServiceWindowsType.LocalMap: return GameText.Or(() => UIStrings.Instance.MainMenu.LocalMap, "screen.map");
+                case ServiceWindowsType.Encyclopedia: return GameText.Or(() => UIStrings.Instance.MainMenu.Encyclopedia, "screen.encyclopedia");
+                case ServiceWindowsType.ShipCustomization: return GameText.Or(() => UIStrings.Instance.MainMenu.ShipCustomization, "screen.ship");
+                case ServiceWindowsType.ColonyManagement: return GameText.Or(() => UIStrings.Instance.MainMenu.ColonyManagement, "screen.colony");
+                case ServiceWindowsType.CargoManagement: return GameText.Or(() => UIStrings.Instance.MainMenu.CargoManagement, "screen.cargo");
+                case ServiceWindowsType.Augmentations: return GameText.Or(() => UIStrings.Instance.MainMenu.Augmentations, "screen.augmentations");
                 default: return type.ToString();
+            }
+        }
+
+        // Availability gate mirroring the game's own HUD button visibility (IngameMenuNewPCView.CheckEnabled* /
+        // CheckServiceWindowsBlocked). The original five stay always-offered (unchanged behavior); the four RT
+        // windows read as disabled exactly when the game would hide their buttons, so Enter never drops the player
+        // into a window the game is refusing. HandleOpenWindow is itself a no-op when blocked, so this is belt-and-
+        // braces, not the only guard.
+        private static bool WindowEnabled(ServiceWindowsType type)
+        {
+            var player = Game.Instance?.Player;
+            if (player == null) return false;
+            switch (type)
+            {
+                case ServiceWindowsType.ShipCustomization:
+                {
+                    bool canShip = player.CanAccessStarshipInventory;
+                    bool blocked = player.ServiceWindowsBlocked;
+                    return canShip && !blocked;
+                }
+                case ServiceWindowsType.ColonyManagement:
+                {
+                    bool canShip = player.CanAccessStarshipInventory;
+                    bool forbid = player.ColoniesState.ForbidColonization;
+                    return canShip && !forbid;
+                }
+                case ServiceWindowsType.CargoManagement:
+                {
+                    bool blocked = player.ServiceWindowsBlocked;
+                    return !blocked;
+                }
+                case ServiceWindowsType.Augmentations:
+                {
+                    bool augBlocked = player.AugmentationsWindowBlocked;
+                    return StoreManager.CheckIfDlcPurchasedAndInstalled(DlcNameEnum.DLC3TheInfiniteMuseion) && !augBlocked;
+                }
+                default:
+                    return true;
             }
         }
 
@@ -194,7 +265,10 @@ namespace RTAccess.Screens
             int focusedIndex = (cur != null && cur.Parent == _actions) ? _actions.IndexOf(cur) : -1;
 
             _actions.Clear();
-            foreach (var s in BarSlots()) if (Usable(s)) _actions.Add(new ProxyActionBarSlot(s));
+            // The augmentation-overdrive slot carries themed hover/click sounds in the game; tag it so the
+            // proxy replays them (every other slot uses the generic hover + its own click).
+            var overdrive = ActionBar()?.Abilities?.OverdriveSlotVM;
+            foreach (var s in BarSlots()) if (Usable(s)) _actions.Add(new ProxyActionBarSlot(s, isOverdrive: ReferenceEquals(s, overdrive)));
 
             if (focusedIndex < 0 || _actions.Children.Count == 0) return;
             var target = _actions.Children[Math.Min(focusedIndex, _actions.Children.Count - 1)];
@@ -221,22 +295,27 @@ namespace RTAccess.Screens
         // turn-based and speed-up toggles are omitted — no clean stateful API.)
         private void BuildMenu()
         {
-            var menu = new ListContainer("Menu");
-            menu.Add(new ProxyActionButton(() => "Pause, " + OnOff(Game.Instance != null && Game.Instance.IsPaused),
+            var menu = new ListContainer(GameText.Or(() => UIStrings.Instance.CommonTexts.Menu, "hud.menu"));
+            menu.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.CommonTexts.Pause, "hudmenu.pause") + ", " + OnOff(Game.Instance != null && Game.Instance.IsPaused),
                 () => true, TogglePause, actionVerb: "toggle"));
-            menu.Add(new ProxyActionButton("Hold position", () => true, () => SelectionManagerBase.Instance?.Hold()));
-            menu.Add(new ProxyActionButton("Stop", () => true, () => SelectionManagerBase.Instance?.Stop()));
-            menu.Add(new ProxyActionButton("Select whole party", () => true, () => SelectionManagerBase.Instance?.SelectAll()));
-            menu.Add(new ProxyActionButton(() => "Formation" + (IngameMenu()?.IsFormationActive?.Value == true ? ", open" : ""),
-                () => true, () => IngameMenu()?.OpenFormation(), actionVerb: "open"));
-            menu.Add(new ProxyActionButton(() => "Inspect mode, " + OnOff(Game.Instance?.Player?.UISettings?.ShowInspect ?? false),
+            menu.Add(new ProxyActionButton(() => GameText.Or(() => UISettingsRoot.Instance.UIKeybindGeneralSettings.Hold.Description, "hudmenu.hold"),
+                () => true, () => SelectionManagerBase.Instance?.Hold()));
+            menu.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.ActionTexts.Stop, "hudmenu.stop"),
+                () => true, () => SelectionManagerBase.Instance?.Stop()));
+            menu.Add(new ProxyActionButton(() => GameText.Or(() => UISettingsRoot.Instance.UIKeybindSelectCharacterSettings.SelectAll.Description, "hudmenu.select_all"),
+                () => true, () => SelectionManagerBase.Instance?.SelectAll()));
+            menu.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.FormationTexts.FormationLabel, "hudmenu.formation") + (IngameMenu()?.IsFormationActive?.Value == true ? ", " + Loc.T("combat.active_marker") : ""),
+                () => true, () => IngameMenu()?.OpenFormation(), actionVerb: "open",
+                hoverSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound,     // Plastick in IngameMenuNewPCView
+                clickSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound));
+            menu.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.MainMenu.Inspect, "hudmenu.inspect") + ", " + OnOff(Game.Instance?.Player?.UISettings?.ShowInspect ?? false),
                 () => true, ToggleInspect, actionVerb: "toggle"));
-            menu.Add(new ProxyActionButton("Reset camera", () => true,
-                () => Kingmaker.View.CameraRig.Instance?.ResetCameraRotate()));
+            menu.Add(new ProxyActionButton(() => GameText.Or(() => UISettingsRoot.Instance.UIKeybindGeneralSettings.CameraRotateToPointNorth.Description, "hudmenu.reset_camera"),
+                () => true, () => Kingmaker.View.CameraRig.Instance?.ResetCameraRotate()));
             Add(menu);
         }
 
-        private static string OnOff(bool on) => on ? "on" : "off";
+        private static string OnOff(bool on) => Loc.T(on ? "value.on" : "value.off");
 
         private static void TogglePause()
         {
@@ -246,7 +325,7 @@ namespace RTAccess.Screens
             // announce the state we just asked for, not the not-yet-updated getter.
             bool willPause = !g.IsPaused;
             g.IsPaused = willPause;
-            Tts.Speak(willPause ? "Paused" : "Unpaused", interrupt: true);
+            Tts.Speak(willPause ? GameText.Or(() => UIStrings.Instance.CommonTexts.Paused, "pause.paused") : Loc.T("pause.unpaused"), interrupt: true);
         }
 
         private static void ToggleInspect()
@@ -255,7 +334,7 @@ namespace RTAccess.Screens
             if (ui == null) return;
             bool on = !ui.ShowInspect;
             ui.ShowInspect = on;
-            Tts.Speak(on ? "Inspect mode on" : "Inspect mode off", interrupt: true);
+            Tts.Speak(Loc.T(on ? "hud.inspect_on" : "hud.inspect_off"), interrupt: true);
         }
 
         // ---- Party region ----
@@ -304,6 +383,10 @@ namespace RTAccess.Screens
             public readonly BaseUnitEntity Unit;
             public PartyEntry(BaseUnitEntity unit) : base(() => PartyLabel(unit)) { Unit = unit; }
 
+            // Selecting flips the unit's IsSelected VM reactive, which the live PartyCharacterPCView already
+            // answers with Character.CharacterSelect — so suppress our generic click to avoid doubling it.
+            public override Kingmaker.UI.Sound.BlueprintUISound.UISound ActivateSound => null;
+
             public override IEnumerable<ElementAction> GetActions()
             {
                 yield return new ElementAction(ActionIds.Activate,
@@ -318,7 +401,7 @@ namespace RTAccess.Screens
                 if (unit == null) return "";
                 var sb = new StringBuilder(unit.CharacterName);
                 AppendWounds(sb, unit);
-                if (Game.Instance?.SelectionCharacter?.SelectedUnit?.Value == unit) sb.Append(", selected");
+                if (Game.Instance?.SelectionCharacter?.SelectedUnit?.Value == unit) sb.Append(", ").Append(Loc.T("unit.selected"));
                 return sb.ToString();
             }
             catch (Exception e) { Main.Log?.Error("InGameScreen.PartyLabel: " + e); return ""; }
@@ -330,8 +413,8 @@ namespace RTAccess.Screens
             try
             {
                 Game.Instance.SelectionCharacter.SetSelected(unit);
-                // Key-driven selection — interrupt so stepping the roster stays responsive.
-                Tts.Speak(unit.CharacterName, interrupt: true);
+                // One selection-announce path (force → always speaks + marks the unit so the poll won't echo it).
+                RTAccess.Accessibility.SelectionAnnouncer.Announce(unit, force: true);
             }
             catch (Exception e) { Main.Log?.Error("InGameScreen.Select failed: " + e); }
         }
@@ -347,7 +430,7 @@ namespace RTAccess.Screens
                 var game = Game.Instance;
                 if (game == null) return "";
                 var unit = SelectedUnit();
-                if (unit == null) return "No character selected.";
+                if (unit == null) return Loc.T("status.no_selection");
 
                 var sb = new StringBuilder(unit.CharacterName);
                 AppendWounds(sb, unit);
@@ -356,14 +439,13 @@ namespace RTAccess.Screens
                 {
                     var cs = unit.GetCombatStateOptional();
                     if (cs != null)
-                        sb.Append(", ").Append(cs.ActionPointsYellow).Append(" AP, ")
-                          .Append(Mathf.RoundToInt(cs.ActionPointsBlue)).Append(" MP");
+                        sb.Append(", ").Append(Loc.T("combat.ap_mp",
+                            new { ap = cs.ActionPointsYellow, mp = Mathf.RoundToInt(cs.ActionPointsBlue) }));
                     var turnUnit = game.TurnController.CurrentUnit;
                     if (turnUnit != null)
-                    {
-                        sb.Append(", ").Append(NameOf(turnUnit)).Append("'s turn");
-                        if (!game.TurnController.IsPlayerTurn) sb.Append(" (enemy)");
-                    }
+                        sb.Append(", ").Append(Loc.T(
+                            game.TurnController.IsPlayerTurn ? "combat.turn" : "combat.turn_enemy",
+                            new { name = NameOf(turnUnit) }));
                 }
                 return sb.ToString();
             }
@@ -385,9 +467,12 @@ namespace RTAccess.Screens
             if (game != null && game.TurnController.TurnBasedModeActive)
             {
                 _combat.Add(new TextElement(StatusLine)); // the combat-aware status line, focusable on its own
-                _combat.Add(new ProxyActionButton("End turn",
+                // TryEndPlayerTurnManually plays Combat.EndTurn itself (TurnController), so suppress our
+                // generic click to avoid stacking a ButtonClick on top of the real end-turn sting.
+                _combat.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.HUDTexts.EndTurn, "turn.end"),
                     () => game.TurnController.CanEndTurn,
-                    () => game.TurnController.TryEndPlayerTurnManually(), actionVerb: "activate"));
+                    () => game.TurnController.TryEndPlayerTurnManually(), actionVerb: "activate",
+                    suppressActivateSound: true));
 
                 var tracker = SurfaceHUD()?.InitiativeTrackerVM?.Value;
                 if (tracker?.Units != null)
@@ -418,7 +503,7 @@ namespace RTAccess.Screens
             {
                 if (vm?.Unit == null) return "";
                 var sb = new StringBuilder(NameOf(vm.Unit));
-                if (Game.Instance?.TurnController?.CurrentUnit == vm.Unit) sb.Append(", current");
+                if (Game.Instance?.TurnController?.CurrentUnit == vm.Unit) sb.Append(", ").Append(Loc.T("combat.current"));
                 return sb.ToString();
             }
             catch (Exception e) { Main.Log?.Error("InGameScreen.InitiativeLabel: " + e); return ""; }
@@ -437,8 +522,8 @@ namespace RTAccess.Screens
         {
             var h = unit?.Health;
             if (h == null) return;
-            sb.Append(", ").Append(h.HitPointsLeft).Append(" of ").Append(h.MaxHitPoints).Append(" wounds");
-            if (h.TemporaryHitPoints > 0) sb.Append(", ").Append(h.TemporaryHitPoints).Append(" temporary");
+            sb.Append(", ").Append(Loc.T("unit.wounds", new { current = h.HitPointsLeft, max = h.MaxHitPoints }));
+            if (h.TemporaryHitPoints > 0) sb.Append(", ").Append(Loc.T("unit.wounds_temp", new { temp = h.TemporaryHitPoints }));
         }
 
         private static string NameOf(MechanicEntity e)

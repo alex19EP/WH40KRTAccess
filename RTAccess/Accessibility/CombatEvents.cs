@@ -18,7 +18,7 @@ namespace RTAccess.Accessibility;
 /// at unload (see <see cref="Main"/>); <see cref="Tick"/> is pumped once per frame from <c>OnUpdate</c>.
 ///
 /// Attack resolution (hit/miss/dodge/parry/crit), damage, cover, healing and deaths are NOT read here — the
-/// game's combat log is authoritative for those and is tapped by <see cref="CombatLogReader"/>, whose lines
+/// game's combat log is authoritative for those and is tapped by <see cref="LogTap"/>, whose lines
 /// flow into this class's <see cref="_pending"/> queue via <see cref="EnqueueLogLine"/>. Buffs stay here
 /// because the log records buff APPLICATION but has no removal thread, so only this reconciler can announce
 /// expiry — and keeping both here yields one consistent gain/loss voice.
@@ -69,6 +69,10 @@ internal sealed class CombatEvents : IUnitBuffHandler
     private bool _wasInCombat;
     private bool _wasInPrep;
 
+    // ---- Threshold-cue state (S7; see PollThresholds) — last observed band, cue fires on the crossing. ----
+    private bool _heroicActReady, _desperateReady, _veilCritical, _turnTimerLow;
+    private int _bossHpBucket = -1;   // last 25% boss-HP band (floor(progress*4)); -1 = boss bar not shown
+
     /// <summary>Pumped once per frame from <c>Main.OnUpdate</c>: reconcile the frame's buff churn into
     /// genuine gain/loss lines, then flush every queued line (in arrival order) as passive speech.</summary>
     public void Tick()
@@ -78,6 +82,9 @@ internal sealed class CombatEvents : IUnitBuffHandler
 
         try { PollLifecycle(); }
         catch (Exception e) { Main.Log?.Log("combat lifecycle poll failed: " + e.Message); }
+
+        try { PollThresholds(); }
+        catch (Exception e) { Main.Log?.Log("threshold poll failed: " + e.Message); }
 
         if (_pending.Count == 0) return;
         // Snapshot count: speaking won't re-enter and grow this, but be defensive — only flush what's
@@ -92,7 +99,7 @@ internal sealed class CombatEvents : IUnitBuffHandler
         if (!string.IsNullOrEmpty(line)) _pending.Add(line);
     }
 
-    /// <summary>Enqueue a line captured from the game's combat log (see <see cref="CombatLogReader"/>) into the
+    /// <summary>Enqueue a line captured from the game's combat log (see <see cref="LogTap"/>) into the
     /// shared per-frame queue, so log resolution lines interleave with lifecycle/buff cues in arrival order.</summary>
     internal void EnqueueLogLine(string line) => Enqueue(line);
 
@@ -164,8 +171,63 @@ internal sealed class CombatEvents : IUnitBuffHandler
         return Message.Localized("ui", enemy ? "combat.turn_enemy" : "combat.turn", new { name }).Resolve();
     }
 
+    // ---- HUD gauge threshold cues (S7), polled once per frame ----
+    // Passive one-shots for the pressure gauges a sighted player watches climb/drop on the HUD: momentum
+    // heroic-act / desperate-measure readiness, the veil crossing into its critical band, the turn timer's
+    // last five seconds, and each 25% the boss loses. Edge-detected like PollLifecycle so each fires once per
+    // crossing, enqueued into the shared passive queue. Each cue self-gates on its VM's visibility, so out of
+    // combat this is silent except a veil that has crossed into critical. VM field paths mirror HudGauges.
+    private void PollThresholds()
+    {
+        var sp = Game.Instance?.RootUiContext?.SurfaceVM?.StaticPartVM;
+        if (sp == null)
+        {
+            _heroicActReady = _desperateReady = _veilCritical = _turnTimerLow = false;
+            _bossHpBucket = -1;
+            return;
+        }
+
+        // Momentum: heroic-act / desperate-measure readiness (MomentumEntityVM.Value is non-null only in TB combat).
+        var me = sp.SurfaceHUDVM?.ActionBarVM?.SurfaceMomentumVM?.MomentumEntityVM?.Value;
+        bool heroic = me?.HeroicActActive.Value ?? false;
+        if (heroic && !_heroicActReady) Enqueue(Loc.T("gauge.heroic_act"));
+        _heroicActReady = heroic;
+        bool desperate = me?.DesperateMeasureActive.Value ?? false;
+        if (desperate && !_desperateReady) Enqueue(Loc.T("gauge.desperate_measure"));
+        _desperateReady = desperate;
+
+        // Veil crossing into the critical band (veil persists across the area, so this isn't combat-gated).
+        var veil = sp.SurfaceHUDVM?.ActionBarVM?.VeilThickness;
+        bool critical = false;
+        if (veil != null)
+        {
+            var root = Game.Instance.BlueprintRoot.WarhammerRoot.PsychicPhenomenaRoot;
+            critical = veil.Value.Value >= root.CriticalVeilOnAllLocation;
+        }
+        if (critical && !_veilCritical) Enqueue(Loc.T("gauge.veil_critical"));
+        _veilCritical = critical;
+
+        // Turn timer entering its last five seconds (only while the timer is on-screen).
+        var timer = sp.TurnTimerVM;
+        bool low = timer != null && timer.IsShowing.Value && timer.IsFiveSecsLeft.Value;
+        if (low && !_turnTimerLow) Enqueue(Loc.T("cue.turn_timer_low"));
+        _turnTimerLow = low;
+
+        // Boss HP: announce each 25% band as it drops (75 / 50 / 25). Bucket = floor(progress*4) in 0..3; a
+        // decrease into band b (<=2) means HP just fell below (b+1)*25 percent. No cue on first sight or a heal.
+        var boss = sp.BossHPBarVM;
+        if (boss != null && boss.IsShowing.Value)
+        {
+            int bucket = Mathf.Clamp(Mathf.FloorToInt(boss.Progress.Value * 4f), 0, 3);
+            if (_bossHpBucket >= 0 && bucket < _bossHpBucket && bucket <= 2)
+                Enqueue(Loc.T("cue.boss_hp", new { percent = (bucket + 1) * 25 }));
+            _bossHpBucket = bucket;
+        }
+        else _bossHpBucket = -1;
+    }
+
     // Damage, healing and deaths were read here off the EventBus; they now come from the combat log
-    // (authoritative, richer — damage type, misses, crits) via CombatLogReader. See the class summary.
+    // (authoritative, richer — damage type, misses, crits) via LogTap. See the class summary.
 
     // ---- IUnitBuffHandler (five members; only add/remove are used, the rest are required no-ops) ----
     public void HandleBuffDidAdded(Buff buff) { var k = KeyOf(buff); if (k != null) _frameAdds[k.Value] = buff; }
