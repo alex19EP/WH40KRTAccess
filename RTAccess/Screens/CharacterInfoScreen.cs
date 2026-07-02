@@ -8,7 +8,11 @@ using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.SkillsAndW
 using Kingmaker.EntitySystem.Entities;                                                // BaseUnitEntity
 using Kingmaker.EntitySystem.Stats;                                                   // ModifiableValue (+ nested Modifier)
 using Kingmaker.EntitySystem.Stats.Base;                                              // StatType
+using Kingmaker.PubSubSystem;                                                         // INewServiceWindowUIHandler
+using Kingmaker.PubSubSystem.Core;                                                    // EventBus
+using Kingmaker.Code.UI.MVVM.View.ServiceWindows.CharacterInfo;                       // CharInfoPageType
 using RTAccess.UI;
+using RTAccess.UI.Proxies;
 
 namespace RTAccess.Screens
 {
@@ -110,6 +114,13 @@ namespace RTAccess.Screens
             header.Add(new TextElement("Level " + unit.Progression.CharacterLevel));
             foreach (var career in unit.Progression.AllCareerPaths)
                 header.Add(new TextElement(career.Blueprint.Name + ", rank " + career.Rank));
+            // "Level Up" entry — focusable only when the unit has a pending rank. Activates the game's own
+            // entry (open the Character Info window on the Level Progression page for this unit), which builds
+            // the level-up VM that LevelUpScreen mirrors.
+            if (unit.Progression.CanLevelUp)
+                header.Add(new ProxyActionButton(() => Loc.T("levelup.button"), () => true,
+                    () => EventBus.RaiseEvent<INewServiceWindowUIHandler>(
+                        h => h.HandleOpenCharacterInfoPage(CharInfoPageType.LevelProgression, unit))));
             Add(header);
 
             // Characteristics — a drill-in node per stat.
@@ -199,6 +210,7 @@ namespace RTAccess.Screens
             if (unit == null) return "null";
             var sb = new StringBuilder();
             sb.Append(unit.Progression.CharacterLevel);
+            sb.Append(unit.Progression.CanLevelUp ? "|lvlup" : "|");
             foreach (var stat in CharInfoAbilityScoresBlockVM.AbilitiesOrdered)
                 sb.Append('|').Append(unit.Stats.GetStatOptional(stat)?.ModifiedValue ?? 0);
             foreach (var stat in CharInfoSkillsBlockVM.SkillsOrdered)

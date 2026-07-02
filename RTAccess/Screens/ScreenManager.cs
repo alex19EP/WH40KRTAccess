@@ -169,6 +169,11 @@ namespace RTAccess.Screens
             // any multi-entrance object raises. Mirrors the reachable rooms; activating one runs the real
             // AreaTransition. Not a ServiceWindowsType, so it carries its own ScreenName announce.
             Register(new TransitionScreen());
+            // Character level-up (CharacterInfoVM's Progression component in LevelUp mode) — layer 26, Exclusive,
+            // sits on and suppresses the read-only CharacterInfoScreen (10). Opened by that screen's "Level Up"
+            // action (HandleOpenCharacterInfoPage(LevelProgression)). Career pick → rank selections → commit.
+            // See docs/plans/ranked-ascending-lamport.md.
+            Register(new LevelUpScreen());
             // TODO: Vendor, Loot, Encyclopedia + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }

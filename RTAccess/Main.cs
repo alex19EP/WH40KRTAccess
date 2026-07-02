@@ -160,6 +160,10 @@ public static class Main {
         // the P/X/R relocation) gives no audio; this polls the controlled unit's active set and speaks the change.
         WeaponSetAnnouncer.Tick();
 
+        // Passively announce when a party member becomes eligible to level up (the game only shows a silent
+        // portrait badge). Edge-detected per unit, out-of-combat, passive. See RTAccess.Accessibility.LevelUpAnnouncer.
+        LevelUpAnnouncer.Tick();
+
         // Service windows currently open via the mod's own HUD nav buttons (InGameScreen WindowButtons →
         // HandleOpenWindowOfType); ServiceWindowAnnounce voices the open. Their bare game keys (C/I/J/M/L/Y/V/B/N)
         // are muted while FocusMode holds KeyboardAccess.Disabled — the GameKeybinds rebind above moves them to
