@@ -128,9 +128,15 @@ internal sealed class CombatEvents : IUnitBuffHandler
         if (!inCombat || !tc.TurnBasedModeActive) { _lastTurnUnitId = null; return; }
 
         // Deployment (preparation) phase — CurrentUnit is null during it, so the turn poll below won't catch it.
+        // "Deployment phase" on entry (RTAccess.Exploration.DeploymentMode.Tick follows it with the controls line);
+        // "Battle begins" on exit. The exit cue is emitted HERE, not from DeploymentMode, so it shares this ordered
+        // queue and reliably precedes the round / whose-turn cues below even on a battle-start frame where prep-end
+        // and the first turn-start collapse into one poll.
         bool prep = tc.IsPreparationTurn;
         if (prep && !_wasInPrep)
             Enqueue(Message.Localized("ui", "combat.deployment").Resolve());
+        else if (!prep && _wasInPrep)
+            Enqueue(Message.Localized("ui", "deploy.battle_begins").Resolve());
         _wasInPrep = prep;
 
         // Round advance (CombatRound is 0 out of combat, 1 = first round). Announce before the turn cue so a

@@ -1,10 +1,14 @@
 using System;
 using Kingmaker;
+using Kingmaker.Controllers.Clicks.Handlers;  // ClickSurfaceDeploymentHandler (deploy-cell validation)
+using Kingmaker.EntitySystem;                 // EntityHelper (DistanceTo / DistanceToInCells)
 using Kingmaker.EntitySystem.Entities;
 using Kingmaker.Pathfinding;
 using Kingmaker.UI.Common;            // IsDirectlyControllable() extension
 using Kingmaker.UnitLogic;            // UnitHelper, TryCreateMoveCommandTB, MoveCommandSettings
 using Kingmaker.UnitLogic.Abilities;  // AbilityData
+using Kingmaker.UnitLogic.Commands;   // UnitTeleportParams (the deploy commit)
+using Kingmaker.UnitLogic.Parts;      // UnitPartPetOwner (pet co-teleport parity)
 using RTAccess.Speech;
 using UnityEngine;
 
@@ -109,6 +113,53 @@ public static class CommandDispatch
             return false;
         }
         catch (Exception e) { Main.Log?.Log("move dispatch failed: " + e.Message); return false; }
+    }
+
+    /// <summary>Place / reposition the selected unit at a deploy cell during the pre-combat preparation phase.
+    /// Faithfully mirrors the game's own <c>ClickSurfaceDeploymentHandler.TryDeployCurrentUnit</c> — the net-role
+    /// gate, the public-static <c>CanDeployUnit</c> zone check, the synchronized <c>UnitTeleportParams</c> teleport,
+    /// and the pet co-teleport — but NOT its <c>OnClick</c>, which NPEs on a synthetic (mouse-less) click and prefers
+    /// a stale hover node. Returns true on placement; speaks the refusal and returns false otherwise (the caller gives
+    /// the success cue).</summary>
+    public static bool Deploy(CustomGridNodeBase node)
+    {
+        var tc = Game.Instance?.TurnController;
+        if (tc == null || !tc.IsPreparationTurn) return false;
+        var unit = Game.Instance.SelectionCharacter?.SelectedUnit?.Value as BaseUnitEntity;
+        if (unit == null) { Speaker.Speak(Loc.T("deploy.no_unit"), interrupt: true); return false; }
+        if (node == null || !unit.IsMyNetRole()) return false;   // co-op parity: only place a locally-controlled unit
+        try
+        {
+            if (!ClickSurfaceDeploymentHandler.CanDeployUnit(node, unit))
+            { Speaker.Speak(Loc.T("deploy.blocked"), interrupt: true); return false; }
+            unit.Commands.Run(new UnitTeleportParams(node.Vector3Position, isSynchronized: true));
+            RepositionPet(unit, node);   // best-effort; never fails the placement
+            return true;
+        }
+        catch (Exception e) { Main.Log?.Log("deploy dispatch failed: " + e.Message); return false; }
+    }
+
+    /// <summary>Mirror <c>TryDeployCurrentUnit</c>'s pet co-teleport: when the deployed unit owns a pet now more than
+    /// two cells from its new position, teleport the pet to the nearest deployable cell around the owner. Best-effort
+    /// and self-contained (its own try/catch + an empty-spiral guard the game omits) so a pet with no legal nearby
+    /// cell can never NRE or fail the owner's placement.</summary>
+    private static void RepositionPet(BaseUnitEntity unit, CustomGridNodeBase node)
+    {
+        try
+        {
+            var pet = unit.GetOptional<UnitPartPetOwner>()?.PetUnit;
+            if (pet == null || pet.DistanceToInCells(node.Vector3Position, unit.SizeRect) <= 2) return;
+            CustomGridNodeBase best = null;
+            float bestDist = float.MaxValue;
+            foreach (var n in GridAreaHelper.GetNodesSpiralAround(node, unit.SizeRect, 2))
+            {
+                if (!ClickSurfaceDeploymentHandler.CanDeployUnit(n, pet, ignorePetRestriction: true)) continue;
+                float d = pet.DistanceTo(n.Vector3Position);
+                if (d < bestDist) { bestDist = d; best = n; }
+            }
+            if (best != null) pet.Commands.Run(new UnitTeleportParams(best.Vector3Position, isSynchronized: true));
+        }
+        catch (Exception e) { Main.Log?.Log("deploy pet reposition failed: " + e.Message); }
     }
 
     /// <summary>End the player's turn (no-op if the game won't allow it right now).</summary>

@@ -137,6 +137,8 @@ internal static class TileExplorer
     {
         try
         {
+            // During deployment there is no move-to (Enter places, B starts the battle); swallow Backspace.
+            if (RTAccess.Exploration.DeploymentMode.Active) return;
             // While an ability is armed, Backspace cancels the aim instead of moving (see Targeting).
             if (RTAccess.Exploration.Targeting.Aiming) { RTAccess.Exploration.Targeting.Cancel(); return; }
             if (!EnsurePlanted(out bool fresh)) return;
@@ -164,7 +166,7 @@ internal static class TileExplorer
                     _armedNode = node;
                     _armTime = Time.unscaledTime;
                     var preview = RTAccess.Exploration.PathInfo.Preview(unit, node, out bool canMove);
-                    Speaker.Speak(canMove ? preview + " Press again to move." : preview, interrupt: true);
+                    Speaker.Speak(canMove ? preview + " " + Loc.T("path.preview.press_again") : preview, interrupt: true);
                     return;
                 }
                 _armedNode = null;
@@ -217,6 +219,8 @@ internal static class TileExplorer
     {
         try
         {
+            // While deploying (pre-combat prep), Enter PLACES the selected character on the cursor tile (see DeploymentMode).
+            if (RTAccess.Exploration.DeploymentMode.Active) { RTAccess.Exploration.DeploymentMode.CommitAtCursor(); return; }
             // While an ability is armed, Enter commits the aim at the cursor instead of interacting (see Targeting).
             if (RTAccess.Exploration.Targeting.Aiming) { RTAccess.Exploration.Targeting.CommitAtCursor(); return; }
             if (!EnsurePlanted(out bool fresh)) return;
@@ -226,6 +230,30 @@ internal static class TileExplorer
             Speaker.Speak(Loc.T("scan.nothing_nearby"), interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.InteractAtCursor failed: " + e); }
+    }
+
+    /// <summary>
+    /// V — the holographic vantage read: for the acting unit, the cover / in-range / threat it would have if it stood
+    /// on the CURSOR tile (the "if I stood here" tactical preview a sighted player reads off the move ghost), computed
+    /// as a pure read from the candidate cell (<see cref="RTAccess.Accessibility.CombatReads.VantageFrom"/>). Combat
+    /// only; out of combat or with no acting unit it says so. Lazy-plants like the other cursor verbs.
+    /// </summary>
+    public static void ReadVantage()
+    {
+        try
+        {
+            if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys
+            var game = Game.Instance;
+            var me = game?.TurnController?.CurrentUnit as BaseUnitEntity
+                     ?? game?.SelectionCharacter?.SelectedUnit?.Value as BaseUnitEntity;
+            if (game?.Player?.IsInCombat != true || me == null)
+            { Speaker.Speak(Loc.T("vantage.not_in_combat"), interrupt: true); return; }
+            if (!EnsurePlanted(out bool fresh)) return;
+            if (fresh) { Announce(); return; }
+            var line = CombatReads.VantageFrom(MapCursor.Position, me);
+            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("vantage.no_enemies") : line, interrupt: true);
+        }
+        catch (Exception e) { Main.Log?.Error("TileExplorer.ReadVantage failed: " + e); }
     }
 
     /// <summary>
@@ -255,7 +283,14 @@ internal static class TileExplorer
     private static string Describe()
     {
         var line = InteractableDescriber.DescribeTile(MapCursor.Node, GetAnchor());
-        return string.IsNullOrWhiteSpace(line) ? "Unknown tile." : line;
+        if (string.IsNullOrWhiteSpace(line)) line = "Unknown tile.";
+        // While deploying, follow the tile readout with its deploy legality + the holographic vantage from here.
+        if (RTAccess.Exploration.DeploymentMode.Active)
+        {
+            var tail = RTAccess.Exploration.DeploymentMode.CursorTail(MapCursor.Node);
+            if (!string.IsNullOrWhiteSpace(tail)) line += ". " + tail;
+        }
+        return line;
     }
 
     private static MechanicEntity GetAnchor()

@@ -132,6 +132,11 @@ public static class Main {
         // Backspace to cancel). See RTAccess.Exploration.Targeting.
         Exploration.Targeting.Tick();
 
+        // Accessible pre-combat deployment: while the game's preparation turn is active, the tile cursor's Enter
+        // places the selected character and B starts the battle; announce entry (controls + budget) / exit. See
+        // RTAccess.Exploration.DeploymentMode.
+        Exploration.DeploymentMode.Tick();
+
         // ---- Parallel accessible-UI framework (Phase 2) ----
         // Engage focus mode once the keyboard exists. Focus mode no longer blanket-mutes the game keyboard;
         // the KeyboardArbitration patch suppresses only the chords the mod claims each frame (see FocusMode /

@@ -199,6 +199,17 @@ namespace RTAccess.Input
                 Ax.TileExplorer.MoveToCursor).AddBinding(KeyCode.Backspace).Grouped("cursor");
             InputManager.Register("cursor.interact", "Cursor: interact at cursor", InputCategory.Exploration,
                 Ax.TileExplorer.InteractAtCursor).AddBinding(KeyCode.Return).AddBinding(KeyCode.KeypadEnter).Grouped("cursor");
+            // Semicolon — holographic vantage: read the cover / in-range / threat the acting unit would have FROM the
+            // cursor tile (the sighted move-ghost read). Combat only; self-gates otherwise. Relocated here from bare V
+            // so V/Shift+V can take the room-exit cycle (WrathAccess parity); Semicolon is a free bare key next to the
+            // home row. See RTAccess.Accessibility.TileExplorer.ReadVantage.
+            InputManager.Register("read.vantage", "Read vantage from cursor tile", InputCategory.Exploration,
+                Ax.TileExplorer.ReadVantage).AddBinding(KeyCode.Semicolon).Grouped("cursor");
+            // B — start the battle during the pre-combat deployment (preparation) phase. Self-gates: a no-op outside
+            // deployment. Bare B is free (GameKeybinds moved cargo management to Ctrl+B). See DeploymentMode; Enter
+            // places the selected character on the cursor tile while deploying (routed in InteractAtCursor).
+            InputManager.Register("deploy.start_battle", "Deployment: start the battle", InputCategory.Exploration,
+                Ex.DeploymentMode.StartBattle).AddBinding(KeyCode.B).Grouped("cursor");
 
             // ---- Exploration: party commands + status readout. Registered (not raw-polled like PartyHotkeys.Update's
             // member-select): the game's own Select-all / Hold / Stop / status keys live in the PC HUD (dead in our

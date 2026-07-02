@@ -1,4 +1,3 @@
-using System.Text;
 using Kingmaker;                                          // Game
 using Kingmaker.EntitySystem.Entities;                   // BaseUnitEntity
 using Kingmaker.Pathfinding;                             // PathfindingService, WarhammerPathPlayerCell, CustomGridNodeBase
@@ -40,15 +39,15 @@ internal static class PathInfo
     public static string Preview(BaseUnitEntity unit, CustomGridNodeBase dest, out bool canMove)
     {
         canMove = false;
-        if (unit == null || dest == null || unit.View == null) return "Can't reach that tile.";
+        if (unit == null || dest == null || unit.View == null) return Loc.T("path.preview.cant_reach");
 
         // The game's authoritative reachable set for the current unit — null/empty when the unit has no movement this
         // turn (spent out, CantMove, not a controllable turn). Covers every "why can't I move at all" case for free.
         var area = Game.Instance?.UnitMovableAreaController?.CurrentUnitMovableArea;
-        if (area == null || area.Count == 0) return "Out of movement.";
+        if (area == null || area.Count == 0) return Loc.T("path.preview.out_of_movement");
 
         if (!area.Contains(dest))
-            return dest.Walkable ? "Out of range." : "Blocked.";
+            return Loc.T(dest.Walkable ? "path.preview.out_of_range" : "path.preview.blocked");
 
         // Reachable per the game; price it from our own reachable-tiles pathfind (the controller threw its costs away).
         var dict = PathfindingService.Instance?.FindAllReachableTiles_Blocking(
@@ -56,12 +55,12 @@ internal static class PathInfo
         if (dict == null || !dict.TryGetValue(dest, out var cell))
         {
             canMove = true;                       // in the game's set but not priced — still a legal move
-            return "Reachable.";
+            return Loc.T("path.preview.reachable_bare");
         }
-        if (!cell.IsCanStand) return "Occupied, can't stop there.";
+        if (!cell.IsCanStand) return Loc.T("path.preview.occupied");
 
         int tiles = TileCount(dest, dict);
-        if (tiles == 0) return "You are here.";
+        if (tiles == 0) return Loc.T("path.preview.here");
         canMove = true;
 
         // The hop count answers "how many steps"; the movement-point cost is the real budget number (it diverges
@@ -69,10 +68,8 @@ internal static class PathInfo
         // accumulated MP cost of THIS path; ActionPointsBlueMax is the unit's total movement for the turn.
         int cost = Mathf.RoundToInt(cell.Length);
         int budget = Mathf.RoundToInt(unit.CombatState.ActionPointsBlueMax);
-
-        var sb = new StringBuilder();
-        sb.Append("Reachable, ").Append(tiles).Append(tiles == 1 ? " tile" : " tiles");
-        sb.Append(", costs ").Append(cost).Append(" of ").Append(budget).Append(" movement");
+        string tileword = Loc.T(tiles == 1 ? "path.preview.tile_one" : "path.preview.tile_many");
+        string line = Loc.T("path.preview.reachable", new { tiles, tileword, cost, budget });
 
         // Attack-of-opportunity warning: the exact call the game's own move prediction runs. Leaving an enemy's
         // threatened tile provokes; the API self-filters to combat, so out of combat it yields nothing. Name the
@@ -80,10 +77,9 @@ internal static class PathInfo
         var attackers = unit.CalculateAttackOfOpportunity(PathNodes(dest, dict))
                             .Select(a => a.Attacker).Where(a => a != null).Distinct().ToList();
         if (attackers.Count > 0)
-            sb.Append(". Provokes attacks of opportunity from ")
-              .Append(string.Join(", ", attackers.Select(a => a.CharacterName)));
+            line += " " + Loc.T("path.preview.provokes", new { names = string.Join(", ", attackers.Select(a => a.CharacterName)) });
 
-        return sb.Append('.').ToString();
+        return line;
     }
 
     /// <summary>The traversed node list origin→dest, from the priced dict's parent chain — fed to the engine's
