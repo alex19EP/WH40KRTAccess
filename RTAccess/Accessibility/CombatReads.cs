@@ -73,12 +73,12 @@ internal static class CombatReads
         var cover = CoverTo(me, target);
         if (cover == LosCalculations.CoverType.Invisible)
         {
-            bits.Add("no line of sight");
+            bits.Add(Loc.T("combat.no_los"));
         }
         else
         {
-            if (cover == LosCalculations.CoverType.Half) bits.Add("half cover");
-            else if (cover == LosCalculations.CoverType.Full) bits.Add("full cover");
+            if (cover == LosCalculations.CoverType.Half) bits.Add(Loc.T("cover.half"));
+            else if (cover == LosCalculations.CoverType.Full) bits.Add(Loc.T("cover.full"));
 
             // With LOS established, whether my default weapon can actually reach the target (range/targetability).
             // Only spoken when I'm armed — an unarmed observer has no weapon range to report.
@@ -87,10 +87,10 @@ internal static class CombatReads
             if (atk != null && node != null)
             {
                 bool targetable = atk.CanTargetFromNode(node, null, new TargetWrapper(target), out int _, out var _, out var _);
-                bits.Add(targetable ? "in range" : "out of range");
+                bits.Add(targetable ? Loc.T("combat.in_range") : Loc.T("combat.out_of_range"));
             }
         }
-        if (target.IsThreat(me)) bits.Add("threatening you");   // does this enemy threaten my acting unit (AoO reach)
+        if (target.IsThreat(me)) bits.Add(Loc.T("combat.threatening"));   // does this enemy threaten my acting unit (AoO reach)
 
         return bits.Count > 0 ? string.Join(", ", bits) : null;
     }

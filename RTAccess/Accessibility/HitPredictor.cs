@@ -86,14 +86,14 @@ public static class HitPredictor
         {
             case AbilityData.UnavailabilityReasonType.TargetTooFar:
                 int over = distance - ability.RangeCells;
-                return over > 0 ? $"Out of range, {over} {Cells(over)} too far." : "Out of range.";
+                return over > 0 ? Loc.T("predict.too_far", new { over, cells = Cells(over) }) : Loc.T("predict.out_of_range");
             case AbilityData.UnavailabilityReasonType.TargetTooClose:
                 int under = ability.MinRangeCells - distance;
-                return under > 0 ? $"Too close, {under} {Cells(under)} closer than the minimum range." : "Too close.";
+                return under > 0 ? Loc.T("predict.too_close_by", new { under, cells = Cells(under) }) : Loc.T("predict.too_close");
             case AbilityData.UnavailabilityReasonType.HasNoLosToTarget:
-                return "No line of sight.";
+                return Loc.T("predict.no_los");
             default:
-                return "Can't target that.";
+                return Loc.T("predict.cant_target");
         }
     }
 
@@ -101,8 +101,8 @@ public static class HitPredictor
     {
         int hit = Mathf.RoundToInt(ui.HitWithAvoidanceChance);
         var sb = new StringBuilder();
-        sb.Append(hit).Append("% to hit");
-        if (crit > 0) sb.Append(", ").Append(crit).Append("% crit");
+        sb.Append(Loc.T("predict.to_hit", new { hit }));
+        if (crit > 0) sb.Append(", ").Append(Loc.T("predict.crit", new { crit }));
 
         if (!verbose)
         {
@@ -112,42 +112,39 @@ public static class HitPredictor
         }
 
         // Verbose: the full overtip breakdown — base roll, then each avoidance that actually applies, then damage.
-        sb.Append(". Base ").Append(Mathf.RoundToInt(ui.InitialHitChance)).Append('%');
-        AppendPct(sb, "dodged", ui.DodgeChance);
-        AppendPct(sb, "parried", ui.ParryChance);
-        AppendPct(sb, "in cover", ui.CoverChance);
-        AppendPct(sb, "blocked", ui.BlockChance);
-        AppendPct(sb, "evaded", ui.EvasionChance);
+        sb.Append(". ").Append(Loc.T("predict.base", new { value = Mathf.RoundToInt(ui.InitialHitChance) }));
+        AppendPct(sb, "predict.dodged", ui.DodgeChance);
+        AppendPct(sb, "predict.parried", ui.ParryChance);
+        AppendPct(sb, "predict.in_cover", ui.CoverChance);
+        AppendPct(sb, "predict.blocked", ui.BlockChance);
+        AppendPct(sb, "predict.evaded", ui.EvasionChance);
         if (ui.MaxDamage > 0)
-            sb.Append(". ").Append(ui.MinDamage).Append(" to ").Append(ui.MaxDamage).Append(" damage");
+            sb.Append(". ").Append(Loc.T("predict.damage", new { min = ui.MinDamage, max = ui.MaxDamage }));
 
         // Bursts: per-shot hit chances (the reticle shows a column of these for multi-shot weapons).
         var shots = ui.BurstHitChances;
         if (shots != null && shots.Count > 1)
         {
-            sb.Append(". ").Append(shots.Count).Append(" shots: ");
-            for (int i = 0; i < shots.Count; i++)
-            {
-                if (i > 0) sb.Append(", ");
-                sb.Append(Mathf.RoundToInt(shots[i])).Append('%');
-            }
+            var parts = new string[shots.Count];
+            for (int i = 0; i < shots.Count; i++) parts[i] = Mathf.RoundToInt(shots[i]) + "%";
+            sb.Append(". ").Append(Loc.T("predict.shots", new { count = shots.Count, list = string.Join(", ", parts) }));
         }
         return sb.Append('.').ToString();
     }
 
     private static void AppendCover(StringBuilder sb, LosCalculations.CoverType los)
     {
-        if (los == LosCalculations.CoverType.Half) sb.Append(", half cover");
-        else if (los == LosCalculations.CoverType.Full) sb.Append(", full cover");
+        if (los == LosCalculations.CoverType.Half) sb.Append(", ").Append(Loc.T("cover.half"));
+        else if (los == LosCalculations.CoverType.Full) sb.Append(", ").Append(Loc.T("cover.full"));
     }
 
-    private static void AppendPct(StringBuilder sb, string label, float pct)
+    private static void AppendPct(StringBuilder sb, string key, float pct)
     {
         int p = Mathf.RoundToInt(pct);
-        if (p > 0) sb.Append(", ").Append(p).Append("% ").Append(label);
+        if (p > 0) sb.Append(", ").Append(Loc.T(key, new { pct = p }));
     }
 
-    private static string Cells(int n) => n == 1 ? "cell" : "cells";
+    private static string Cells(int n) => n == 1 ? Loc.T("predict.cell") : Loc.T("predict.cells");
 
 #if DEBUG
     /// <summary>Dev parity check: describe the acting unit's longest-range enemy ability against the nearest visible

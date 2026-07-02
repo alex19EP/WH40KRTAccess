@@ -6,7 +6,7 @@ namespace RTAccess.Buffers;
 /// The four buffer review actions, bound to Alt+arrows (wired by the main session in InputBindings):
 /// Alt+Left/Right cycle between buffers (announcing the buffer's name + its current line), Alt+Up/Down move
 /// through the current buffer's lines (announcing just the line). Speech interrupts so rapid scrolling stays
-/// responsive (the interrupt-on-keypress rule). Strings are hardcoded English (no locale table in RTAccess yet).
+/// responsive (the interrupt-on-keypress rule). Spoken strings resolve through the locale table (see Loc / ui.json).
 /// </summary>
 internal static class BufferControls
 {
@@ -31,16 +31,16 @@ internal static class BufferControls
     private static void ReportBuffer()
     {
         var b = BufferManager.Instance.CurrentBuffer;
-        if (b == null) { Speaker.Speak("No buffers.", interrupt: true); return; }
-        if (b.IsEmpty) { Speaker.Speak(b.Label + " is empty.", interrupt: true); return; }
-        Speaker.Speak(b.Label + ". " + (b.CurrentItem ?? ""), interrupt: true);
+        if (b == null) { Speaker.Speak(Loc.T("buffer.none"), interrupt: true); return; }
+        if (b.IsEmpty) { Speaker.Speak(Loc.T("buffer.empty", new { label = b.Label }), interrupt: true); return; }
+        Speaker.Speak(Loc.T("buffer.label_line", new { label = b.Label, item = b.CurrentItem ?? "" }), interrupt: true);
     }
 
     // Moving within a buffer reads just the landed line.
     private static void ReportItem(Buffer b)
     {
-        if (b == null) { Speaker.Speak("No buffer selected.", interrupt: true); return; }
-        if (b.IsEmpty) { Speaker.Speak(b.Label + " is empty.", interrupt: true); return; }
+        if (b == null) { Speaker.Speak(Loc.T("buffer.none_selected"), interrupt: true); return; }
+        if (b.IsEmpty) { Speaker.Speak(Loc.T("buffer.empty", new { label = b.Label }), interrupt: true); return; }
         var item = b.CurrentItem;
         if (item != null) Speaker.Speak(item, interrupt: true);
     }

@@ -77,13 +77,13 @@ internal sealed class ExplorationEvents :
     public void ReannounceCurrent()
     {
         if (_lastChosen != null) Announce(_lastChosen, interrupt: true);
-        else Speaker.Speak("Nothing nearby.", interrupt: true);
+        else Speaker.Speak(Loc.T("explore.nothing_nearby"), interrupt: true);
     }
 
     private static void Announce(EntityViewBase entity, bool interrupt)
     {
         var text = InteractableDescriber.Describe(entity);
-        Speaker.Speak(string.IsNullOrWhiteSpace(text) ? "Interactable." : text, interrupt: interrupt);
+        Speaker.Speak(string.IsNullOrWhiteSpace(text) ? Loc.T("explore.interactable") : text, interrupt: interrupt);
     }
 
     // Area / loading transitions.
@@ -95,12 +95,12 @@ internal sealed class ExplorationEvents :
             _lastSpoken = null;
             TileExplorer.Reset(); // the tile cursor pointed at a node in the old area's grid — clear it
             var name = Game.Instance?.CurrentlyLoadedArea?.AreaDisplayName;
-            Speaker.Speak(string.IsNullOrWhiteSpace(name) ? "New area." : ("Entering " + name + "."), interrupt: false);
+            Speaker.Speak(string.IsNullOrWhiteSpace(name) ? Loc.T("explore.new_area") : Loc.T("explore.entering", new { name }), interrupt: false);
         }
         catch (Exception e) { Main.Log?.Log("area announce failed: " + e.Message); }
     }
 
-    public void HandleOpenLoadingScreen() => Speaker.Speak("Loading.", interrupt: false);
+    public void HandleOpenLoadingScreen() => Speaker.Speak(Loc.T("explore.loading"), interrupt: false);
 
     public void HandleCloseLoadingScreen() { /* OnAreaActivated announces the entered area; nothing to add here. */ }
 }

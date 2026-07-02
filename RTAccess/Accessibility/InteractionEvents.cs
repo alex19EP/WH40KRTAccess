@@ -21,11 +21,11 @@ internal sealed class InteractionEvents : IPickLockHandler
     private InteractionEvents() { }
 
     public void HandlePickLockSuccess(MapObjectView mapObjectView)
-        => Speak(Name(mapObjectView) + "lock picked.");
+        => Speak(Name(mapObjectView) + Loc.T("interact.lock_picked"));
 
     // The game only raises non-critical fails here (SkillUseRestrictionPart), but honour the flag for forward-compat.
     public void HandlePickLockFail(MapObjectView mapObjectView, bool critical)
-        => Speak(Name(mapObjectView) + (critical ? "lock jammed." : "lock pick failed."));
+        => Speak(Name(mapObjectView) + Loc.T(critical ? "interact.lock_jammed" : "interact.lock_pick_failed"));
 
     /// <summary>"&lt;object&gt;, " prefix (e.g. "Door, ") — the same name mapping the overtip/scanner use, or empty.</summary>
     private static string Name(MapObjectView view)

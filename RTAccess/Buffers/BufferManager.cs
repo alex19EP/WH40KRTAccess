@@ -65,8 +65,10 @@ internal sealed class BufferManager
     public void RegisterDefaults()
     {
         if (_buffers.Count > 0) return;
-        Add(new UnitBuffer("Selected unit", SelectedUnit));
-        Add(new UnitBuffer("Target", TargetUnit));
+        // Labels resolve now (RegisterDefaults runs after LocalizationManager.Initialize; see Main). A
+        // mid-session language change won't retranslate these two boot-time labels — an accepted edge case.
+        Add(new UnitBuffer(Loc.T("buffer.selected_unit"), SelectedUnit));
+        Add(new UnitBuffer(Loc.T("buffer.target"), TargetUnit));
         foreach (var b in _buffers) b.Enabled = true;
     }
 

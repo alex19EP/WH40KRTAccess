@@ -38,15 +38,15 @@ internal sealed class AbilityTargeting
         if (!h.OnClick(go, point, 0)) return; // refused → the game spoke the reason; nothing to add
 
         bool moreTargets = h.Ability != null; // still armed → a multi-target ability wants the next target
-        if (moreTargets) Speaker.Speak("Target added.", interrupt: true);
-        else if (unit != null) Speaker.Speak("Firing on " + unit.CharacterName + ".", interrupt: true);
-        else Speaker.Speak("Ability used.", interrupt: true);
+        if (moreTargets) Speaker.Speak(Loc.T("aim.target_added"), interrupt: true);
+        else if (unit != null) Speaker.Speak(Loc.T("aim.firing_on", new { name = unit.CharacterName }), interrupt: true);
+        else Speaker.Speak(Loc.T("aim.ability_used"), interrupt: true);
     }
 
     /// <summary>Abandon aiming — drop the armed ability / pointer mode (the same path a right-click takes).</summary>
     public void Cancel()
     {
         Game.Instance?.ClickEventsController?.ClearPointerMode();
-        Speaker.Speak("Targeting cancelled.", interrupt: true);
+        Speaker.Speak(Loc.T("aim.cancelled"), interrupt: true);
     }
 }

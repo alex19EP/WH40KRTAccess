@@ -43,8 +43,8 @@ internal static class Inspect
 
     private static void Run(BaseUnitEntity unit)
     {
-        if (unit == null) { Speak("Nothing to inspect."); return; }
-        if (!InspectUnitsHelper.IsInspectAllow(unit)) { Speak("Can't inspect " + unit.CharacterName + "."); return; }
+        if (unit == null) { Speak(Loc.T("inspect.none")); return; }
+        if (!InspectUnitsHelper.IsInspectAllow(unit)) { Speak(Loc.T("inspect.cant", new { name = unit.CharacterName })); return; }
 
         // Drive the game's own inspect. This is the only handler of the event (InspectVM), so the sole effects are
         // building the inspect template on the live VM and showing the visual panel — no selection or camera move.

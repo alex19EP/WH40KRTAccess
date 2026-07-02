@@ -11,10 +11,11 @@ namespace RTAccess
     /// are stored as Messages so any Message passed in resolves lazily at the parent's
     /// Resolve time. Compose with the + operator or Message.Join.
     ///
-    /// Localization isn't wired yet: <see cref="LocalizationResolver"/> is null, so use
-    /// <see cref="Raw(string)"/> for now; swapping a literal to <see cref="Localized"/>
-    /// later is a per-string change, not a type-wide refactor (the whole point of having
-    /// Message everywhere from the start).
+    /// Localization is wired at startup (<see cref="LocalizationResolver"/> is set in
+    /// <c>LocalizationManager.Initialize</c>), so <see cref="Localized"/> resolves against
+    /// <c>ui.json</c>; a literal only falls through to itself when a key is missing. Swapping a
+    /// <see cref="Raw(string)"/> literal to <see cref="Localized"/> is a per-string change, not a
+    /// type-wide refactor (the whole point of having Message everywhere from the start).
     /// </summary>
     public class Message
     {

@@ -27,7 +27,7 @@ internal static class Targeting
     public static void CommitAtCursor()
     {
         if (!Aiming) return;
-        if (!MapCursor.Has) { Speaker.Speak("Move the cursor to a target first.", interrupt: true); return; }
+        if (!MapCursor.Has) { Speaker.Speak(Loc.T("aim.move_cursor_first"), interrupt: true); return; }
         var target = CursorTarget.Inside();
         Ability.CommitAt(target?.TargetUnit, MapCursor.Position);
     }
@@ -36,7 +36,7 @@ internal static class Targeting
     public static void CommitOnSelection(ScanItem item)
     {
         if (!Aiming) return;
-        if (item == null) { Speaker.Speak("No selection to fire on.", interrupt: true); return; }
+        if (item == null) { Speaker.Speak(Loc.T("aim.no_selection"), interrupt: true); return; }
         Ability.CommitAt(item.TargetUnit, item.Position);
     }
 
@@ -96,18 +96,18 @@ internal static class Targeting
         if (ability == null) return null;
 
         var sb = new System.Text.StringBuilder();
-        sb.Append("Aiming ").Append(ability.Name);
+        sb.Append(Loc.T("aim.aiming", new { name = ability.Name }));
         int range = 0;
         try { range = ability.RangeCells; } catch { /* range rule can throw on odd abilities; omit it */ }
-        if (range > 0) sb.Append(", range ").Append(range).Append(range == 1 ? " cell" : " cells");
+        if (range > 0) sb.Append(", ").Append(Loc.T(range == 1 ? "aim.range_one" : "aim.range", new { cells = range }));
         sb.Append(". ");
 
         if (ability.CanTargetEnemies)
-            sb.Append("Cycle enemies with period, fire with I, O for the breakdown, Backspace to cancel.");
+            sb.Append(Loc.T("aim.enemies_help"));
         else if (ability.CanTargetFriends)
-            sb.Append("Cycle allies with comma, use with I, Backspace to cancel.");
+            sb.Append(Loc.T("aim.allies_help"));
         else
-            sb.Append("Move the cursor and press Enter, or Backspace to cancel.");
+            sb.Append(Loc.T("aim.point_help"));
         return sb.ToString();
     }
 }

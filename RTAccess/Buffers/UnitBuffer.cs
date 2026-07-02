@@ -31,12 +31,12 @@ internal sealed class UnitBuffer : Buffer
 
         var health = unit.Health;
         if (health != null)
-            Add($"{health.HitPointsLeft} of {health.MaxHitPoints} hit points");
+            Add(Loc.T("buffer.hit_points", new { current = health.HitPointsLeft, max = health.MaxHitPoints }));
 
         // Action / movement points are only meaningful in combat (yellow = actions, blue = movement cells).
         var combat = unit.GetCombatStateOptional();
         if (combat != null && combat.IsInCombat)
-            Add($"Action points {combat.ActionPointsYellow}, movement {combat.ActionPointsBlue:0.#}");
+            Add(Loc.T("buffer.ap_mp", new { ap = combat.ActionPointsYellow, mp = combat.ActionPointsBlue.ToString("0.#") }));
 
         Add(DefenseLine(unit));
 
@@ -59,14 +59,14 @@ internal sealed class UnitBuffer : Buffer
         {
             var parts = new List<string>();
             var armor = Rulebook.Trigger(new RuleCalculateStatsArmor(unit));
-            parts.Add($"absorption {armor.ResultAbsorption} percent");
-            parts.Add($"deflection {armor.ResultDeflection}");
+            parts.Add(Loc.T("buffer.absorption", new { value = armor.ResultAbsorption }));
+            parts.Add(Loc.T("buffer.deflection", new { value = armor.ResultDeflection }));
             if (unit is UnitEntity ue)
             {
                 int dodge = Rulebook.Trigger(new RuleCalculateDodgeChance(ue)).UncappedResult;
                 int parry = Rulebook.Trigger(new RuleCalculateParryChance(ue)).Result;
-                parts.Add($"dodge {dodge} percent");
-                parts.Add($"parry {parry} percent");
+                parts.Add(Loc.T("buffer.dodge", new { value = dodge }));
+                parts.Add(Loc.T("buffer.parry", new { value = parry }));
             }
             return string.Join(", ", parts);
         }
@@ -77,13 +77,14 @@ internal sealed class UnitBuffer : Buffer
         }
     }
 
-    // "Bleeding x2, 3 rounds" / "Hidden, permanent" / "Stunned".
+    // "Bleeding x2, 3 rounds" / "Hidden, permanent" / "Stunned". The buff name is game text; the rank /
+    // permanent / rounds annotations resolve through the locale table.
     private static string BuffLine(Buff buff)
     {
         string line = buff.Name;
-        if (buff.Rank > 1) line += " x" + buff.Rank;
-        if (buff.IsPermanent) line += ", permanent";
-        else if (buff.ExpirationInRounds > 0) line += ", " + buff.ExpirationInRounds + " rounds";
+        if (buff.Rank > 1) line += " " + Loc.T("buffer.rank", new { rank = buff.Rank });
+        if (buff.IsPermanent) line += ", " + Loc.T("buffer.permanent");
+        else if (buff.ExpirationInRounds > 0) line += ", " + Loc.T("buffer.rounds", new { rounds = buff.ExpirationInRounds });
         return line;
     }
 }
