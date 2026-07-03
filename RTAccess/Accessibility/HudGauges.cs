@@ -30,6 +30,7 @@ namespace RTAccess.Accessibility
             {
                 var parts = new List<string>();
                 AppendMomentum(parts);
+                AppendMoveArea(parts);
                 AppendVeil(parts);
                 AppendProfitFactor(parts);
                 AppendBoss(parts);
@@ -55,6 +56,16 @@ namespace RTAccess.Accessibility
             parts.Add(Loc.T("gauge.momentum", new { value, max }));
             if (me.HeroicActActive.Value) parts.Add(Loc.T("gauge.heroic_act"));
             if (me.DesperateMeasureActive.Value) parts.Add(Loc.T("gauge.desperate_measure"));
+        }
+
+        // Reachable-movement extent for the current turn — the size of the game's blue move-area highlight
+        // plus the movement-point budget (PathInfo.MoveAreaSummary reads UnitMovableAreaController's own set).
+        // Self-gating: null outside a controllable turn-based turn (spent out / not your turn / not in combat),
+        // so out of combat this adds nothing. Own-unit read — parity-safe, no fog gate.
+        private static void AppendMoveArea(List<string> parts)
+        {
+            var s = RTAccess.Exploration.PathInfo.MoveAreaSummary();
+            if (!string.IsNullOrWhiteSpace(s)) parts.Add(s);
         }
 
         // Veil persists across the area (psychic phenomena), so report it whenever it's non-zero or a
