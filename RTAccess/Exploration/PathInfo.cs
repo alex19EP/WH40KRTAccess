@@ -65,11 +65,15 @@ internal static class PathInfo
 
         // The hop count answers "how many steps"; the movement-point cost is the real budget number (it diverges
         // from the hop count on diagonals and through threatened cells), so speak both. cell.Length is the
-        // accumulated MP cost of THIS path; ActionPointsBlueMax is the unit's total movement for the turn.
+        // accumulated MP cost of THIS path; ActionPointsBlue is the unit's CURRENT remaining movement this turn
+        // (ActionPointsBlueMax is the full-turn total — use the current pool so "of {budget}" stays accurate once
+        // movement is partly spent, matching the sighted MP gauge).
         int cost = Mathf.RoundToInt(cell.Length);
-        int budget = Mathf.RoundToInt(unit.CombatState.ActionPointsBlueMax);
+        int budget = Mathf.RoundToInt(unit.CombatState.ActionPointsBlue);
+        int left = Mathf.Max(0, budget - cost);   // movement remaining after committing this move
         string tileword = Loc.T(tiles == 1 ? "path.preview.tile_one" : "path.preview.tile_many");
         string line = Loc.T("path.preview.reachable", new { tiles, tileword, cost, budget });
+        line += " " + Loc.T("path.mp_left", new { left });
 
         // Attack-of-opportunity warning: the exact call the game's own move prediction runs. Leaving an enemy's
         // threatened tile provokes; the API self-filters to combat, so out of combat it yields nothing. Name the
@@ -80,6 +84,31 @@ internal static class PathInfo
             line += " " + Loc.T("path.preview.provokes", new { names = string.Join(", ", attackers.Select(a => a.CharacterName)) });
 
         return line;
+    }
+
+    /// <summary>
+    /// One-shot aggregate readout of the whole reachable area for the current controllable turn — the spoken
+    /// equivalent of the sighted blue move-highlight, whose extent is exactly
+    /// <see cref="Kingmaker.Controllers.Units.UnitMovableAreaController.CurrentUnitMovableArea"/>.Count (a
+    /// <c>List&lt;GraphNode&gt;</c> the controller recomputes per point change). Unlike <see cref="Preview"/> —
+    /// which prices ONE cursor tile — this answers "how far can I go at all this turn". Returns null when no
+    /// controllable unit has movement (null / empty area), so a caller can stay silent. NOTE: not yet wired to a
+    /// key (that needs the Input files, not owned here); a keypress-caused caller should pass interrupt:true.
+    /// </summary>
+    public static string MoveAreaSummary()
+    {
+        // Same authoritative set Preview reads — empty/null means no movement (spent out, CantMove, not a turn).
+        var area = Game.Instance?.UnitMovableAreaController?.CurrentUnitMovableArea;
+        if (area == null || area.Count == 0) return null;
+
+        int count = area.Count;
+        // The area is computed for the turn's current (controllable, party) unit; read its current MP pool for the
+        // budget so the extent comes with "how much movement is left" — parity-safe (own unit, always visible).
+        var unit = Game.Instance?.TurnController?.CurrentUnit as BaseUnitEntity;
+        int mp = unit != null ? Mathf.RoundToInt(unit.CombatState.ActionPointsBlue) : 0;
+        return mp > 0
+            ? Loc.T("path.movearea_mp", new { count, mp })
+            : Loc.T("path.movearea", new { count });
     }
 
     /// <summary>The traversed node list origin→dest, from the priced dict's parent chain — fed to the engine's

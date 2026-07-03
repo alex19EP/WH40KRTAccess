@@ -1,9 +1,14 @@
 using System.Collections.Generic;
 using System.Text;
-using Kingmaker;                                     // Game (VirtualPositionController)
+using Kingmaker;                                     // Game (VirtualPositionController, TurnController.VeilThicknessCounter)
+using Kingmaker.Blueprints;                          // BlueprintExtenstions.GetComponent<T> (blueprint components)
+using Kingmaker.Blueprints.Root;                     // BlueprintRoot (WarhammerRoot.PsychicPhenomenaRoot)
+using Kingmaker.Blueprints.Root.Strings;             // UIStrings (Tooltips.EndsTurn / SpendAllMovementPoints)
 using Kingmaker.Code.UI.MVVM.VM.ActionBar;           // ActionBarSlotVM
+using Kingmaker.UI.Common;                           // UIUtility.GetCurrentSelectedUnit
 using Kingmaker.UnitLogic.Abilities;                 // AbilityData
 using Kingmaker.UnitLogic.Abilities.Blueprints;      // AbilityTargetAnchor
+using Kingmaker.UnitLogic.Abilities.Components;      // WarhammerEndTurn, CheckBuffForMPSpendTooltip
 using RTAccess.UI.Announcements;
 using UnityEngine;                                   // Vector3
 
@@ -93,6 +98,10 @@ namespace RTAccess.UI.Proxies
 
                 if (_slot.IsReload.Value)
                     Append(sb, Loc.T("slot.ammo", new { current = _slot.CurrentAmmo.Value, max = _slot.MaxAmmo.Value }));
+                // Ammo spent per activation (VM's AmmoCost — a separate badge from the current/max ammo, shown
+                // when the ability consumes more than one round per use, e.g. a burst).
+                if (_slot.AmmoCost.Value > 0)
+                    Append(sb, Loc.T("slot.ammo_cost", new { cost = _slot.AmmoCost.Value }));
                 if (_slot.IsOnCooldown.Value)
                 {
                     var cd = _slot.CooldownText.Value;
@@ -101,6 +110,12 @@ namespace RTAccess.UI.Proxies
                 if (_slot.IsSelected.Value) Append(sb, Loc.T("value.targeting"));
                 else if (_slot.MechanicActionBarSlot != null && _slot.MechanicActionBarSlot.IsActive())
                     Append(sb, Loc.T("combat.active_marker"));
+
+                if (ab != null)
+                {
+                    AppendVeil(sb, ab);      // predicted after-cast veil (psyker powers)
+                    AppendEndTurn(sb, ab);   // "ends turn" / "spends all movement" cue
+                }
 
                 // Why it's greyed out — the game's own reason (not enough AP, on cooldown, out of range, …), so a
                 // disabled slot says the cause instead of a bare "disabled".
@@ -129,6 +144,14 @@ namespace RTAccess.UI.Proxies
                     {
                         int r = 0; try { r = ab.RangeCells; } catch { }
                         if (r > 1) Append(sb, Loc.T("slot.range", new { cells = r }));
+                        // Effective (half) range ring — a weapon ability's sweet-spot ends at half its max range
+                        // (AbilitySingleTargetRange: weapon != null ? FloorToInt(MaxRangeCells / 2) : 0); the sighted
+                        // view draws it as an inner ring. Only for weapon abilities, only when it's a distinct band.
+                        if (ab.Weapon != null && r > 0)
+                        {
+                            int eff = Mathf.FloorToInt(r / 2f);
+                            if (eff > 0 && eff < r) Append(sb, Loc.T("slot.effective_range", new { cells = eff }));
+                        }
                         int min = 0; try { min = ab.MinRangeCells; } catch { }
                         if (min > 0) Append(sb, Loc.T("slot.min_range", new { cells = min }));
                     }
@@ -168,6 +191,56 @@ namespace RTAccess.UI.Proxies
                 return string.IsNullOrWhiteSpace(reason) ? null : TextUtil.StripRichText(reason);
             }
             catch { return null; }
+        }
+
+        // "Ends turn" / "spends all movement" — the same cue the sighted tooltip shows for an ability whose
+        // blueprint carries WarhammerEndTurn (SurfaceActionBarVM.GetEndTurn / TooltipTemplateAbility). The strings
+        // are game-localized content (UIStrings.Tooltips.*), passed straight through. Honors CheckBuffForMPSpendTooltip:
+        // that component overrides the plain text, showing the MP cue only when the selected caster holds its buff
+        // (and suppressing it otherwise) — matching TooltipTemplateAbility.GetEndTurn exactly.
+        private void AppendEndTurn(StringBuilder sb, AbilityData ab)
+        {
+            try
+            {
+                var bp = ab.Blueprint;
+                if (bp == null) return;
+                var check = bp.GetComponent<CheckBuffForMPSpendTooltip>();
+                if (check != null)
+                {
+                    var unit = UIUtility.GetCurrentSelectedUnit();
+                    if (unit != null)
+                    {
+                        // The buff-check component wins when a caster is known: MP cue iff the buff is present.
+                        if (check.CheckContainsBuff(unit))
+                            Append(sb, (string)UIStrings.Instance.Tooltips.SpendAllMovementPoints);
+                        return;
+                    }
+                }
+                var endTurn = bp.GetComponent<WarhammerEndTurn>();
+                if (endTurn != null)
+                    Append(sb, (string)(endTurn.clearMPInsteadOfEndingTurn
+                        ? UIStrings.Instance.Tooltips.SpendAllMovementPoints
+                        : UIStrings.Instance.Tooltips.EndsTurn));
+            }
+            catch { }
+        }
+
+        // Predicted veil thickness after casting a psyker power — the sighted VeilThicknessVM.PredictedValue
+        // (current global veil + AbilityData.GetVeilThicknessPointsToAdd(isPrediction:true)). Veil is a global
+        // location value (AreaVailPart.Vail), not per-unit, so there's nothing to fog-gate. Flags when the cast
+        // would reach the critical threshold the game uses to escalate perils (CriticalVeilOnAllLocation).
+        private void AppendVeil(StringBuilder sb, AbilityData ab)
+        {
+            try
+            {
+                if (ab.Blueprint == null || !ab.Blueprint.IsPsykerAbility) return;
+                int current = Game.Instance?.TurnController?.VeilThicknessCounter?.Value ?? 0;
+                int predicted = current + ab.GetVeilThicknessPointsToAdd(isPrediction: true);
+                Append(sb, Loc.T("slot.veil_after", new { value = predicted }));
+                int critical = BlueprintRoot.Instance.WarhammerRoot.PsychicPhenomenaRoot.CriticalVeilOnAllLocation;
+                if (predicted >= critical) Append(sb, Loc.T("slot.veil_would_go_critical"));
+            }
+            catch { }
         }
 
         private static void Append(StringBuilder sb, string s)

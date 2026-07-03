@@ -18,9 +18,9 @@ namespace RTAccess.Accessibility;
 /// (<c>LogThreadService</c>, uncapped, session-scoped), so the review screen reads THAT store directly —
 /// this tap only decides what to SPEAK live. It voices every thread EXCEPT the ones a dedicated announcer
 /// already owns (<see cref="OwnedElsewhere"/> — barks, warnings, dialogue cue/answer text, buff
-/// application) and a small high-frequency <see cref="Noise"/> set (still reviewable, just too chatty to
-/// narrate), plus separators. Conviction (soul-mark) shifts are the ONE notification the game never logs,
-/// so they come from <see cref="ConvictionEvents"/> instead.
+/// application), plus separators — everything a sighted player reads in the log window is spoken.
+/// Conviction (soul-mark) shifts are the ONE notification the game never logs, so they come from
+/// <see cref="ConvictionEvents"/> instead.
 ///
 /// Lines are stripped of TMP rich text (SPACED strip — a combat line welds its damage segment to a
 /// "Critical hit!" suffix with only a tag otherwise), guarded against a same-frame double-fire, and
@@ -44,15 +44,6 @@ public static class LogTap
         "RulePerformMomentumChangeLogThread",      // momentum fires every kill/turn; HUD gauge (K) instead
     };
 
-    // High-frequency, low-per-event-value threads: still CAPTURED (reviewable in the log screen) but not
-    // voiced live by default, so they don't flood TTS. Tunable per-channel/thread in a later pass.
-    private static readonly HashSet<string> Noise = new HashSet<string>
-    {
-        "GameTimeAdvancedLogThread",               // in-world time ticks
-        "VeilThicknessLogThread",                  // veil churn (frequent in combat)
-        "AwarenessLogThread",                      // perception checks (frequent)
-    };
-
     // Same-frame exact-duplicate guard: the engine occasionally raises AddMessage twice for one event in a
     // single frame. This drops that echo WITHOUT touching legitimate cross-frame repeats (e.g. a burst of
     // identical damage lines a frame apart, which must all read).
@@ -74,7 +65,7 @@ public static class LogTap
             RecordDiag(name, newMessage.IsSeparator, clean);
 #endif
             if (newMessage.IsSeparator || clean.Length == 0) return;
-            if (OwnedElsewhere.Contains(name) || Noise.Contains(name)) return;
+            if (OwnedElsewhere.Contains(name)) return;
 
             int frame = UnityEngine.Time.frameCount;
             if (clean == _lastLine && frame == _lastFrame) return; // same-frame double-fire

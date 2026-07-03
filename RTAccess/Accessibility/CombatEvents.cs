@@ -72,6 +72,7 @@ internal sealed class CombatEvents : IUnitBuffHandler
     // ---- Threshold-cue state (S7; see PollThresholds) — last observed band, cue fires on the crossing. ----
     private bool _heroicActReady, _desperateReady, _veilCritical, _turnTimerLow;
     private int _bossHpBucket = -1;   // last 25% boss-HP band (floor(progress*4)); -1 = boss bar not shown
+    private int _veilBand = -1;       // last coarse veil quartile (floor(value/max*4)); -1 = veil bar not shown
 
     /// <summary>Pumped once per frame from <c>Main.OnUpdate</c>: reconcile the frame's buff churn into
     /// genuine gain/loss lines, then flush every queued line (in arrival order) as passive speech.</summary>
@@ -195,11 +196,17 @@ internal sealed class CombatEvents : IUnitBuffHandler
 
         // Momentum: heroic-act / desperate-measure readiness (MomentumEntityVM.Value is non-null only in TB combat).
         var me = sp.SurfaceHUDVM?.ActionBarVM?.SurfaceMomentumVM?.MomentumEntityVM?.Value;
+        // Current momentum value, recovered from the public percent x pool max (the raw int m_Current is private
+        // on the VM), mirroring HudGauges. Appended to the two readiness edges below so those high-value crossings
+        // carry the running value a sighted player reads off the bar — without voicing every kill/turn change.
+        int momentum = me != null
+            ? Mathf.RoundToInt(me.CurrentPercent.Value * Game.Instance.BlueprintRoot.WarhammerRoot.MomentumRoot.MaximalMomentum)
+            : 0;
         bool heroic = me?.HeroicActActive.Value ?? false;
-        if (heroic && !_heroicActReady) Enqueue(Loc.T("gauge.heroic_act"));
+        if (heroic && !_heroicActReady) { Enqueue(Loc.T("gauge.heroic_act")); Enqueue(Loc.T("combat.momentum_now", new { value = momentum })); }
         _heroicActReady = heroic;
         bool desperate = me?.DesperateMeasureActive.Value ?? false;
-        if (desperate && !_desperateReady) Enqueue(Loc.T("gauge.desperate_measure"));
+        if (desperate && !_desperateReady) { Enqueue(Loc.T("gauge.desperate_measure")); Enqueue(Loc.T("combat.momentum_now", new { value = momentum })); }
         _desperateReady = desperate;
 
         // Veil crossing into the critical band (veil persists across the area, so this isn't combat-gated).
@@ -208,8 +215,20 @@ internal sealed class CombatEvents : IUnitBuffHandler
         if (veil != null)
         {
             var root = Game.Instance.BlueprintRoot.WarhammerRoot.PsychicPhenomenaRoot;
-            critical = veil.Value.Value >= root.CriticalVeilOnAllLocation;
+            int value = veil.Value.Value;
+            critical = value >= root.CriticalVeilOnAllLocation;
+
+            // Coarse band crossings (quartiles of the location max): voice the global veil value live when it
+            // rises or falls into a new quartile, so a blind player tracks the pressure the sighted bar shows —
+            // without a per-tick stream (the finer critical one-shot above still fires). A global location value
+            // (no unit) → no fog leak. First sight seeds the band silently so an area load doesn't announce.
+            int max = root.MaximumVeilOnAllLocation;
+            int band = max > 0 ? Mathf.Clamp(Mathf.FloorToInt((float)value / max * 4f), 0, 3) : 0;
+            if (_veilBand >= 0 && band != _veilBand)
+                Enqueue(Loc.T(band > _veilBand ? "combat.veil_rising" : "combat.veil_falling", new { value }));
+            _veilBand = band;
         }
+        else _veilBand = -1;
         if (critical && !_veilCritical) Enqueue(Loc.T("gauge.veil_critical"));
         _veilCritical = critical;
 

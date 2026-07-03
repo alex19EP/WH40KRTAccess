@@ -6,7 +6,9 @@ using Kingmaker.RuleSystem;             // Rulebook
 using Kingmaker.RuleSystem.Rules;       // RuleCalculateStatsArmor / DodgeChance / ParryChance
 using Kingmaker.UnitLogic;              // HasMechanicFeature
 using Kingmaker.UnitLogic.Buffs;        // Buff
+using Kingmaker.UnitLogic.Buffs.Components; // DOTLogicUIExtensions.CalculateDOTDamage
 using Kingmaker.UnitLogic.Enums;        // MechanicsFeatureType (HideRealHealthInUI)
+using Kingmaker.UnitLogic.Parts;        // UnitPartNonStackBonuses
 
 namespace RTAccess.Buffers;
 
@@ -97,9 +99,29 @@ internal sealed class UnitBuffer : Buffer
     private static string BuffLine(Buff buff)
     {
         string line = buff.Name;
-        if (buff.Rank > 1) line += " " + Loc.T("buffer.rank", new { rank = buff.Rank });
+
+        // #6 DOT buffs read damage-per-turn in place of rank (audit): BuffPCView binds BuffVM.Rank from the DOT
+        // damage path — BuffVM.SetGroup/UpdateRank/CalculateDamage route a DOTLogicVisual buff to
+        // DOTLogicUIExtensions.CalculateDOTDamage(buff).AverageValue (rounded per-turn average) instead of the
+        // raw rank. Mirror that: DOT → damage number, everything else → plain rank. CalculateDOTDamage can
+        // return null (no matching DOTLogic on the owner), so guard exactly as the VM does.
+        if (buff.Blueprint != null && buff.Blueprint.IsDOTVisual)
+        {
+            var dot = DOTLogicUIExtensions.CalculateDOTDamage(buff);
+            if (dot != null) line += " " + Loc.T("buffer.dot_damage", new { value = dot.AverageValue });
+        }
+        else if (buff.Rank > 1) line += " " + Loc.T("buffer.rank", new { rank = buff.Rank });
+
         if (buff.IsPermanent) line += ", " + Loc.T("buffer.permanent");
         else if (buff.ExpirationInRounds > 0) line += ", " + Loc.T("buffer.rounds", new { rounds = buff.ExpirationInRounds });
+
+        // #20 Non-stack conflict — the game shows BuffVM.ShowNonStackNotification when this buff's bonus is being
+        // overridden by a stronger non-stacking one; UnitPartNonStackBonuses.ShouldShowWarning(buff) is the same
+        // source the VM reads. The part only tracks party companions (see HandleModifierAdded's IsPlayer /
+        // IsInCompanionRoster gate), so this is parity-safe with no visibility gate needed.
+        if (buff.Owner?.GetOptional<UnitPartNonStackBonuses>()?.ShouldShowWarning(buff) ?? false)
+            line += ", " + Loc.T("buffer.non_stack");
+
         return line;
     }
 }

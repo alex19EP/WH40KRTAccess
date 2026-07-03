@@ -1,8 +1,9 @@
 using Kingmaker;                                 // Game
 using Kingmaker.Controllers.Clicks.Handlers;     // ClickUnitHandler (loot a corpse)
 using Kingmaker.EntitySystem.Entities;           // BaseUnitEntity
-using Kingmaker.UnitLogic;                        // HasMechanicFeature
-using Kingmaker.UnitLogic.Enums;                  // MechanicsFeatureType (HideRealHealthInUI)
+using Kingmaker.UI.Common;                        // UIUtilityUnit.GetSurfaceEnemyDifficulty (enemy threat tier)
+using Kingmaker.UnitLogic;                        // HasMechanicFeature (ext)
+using Kingmaker.UnitLogic.Enums;                  // MechanicsFeatureType (HideRealHealthInUI), UnitCondition (Stunned)
 using UnityEngine;
 
 namespace RTAccess.Exploration;
@@ -105,7 +106,25 @@ internal sealed class ProxyUnit : ScanItem
                         bits.Add(_unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
                             ? Loc.T("scan.unit_hp_hidden")
                             : Loc.T("scan.unit_hp", new { current = health.HitPointsLeft, max = health.MaxHitPoints }));
+                    // #15 Enemy difficulty tier — the roman-numeral threat rating the game shows on an enemy
+                    // (SurfaceCombatUnitVM.ShowDifficulty → UIUtilityUnit difficulty = DifficultyType+1). Enemy-only
+                    // (party/neutral carry no tier), gated on the enemy being visible so it never leaks pre-reveal;
+                    // spoken as a plain integer for TTS rather than the on-screen roman numeral.
+                    if (_unit.IsPlayerEnemy && _unit.IsVisibleForPlayer)
+                    {
+                        int tier = UIUtilityUnit.GetSurfaceEnemyDifficulty(_unit);
+                        if (tier > 0) bits.Add(Loc.T("unit.threat_tier", new { n = tier }));
+                    }
                     if (_unit.IsInCombat) bits.Add("in combat");
+                    // #7 Turn-status marker — mirrors SurfaceCombatUnitVM's own priority (will-lose-turn folds
+                    // Stunned/Helpless/Prone; then control-loss; then generic unable-to-act). A combat-tracker
+                    // concept, so only while in combat; both allies and enemies, but gated so a not-yet-seen enemy's
+                    // incapacitation never leaks (party units are always known).
+                    if (_unit.IsInCombat && (_unit.IsPlayerFaction || _unit.IsVisibleForPlayer))
+                    {
+                        var marker = StatusMarker();
+                        if (marker != null) bits.Add(marker);
+                    }
                 }
                 return string.Join(", ", bits);
             }
@@ -126,9 +145,42 @@ internal sealed class ProxyUnit : ScanItem
             if (!_unit.IsPlayerEnemy || _unit.LifeState.IsDead) return null;
             var me = Game.Instance?.TurnController?.CurrentUnit as BaseUnitEntity
                      ?? Game.Instance?.SelectionCharacter?.SelectedUnit?.Value;
-            return RTAccess.Accessibility.CombatReads.CoverRangeThreat(me, _unit);
+            var bits = new List<string>();
+            var tail = RTAccess.Accessibility.CombatReads.CoverRangeThreat(me, _unit);
+            if (!string.IsNullOrWhiteSpace(tail)) bits.Add(tail);
+
+            // #24 Enemy starship void shields — the current/max total a sighted player reads off the overtip shield
+            // block (OvertipHealthBlockVM.UpdateEnemyShields, itself gated IsPlayerEnemy). Enemy is already gated
+            // above; require visibility for the reveal. We sum all four sector shields (ShieldsSum/ShieldsMaxSum) —
+            // the whole-ship strength — rather than a per-hit sector. Predicted shield damage is aim-time only: it
+            // needs the armed ability + its StarshipWeapon, and this passive tail is suppressed while aiming (the
+            // aiming hit-line covers it), so it belongs to the aim-announce path, not here (see #24 gap).
+            if (_unit.IsVisibleForPlayer && _unit is StarshipEntity ship)
+            {
+                var shields = ship.Shields;
+                if (shields != null && shields.ShieldsMaxSum > 0)
+                    bits.Add(Loc.T("unit.shields", new { current = shields.ShieldsSum, max = shields.ShieldsMaxSum }));
+            }
+            return bits.Count > 0 ? string.Join(", ", bits) : null;
         }
         catch { return null; }
+    }
+
+    // #7 The turn-status marker for a unit, mirroring SurfaceCombatUnitVM.UpdateCanActStates' own priority:
+    // will-lose-turn (Stunned || Helpless || Prone) outranks a control-loss effect, which outranks a generic
+    // can't-act-mechanically. Null when the unit is fine. A pure read of the unit's own State part — the same
+    // fields the combat tracker binds. Caller supplies the in-combat + visibility gate.
+    private string StatusMarker()
+    {
+        var st = _unit.State;
+        if (st == null) return null;
+        if (st.HasCondition(UnitCondition.Stunned) || st.IsHelpless || st.IsProne)
+            return Loc.T("unit.will_lose_turn");
+        if (_unit.HasControlLossEffects())
+            return Loc.T("unit.control_loss");
+        if (!st.CanActMechanically)
+            return Loc.T("unit.unable_to_act");
+        return null;
     }
 
     private string FactionNode()

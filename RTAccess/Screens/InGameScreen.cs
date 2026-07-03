@@ -12,6 +12,8 @@ using Kingmaker.Controllers.Combat;                  // GetCombatStateOptional e
 using Kingmaker.EntitySystem.Entities;               // BaseUnitEntity, MechanicEntity
 using Kingmaker.GameModes;                           // GameModeType
 using Kingmaker.Mechanics.Entities;                  // AbstractUnitEntity
+using Kingmaker.UnitLogic;                           // HasMechanicFeature() extension (PartMechanicFeaturesExtension)
+using Kingmaker.UnitLogic.Enums;                     // MechanicsFeatureType.HideRealHealthInUI
 using Kingmaker.UI.Common;                           // IsDirectlyControllable() extension
 using Kingmaker.UI.Selection;                        // SelectionManagerBase (Hold/Stop/SelectAll)
 using Kingmaker.Blueprints.Root.Strings;             // UIStrings (reuse the game's localized HUD labels)
@@ -476,8 +478,24 @@ namespace RTAccess.Screens
 
                 var tracker = SurfaceHUD()?.InitiativeTrackerVM?.Value;
                 if (tracker?.Units != null)
-                    foreach (var u in tracker.Units)
-                        if (u != null) { var vm = u; _combat.Add(new TextElement(() => InitiativeLabel(vm))); }
+                {
+                    var units = tracker.Units;
+                    for (int i = 0; i < units.Count; i++)
+                    {
+                        var vm = units[i];
+                        if (vm == null) continue;
+                        // #10 Next-round divider. InitiativeTrackerVM sets RoundIndex to the index of the LAST
+                        // current-turn unit (InitiativeTrackerVM.UpdateUnits: RoundIndex = num after the current-turn
+                        // loop, before next-turn units get ++num), so units[0..RoundIndex] act this round and
+                        // units[RoundIndex+1..] act next round. The divider therefore belongs BEFORE the first
+                        // next-turn unit (i == RoundIndex+1), not before the last current one. Labelled with the
+                        // upcoming round number — or "surprise round" (round 0). Read live off the tracker so the
+                        // label tracks the round advancing without a rebuild.
+                        var tr = tracker;
+                        if (i == tracker.RoundIndex + 1) _combat.Add(new TextElement(() => RoundDividerLabel(tr)));
+                        _combat.Add(new TextElement(() => InitiativeLabel(vm)));
+                    }
+                }
             }
 
             if (focusedIndex < 0 || _combat.Children.Count == 0) return;
@@ -494,6 +512,9 @@ namespace RTAccess.Screens
             if (tracker?.Units != null)
                 foreach (var u in tracker.Units)
                     if (u != null) sb.Append(u.Unit?.UniqueId).Append('|');
+            // Fold the round-boundary index in so the #10 divider re-positions when the round advances (membership
+            // can stay identical while RoundIndex shifts as units complete their turns).
+            sb.Append("r").Append(tracker?.RoundIndex ?? -1);
             return sb.ToString();
         }
 
@@ -503,10 +524,47 @@ namespace RTAccess.Screens
             {
                 if (vm?.Unit == null) return "";
                 var sb = new StringBuilder(NameOf(vm.Unit));
+
+                // #8 Faction frame the card shows (SurfaceCombatUnitVM.IsEnemy/IsPlayer, set from the unit's faction
+                // in UpdateData). Parity-safe: the tracker lists only shown participants, so no visibility gate here.
+                sb.Append(", ").Append(Loc.T(
+                    vm.IsEnemy.Value  ? "combat.faction_enemy"
+                  : vm.IsPlayer.Value ? "combat.faction_ally"
+                  :                     "combat.faction_neutral"));
+
+                // #9 Per-card HP (the card renders UIUtility.GetHpText). Only read a foe's HP the game itself would
+                // show — party units are always visible, enemy/neutral only when IsVisibleForPlayer (belt-and-braces
+                // over the tracker's own visibility filter) — and mask to the "???" token exactly when the card does
+                // (HideRealHealthInUI), never leaking the raw number. Squads/placeholders with no BaseUnitEntity are
+                // skipped (no Health part to read).
+                var body = vm.UnitAsBaseUnitEntity;
+                var h = body?.Health;
+                if (h != null && (vm.Unit.IsPlayerFaction || vm.Unit.IsVisibleForPlayer))
+                    sb.Append(", ").Append(vm.Unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
+                        ? Loc.T("combat.hp_unknown")
+                        : Loc.T("combat.hp", new { cur = h.HitPointsLeft, max = h.MaxHitPoints }));
+
+                // #19 Ordinal position in the queue (InitiativeTrackerUnitVM.OrderIndex — the card's hover UnitOrder
+                // hint). The acting unit keeps the clearer "current" marker instead of "order 0".
                 if (Game.Instance?.TurnController?.CurrentUnit == vm.Unit) sb.Append(", ").Append(Loc.T("combat.current"));
+                else if (vm.OrderIndex != null && vm.OrderIndex.Value > 0) sb.Append(", ").Append(Loc.T("combat.unit_order", new { n = vm.OrderIndex.Value }));
+
                 return sb.ToString();
             }
             catch (Exception e) { Main.Log?.Error("InGameScreen.InitiativeLabel: " + e); return ""; }
+        }
+
+        // The #10 round divider's label. The tracker's own end-of-round card VM (RoundVM.Round = RoundCounter+1)
+        // carries the number; round 0 is the surprise round, which the game's card renders as literal "S"
+        // (InitiativeTrackerEndOfRound.SetRound). Read live so it advances without a rebuild.
+        private static string RoundDividerLabel(InitiativeTrackerVM tracker)
+        {
+            try
+            {
+                int round = tracker?.RoundVM?.Round?.Value ?? 0;
+                return round == 0 ? Loc.T("combat.surprise_round") : Loc.T("combat.next_round", new { n = round });
+            }
+            catch (Exception e) { Main.Log?.Error("InGameScreen.RoundDividerLabel: " + e); return ""; }
         }
 
         // ---- shared reads (null-propagating) ----

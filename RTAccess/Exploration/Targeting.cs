@@ -100,6 +100,15 @@ internal static class Targeting
         int range = 0;
         try { range = ability.RangeCells; } catch { /* range rule can throw on odd abilities; omit it */ }
         if (range > 0) sb.Append(", ").Append(Loc.T(range == 1 ? "aim.range_one" : "aim.range", new { cells = range }));
+
+        // Effective (optimal) range: for a weapon ability the sighted reticle shows a half-range sweet-spot band
+        // beyond which accuracy drops — computed as FloorToInt(MaxRangeCells / 2f) when Ability.Weapon != null (see
+        // AbilitySingleTargetRange). Speak it so a blind player knows the accurate distance, not just the hard max.
+        if (range > 0 && ability.Weapon != null)
+        {
+            int eff = UnityEngine.Mathf.FloorToInt(range / 2f);
+            if (eff > 0 && eff < range) sb.Append(", ").Append(Loc.T("aim.effective_range", new { cells = eff }));
+        }
         sb.Append(". ");
 
         // For an AoE / point ability, name the template up front ("Blast, 2-cell radius") so the player knows the

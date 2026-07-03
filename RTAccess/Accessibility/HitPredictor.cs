@@ -3,9 +3,12 @@ using Kingmaker;
 using Kingmaker.EntitySystem.Entities;
 using Kingmaker.RuleSystem;
 using Kingmaker.RuleSystem.Rules;
+using Kingmaker.UI.Common;                         // UIUtilityUnit.HasEquipedShield
 using Kingmaker.UI.SurfaceCombatHUD;               // AbilityTargetUIDataCache
+using Kingmaker.UnitLogic;                          // UnitPredictionManager, HasMechanicFeature extension
 using Kingmaker.UnitLogic.Abilities;               // AbilityData, AbilityTargetUIData, UnavailabilityReasonType
-using Kingmaker.UnitLogic.Abilities.Components.Patterns; // AoEPatternHelper
+using Kingmaker.UnitLogic.Abilities.Components.Patterns; // AoEPatternHelper, OrientedPatternData
+using Kingmaker.UnitLogic.Enums;                    // MechanicsFeatureType.HideRealHealthInUI
 using Kingmaker.Utility;                            // TargetWrapper
 using Kingmaker.View.Covers;                        // LosCalculations
 using UnityEngine;
@@ -56,6 +59,13 @@ public static class HitPredictor
 
             var cache = AbilityTargetUIDataCache.Instance;
             if (cache == null) return null;
+
+            // #5 Ricochet: the game floats "???" over a ricochet target — its hit chance AND damage are
+            // indeterminate (AbilityTargetUIData bails out to zeros for a ricochet, mirrored by the overtip
+            // zeroing MinDamage/MaxDamage), so there is no honest number to quote. Say so instead of a percentage.
+            if (UnitPredictionManager.Instance?.IsUnitRicochetTarget(target) ?? false)
+                return Loc.T("predict.ricochet_unknown");
+
             var ui = cache.GetOrCreate(ability, target, shootPos);
 
             // Cover for the terse line, computed from the firing position (CanTargetFromNode's out-cover is
@@ -63,7 +73,24 @@ public static class HitPredictor
             var cover = LosCalculations.GetWarhammerLos(shootPos, caster.SizeRect, target).CoverType;
 
             int crit = CritChance(caster, target, ability, shootPos);
-            return Compose(ui, crit, cover, verbose);
+
+            // Parity flags a sighted player reads off the overtip. Fog gate (RULE 2): an enemy's state may only be
+            // read while it is visible; party units (IsPlayerFaction) are always visible to their own player.
+            bool visible = target.IsPlayerFaction || target.IsVisibleForPlayer;
+            // #2 death mark — mirror OvertipHitChanceBlockVM.CanDie (MaxDamage >= HitPointsLeft + TemporaryHitPoints).
+            // Suppress for a concealed-HP unit so we never leak lethality the overtip itself hides.
+            bool canKill = visible && ui.MaxDamage > 0
+                && !target.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
+                && ui.MaxDamage >= target.Health.HitPointsLeft + target.Health.TemporaryHitPoints;
+            // R1 knockback — mirror OvertipHitChanceBlockVM.CanPush (= AbilityTargetUIData.CanPush). No HP → no mask.
+            bool canPush = visible && ui.CanPush;
+            // #16 shield indicator — the defenses overtip shows a shield icon whenever one is equipped, independent
+            // of block%; HasEquipedShield is the same enemy-inventory check the block-chance rule uses.
+            bool shielded = visible && UIUtilityUnit.HasEquipedShield(target);
+            // #3 overpenetration tail (verbose only) — reduced hit/damage for each pierced in-line unit.
+            string chain = verbose ? OverpenChain(caster, ability, target, casterPos) : null;
+
+            return Compose(ui, crit, cover, verbose, canKill, canPush, shielded, chain);
         }
         catch (Exception e) { Main.Log?.Log("hit predict failed: " + e.Message); return null; }
     }
@@ -97,7 +124,8 @@ public static class HitPredictor
         }
     }
 
-    private static string Compose(AbilityTargetUIData ui, int crit, LosCalculations.CoverType los, bool verbose)
+    private static string Compose(AbilityTargetUIData ui, int crit, LosCalculations.CoverType los, bool verbose,
+        bool canKill, bool canPush, bool shielded, string chain)
     {
         int hit = Mathf.RoundToInt(ui.HitWithAvoidanceChance);
         var sb = new StringBuilder();
@@ -106,8 +134,10 @@ public static class HitPredictor
 
         if (!verbose)
         {
-            // Terse: the reticle number plus cover, since cover is the one avoidance a player positions around.
+            // Terse: the reticle number, cover (the one avoidance a player positions around), and the two
+            // one-word overtip flags — can-kill and can-knock-back — that change the whole shot decision.
             AppendCover(sb, los);
+            AppendFlags(sb, canKill, canPush);
             return sb.Append('.').ToString();
         }
 
@@ -117,9 +147,13 @@ public static class HitPredictor
         AppendPct(sb, "predict.parried", ui.ParryChance);
         AppendPct(sb, "predict.in_cover", ui.CoverChance);
         AppendPct(sb, "predict.blocked", ui.BlockChance);
+        // #16 The overtip keeps the shield icon lit even at 0% block; if the block clause rounded away, note it.
+        if (shielded && Mathf.RoundToInt(ui.BlockChance) == 0)
+            sb.Append(", ").Append(Loc.T("predict.shielded"));
         AppendPct(sb, "predict.evaded", ui.EvasionChance);
         if (ui.MaxDamage > 0)
             sb.Append(". ").Append(Loc.T("predict.damage", new { min = ui.MinDamage, max = ui.MaxDamage }));
+        AppendFlags(sb, canKill, canPush);
 
         // Bursts: per-shot hit chances (the reticle shows a column of these for multi-shot weapons).
         var shots = ui.BurstHitChances;
@@ -129,7 +163,44 @@ public static class HitPredictor
             for (int i = 0; i < shots.Count; i++) parts[i] = Mathf.RoundToInt(shots[i]) + "%";
             sb.Append(". ").Append(Loc.T("predict.shots", new { count = shots.Count, list = string.Join(", ", parts) }));
         }
+        if (chain != null) sb.Append(". ").Append(chain);
         return sb.Append('.').ToString();
+    }
+
+    // #3 Overpenetration chain: a single-shot ranged attack pierces the in-line targets behind the first, each
+    // hit at reduced hit%/damage. We mirror AbilitySingleTargetRange exactly — take the line of affected nodes
+    // (GetSingleShotAffectedNodes), then let the game's own GatherAffectedTargetsData thread OverpenetrationUIData
+    // through them so each returned AbilityTargetUIData already carries the reduced numbers. We only NAME the
+    // pierced units (the primary target is the main readout); each is fog-gated and its kill mark honors the
+    // concealed-HP mask, same as the primary. Returns null for non-single-shot abilities or an empty line.
+    private static string OverpenChain(BaseUnitEntity caster, AbilityData ability, BaseUnitEntity target, Vector3 casterPos)
+    {
+        if (!ability.IsSingleShot) return null;
+        try
+        {
+            var tw = new TargetWrapper(target);
+            var nodes = ability.GetSingleShotAffectedNodes(tw);
+            var pattern = new OrientedPatternData(nodes, nodes.FirstOrDefault());
+            var list = new List<AbilityTargetUIData>();
+            ability.GatherAffectedTargetsData(pattern, casterPos, tw, in list);
+
+            var parts = new List<string>();
+            foreach (var d in list)
+            {
+                // Only real units behind the primary target; skip the primary (already spoken) and destructibles.
+                if (!(d.Target is BaseUnitEntity pierced) || pierced == target) continue;
+                if (!(pierced.IsPlayerFaction || pierced.IsVisibleForPlayer)) continue; // fog parity
+                int h = Mathf.RoundToInt(d.HitWithAvoidanceChance);
+                bool kill = d.MaxDamage > 0
+                    && !pierced.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
+                    && d.MaxDamage >= pierced.Health.HitPointsLeft + pierced.Health.TemporaryHitPoints;
+                parts.Add(Loc.T(kill ? "predict.pierce_kill" : "predict.pierce",
+                    new { name = pierced.CharacterName, hit = h, min = d.MinDamage, max = d.MaxDamage }));
+            }
+            if (parts.Count == 0) return null;
+            return Loc.T("predict.pierces", new { count = parts.Count, list = string.Join("; ", parts) });
+        }
+        catch { return null; }
     }
 
     private static void AppendCover(StringBuilder sb, LosCalculations.CoverType los)
@@ -142,6 +213,13 @@ public static class HitPredictor
     {
         int p = Mathf.RoundToInt(pct);
         if (p > 0) sb.Append(", ").Append(Loc.T(key, new { pct = p }));
+    }
+
+    // The overtip's two decision-changing flags: this shot can drop the target, / can knock it back.
+    private static void AppendFlags(StringBuilder sb, bool canKill, bool canPush)
+    {
+        if (canKill) sb.Append(", ").Append(Loc.T("predict.can_kill"));
+        if (canPush) sb.Append(", ").Append(Loc.T("predict.can_push"));
     }
 
     private static string Cells(int n) => n == 1 ? Loc.T("predict.cell") : Loc.T("predict.cells");
