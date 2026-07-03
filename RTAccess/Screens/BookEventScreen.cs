@@ -31,6 +31,8 @@ namespace RTAccess.Screens
         public override string Key => "ctx.bookevent";
         public override string ScreenName => Loc.T("screen.book_event");
         public override int Layer => 15; // over the in-game context + service windows, like dialogue
+        // Like dialogue: a book event can hide without closing (cutscene gap / pause menu) — keep state.
+        public override bool KeepStateOnPop => true;
 
         private BlueprintBookPage _builtPage;  // page the tree was built for
         private BlueprintBookPage _spokenPage; // page we've read aloud

@@ -24,6 +24,29 @@ namespace RTAccess.Screens
         /// <summary>Stable identity used for stack diffing.</summary>
         public abstract string Key { get; }
 
+        /// <summary>Graph-native declaration: when true the navigator builds this screen's graph by
+        /// calling <see cref="Build"/> on every render — IMMEDIATE MODE: declare controls fresh from live
+        /// game state each call (no retained element tree, no VM-swap rebuild bookkeeping, no Clear());
+        /// focus persists by <see cref="RTAccess.UI.Graph.ControlId"/> identity. False = the legacy
+        /// Container tree, compiled by TreeGraphAdapter (deleted once every screen migrates).</summary>
+        public virtual bool BuildsGraph => false;
+
+        /// <summary>The graph-native declaration (see <see cref="BuildsGraph"/>). Declare nothing (or
+        /// return with an empty builder) while the screen's content doesn't exist yet.</summary>
+        public virtual void Build(RTAccess.UI.Graph.GraphBuilder b) { }
+
+        /// <summary>Keep this screen's per-screen nav state (focus, stop memory, tree expansion) when it
+        /// POPS off the stack. Default false: closing a window resets it — reopening starts fresh. Override
+        /// true where popping isn't really closing (dialogue hides during cutscene gaps / under the pause
+        /// menu) or where resuming your place is the point (the log).</summary>
+        public virtual bool KeepStateOnPop => false;
+
+        /// <summary>Graph-native screens: the Tab-stop initial focus lands on when the screen first
+        /// gains a cursor (a wizard opening on its page content rather than the roadmap, which stays
+        /// first in Tab order). Null = the graph's start node. Declarative — unlike a FocusStop request,
+        /// it can't be lost to the attach that follows OnPush.</summary>
+        public virtual object InitialFocusStop => null;
+
         /// <summary>Spoken when the screen gains focus. Null/empty = silent.</summary>
         public virtual string ScreenName => null;
 
@@ -117,6 +140,9 @@ namespace RTAccess.Screens
             if (child == null || ActiveChild != child) return;
             if (child.ActiveChild != null) child.RemoveChild(child.ActiveChild); // recurse: grandchildren first
             child.OnPop();
+            // Same opt-out as ScreenManager.PopTree: a KeepStateOnPop child (e.g. the log — a cached
+            // instance, so its kept state is restored on reopen) keeps its nav state across close/reopen.
+            if (!child.KeepStateOnPop) RTAccess.UI.Navigation.ScreenClosed(child);
             child.ParentScreen = null;
             ActiveChild = null;
         }

@@ -51,11 +51,17 @@ namespace RTAccess.Screens
 
         private LogReviewScreen() { Wrap = true; }
 
+        // One cached instance: per-screen nav state is keyed by Screen instance, so KeepStateOnPop only
+        // resumes (and doesn't leak one GraphState per open) if reopening pushes the SAME screen object.
+        private static LogReviewScreen _instance;
+
         /// <summary>Open the log review (pushed as a child of the current screen). No-op with no top screen.</summary>
-        public static void Open() => ScreenManager.Current?.PushChild(new LogReviewScreen());
+        public static void Open() => ScreenManager.Current?.PushChild(_instance ?? (_instance = new LogReviewScreen()));
 
         public override string Key => "overlay.log";
         public override string ScreenName => Loc.T("log.title");
+        // Resuming your place in the history is the point of the log — keep nav state across close/reopen.
+        public override bool KeepStateOnPop => true;
         public override bool IsActive() => false; // only ever a child
 
         public override void OnPush() { _channel = 0; Clear(); _content = new Panel(); Add(_content); Fill(); }

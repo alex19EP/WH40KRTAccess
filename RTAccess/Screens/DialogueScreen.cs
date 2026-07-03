@@ -36,6 +36,9 @@ namespace RTAccess.Screens
         public override string Key => "ctx.dialogue";
         public override string ScreenName => Loc.T("screen.dialog");
         public override int Layer => 15; // over the in-game context + service windows
+        // Dialogue "pops" without closing (it hides during cutscene gaps / under the pause menu) —
+        // keep the nav state so focus survives the gap.
+        public override bool KeepStateOnPop => true;
 
         private DialogContextVM _subCtx; // the context our fade subscription belongs to
         private IDisposable _fadeSub;

@@ -13,6 +13,9 @@ namespace RTAccess.UI
 
         public static void Attach(Screen screen) => Active?.Attach(screen);
 
+        /// <summary>Notify that a screen closed (its per-screen nav state is dropped).</summary>
+        public static void ScreenClosed(Screen screen) => Active?.ScreenClosed(screen);
+
         /// <summary>True when something is focused (the navigator owns the keys). False in an unfocused
         /// screen like exploration, where arrows bubble to the overlay.</summary>
         public static bool HasFocus => Active != null && Active.Current != null;

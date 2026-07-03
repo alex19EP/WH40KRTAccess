@@ -93,6 +93,10 @@ namespace RTAccess.Screens
         {
             if (s.ActiveChild != null) s.RemoveChild(s.ActiveChild);
             Safe(() => s.OnPop(), s, "OnPop");
+            // Closing a screen clears its nav state (reopening starts fresh) — except screens that opt
+            // out because popping isn't really closing (dialogue hiding during a cutscene gap / under
+            // the pause menu) or resuming your place is the point (the log).
+            if (!s.KeepStateOnPop) RTAccess.UI.Navigation.ScreenClosed(s);
         }
 
         // Re-attach the navigator whenever the deepest (focused) screen changes — from an outer push/pop
