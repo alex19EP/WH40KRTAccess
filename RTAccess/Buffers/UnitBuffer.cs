@@ -4,7 +4,9 @@ using Kingmaker.Controllers.Combat;     // GetCombatStateOptional()
 using Kingmaker.EntitySystem.Entities;  // BaseUnitEntity, UnitEntity
 using Kingmaker.RuleSystem;             // Rulebook
 using Kingmaker.RuleSystem.Rules;       // RuleCalculateStatsArmor / DodgeChance / ParryChance
+using Kingmaker.UnitLogic;              // HasMechanicFeature
 using Kingmaker.UnitLogic.Buffs;        // Buff
+using Kingmaker.UnitLogic.Enums;        // MechanicsFeatureType (HideRealHealthInUI)
 
 namespace RTAccess.Buffers;
 
@@ -29,9 +31,22 @@ internal sealed class UnitBuffer : Buffer
         if (unit == null) return;
         Add(unit.CharacterName);
 
+        // Fog gate (RULE 2 / audit L1): a not-yet-revealed, non-party unit has its ENTIRE overtip hidden by the
+        // game (OvertipEntityUnitVM.HideFromScreen) — HP, defenses AND buffs. Never read any of them here. The
+        // name stays (it is parity-safe — the whose-turn cue already speaks the acting enemy's name); the rest is
+        // suppressed. Party units (IsPlayerFaction) are always shown, so they never hit this gate.
+        if (!(unit.IsPlayerFaction || unit.IsVisibleForPlayer))
+        {
+            Add(Loc.T("buffer.not_visible"));
+            return;
+        }
+
         var health = unit.Health;
         if (health != null)
-            Add(Loc.T("buffer.hit_points", new { current = health.HitPointsLeft, max = health.MaxHitPoints }));
+            // Honor the game's HideRealHealthInUI mask (concealed-health bosses/special units read "???" — audit L2).
+            Add(unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
+                ? Loc.T("buffer.hit_points_hidden")
+                : Loc.T("buffer.hit_points", new { current = health.HitPointsLeft, max = health.MaxHitPoints }));
 
         // Action / movement points are only meaningful in combat (yellow = actions, blue = movement cells).
         var combat = unit.GetCombatStateOptional();

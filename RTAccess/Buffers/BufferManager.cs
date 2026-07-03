@@ -82,10 +82,13 @@ internal sealed class BufferManager
     }
 
     // The selected unit's manual combat target if it has one; otherwise the unit whose turn it currently is.
+    // A manual target that has since slipped into fog is ignored: the game drops its overtip entirely, so reading
+    // it would leak a hidden enemy's HP/defenses/buffs (docs/combat-hud-parity-audit.md L1). UnitBuffer.Populate
+    // still fog-gates the resolved unit as a backstop (e.g. an enemy whose turn it is but who stands in fog).
     private static BaseUnitEntity TargetUnit()
     {
         var manual = SelectedUnit()?.GetCombatStateOptional()?.ManualTarget as BaseUnitEntity;
-        if (manual != null) return manual;
+        if (manual != null && (manual.IsPlayerFaction || manual.IsVisibleForPlayer)) return manual;
         return Game.Instance?.TurnController?.CurrentUnit as BaseUnitEntity;
     }
 }

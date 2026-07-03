@@ -1,6 +1,8 @@
 using Kingmaker;                                 // Game
 using Kingmaker.Controllers.Clicks.Handlers;     // ClickUnitHandler (loot a corpse)
 using Kingmaker.EntitySystem.Entities;           // BaseUnitEntity
+using Kingmaker.UnitLogic;                        // HasMechanicFeature
+using Kingmaker.UnitLogic.Enums;                  // MechanicsFeatureType (HideRealHealthInUI)
 using UnityEngine;
 
 namespace RTAccess.Exploration;
@@ -97,7 +99,12 @@ internal sealed class ProxyUnit : ScanItem
                 else
                 {
                     var health = _unit.Health;
-                    if (health != null) bits.Add(health.HitPointsLeft + " of " + health.MaxHitPoints + " HP");
+                    if (health != null)
+                        // Honor the game's HideRealHealthInUI mask (fog-independent — the "???" concealed-HP units;
+                        // audit L2). Our IsVisible/CurrentlySeen fog gate does NOT cover it, so guard HP directly.
+                        bits.Add(_unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
+                            ? Loc.T("scan.unit_hp_hidden")
+                            : Loc.T("scan.unit_hp", new { current = health.HitPointsLeft, max = health.MaxHitPoints }));
                     if (_unit.IsInCombat) bits.Add("in combat");
                 }
                 return string.Join(", ", bits);
