@@ -23,7 +23,237 @@ namespace RTAccess.UI
             _search.OnNoMatch = text => Speak(Loc.T("search.no_match", new { text }), interrupt: true);
         }
 
-        protected override void BuildInitialFocus()
+        // ---- focus-path state + machinery (this navigator's model: the focus path within the
+        //      screen, excluding the screen root itself — the screen name is announced separately).
+        //      Focus mutations are silent: a navigation step snapshots the path, mutates it
+        //      (including any recursive auto-descend), then announces the diff ONCE — never on each
+        //      intermediate SetFocus. ----
+
+        private readonly List<UIElement> Path = new List<UIElement>();
+
+        // The screen we still owe an INITIAL-focus announcement for (set on screen entry, cleared once the
+        // landing is announced or a screen takes over via Focus). Lets EnsureFocus deliver the landing even
+        // when a screen's own build-time Attach established focus silently — the "read the thing you landed
+        // on" after the screen name.
+        private RTAccess.Screens.Screen _awaitingAnnounce;
+
+        public override UIElement Current => Path.Count > 0 ? Path[Path.Count - 1] : null;
+
+        /// <summary>Bind to a screen and set initial focus (silently). A NEW screen
+        /// entry arms the initial-focus announcement (delivered by EnsureFocus once focus exists); a
+        /// re-attach to the SAME screen (e.g. a content rebuild) doesn't re-arm it, so rebuilds stay quiet.</summary>
+        public override void Attach(RTAccess.Screens.Screen screen)
+        {
+            if (!ReferenceEquals(screen, Screen)) _awaitingAnnounce = screen;
+            Screen = screen;
+            Path.Clear();
+            ResetFocusPump(); // a (re)attach re-arms the focus pump, so it re-fires on the new landing
+            if (screen != null) BuildInitialFocus();
+        }
+
+        /// <summary>Drop focus back to the screen's unfocused state — the same place Tab-off-the-end lands.
+        /// Silent. On a <see cref="RTAccess.Screens.Screen.StartUnfocused"/> screen the keyboard returns to
+        /// exploration and stays there (EnsureFocus won't re-seat it); on other screens EnsureFocus re-focuses
+        /// next frame, so callers should only blur exploration-capable screens.</summary>
+        public override void Blur()
+        {
+            Path.Clear();
+            Screen?.SetFocusedChild(null);
+        }
+
+        /// <summary>
+        /// Re-establish initial focus when the focused screen has focusable content but nothing is focused.
+        /// Screens that build their content lazily (an empty shell at <see cref="Attach"/>, filled a frame
+        /// later in OnUpdate) have nothing to focus when first attached; without this they'd sit unfocused
+        /// until the user tabbed in. <see cref="BuildInitialFocus"/> bows out for StartUnfocused screens
+        /// (exploration), so they stay unfocused. Called once per frame after the screen updates; announces
+        /// the landing when focus mode owns the keyboard. A no-op once something is focused.
+        /// </summary>
+        public override void EnsureFocus()
+        {
+            if (Screen == null) return;
+            // "No real focus" = nothing focused, OR focus stranded on a transparent Panel — which happens when
+            // initial focus ran before a lazily-built screen filled its content panel (a Panel reports
+            // focusable, so the descent stops on it). In both cases re-establish focus now that content exists.
+            bool stranded = Current is Container c && c.Shape == ContainerShape.Panel;
+            if (Current != null && !stranded)
+            {
+                // Focus is already established — but if a screen's build set it SILENTLY (build-time Attach)
+                // and we still owe this screen's initial-focus announcement, deliver it now. This is the
+                // landing read after the screen name (was missing for every Attach-only screen).
+                if (ReferenceEquals(_awaitingAnnounce, Screen) && FocusMode.Active) AnnounceCurrent();
+                return;
+            }
+
+            BuildInitialFocus();          // descends through the (now-populated) panels to a real leaf/cell
+            var target = Current;
+            Path.Clear();
+            // Still no real target (content not built yet, or screen intentionally unfocused) — retry next
+            // frame; don't announce or leave focus parked on a Panel.
+            if (target == null || (target is Container tc && tc.Shape == ContainerShape.Panel)) return;
+            // Re-seat through Focus so every intermediate cursor (e.g. a grid's cell) is set. Announce only
+            // when focus mode owns the keyboard.
+            Focus(target, announce: FocusMode.Active);
+        }
+
+        private static readonly List<UIElement> EmptyPath = new List<UIElement>();
+
+        /// <summary>
+        /// Announce the full focus path (e.g. when focus mode engages or the screen
+        /// changes) — diff from empty, so container labels + the focused leaf are read,
+        /// e.g. "Main Menu, Continue".
+        /// </summary>
+        public override void AnnounceCurrent()
+        {
+            _awaitingAnnounce = null; // announcing settles the initial-focus debt
+            AnnounceDelta(EmptyPath);
+        }
+
+        /// <summary>Move focus to a specific element (e.g. a node just inserted into the tree) and announce
+        /// the change. Queues (doesn't interrupt) so a preceding feedback line still plays.</summary>
+        public override void Focus(UIElement target, bool announce = true)
+        {
+            if (target == null) return;
+            _awaitingAnnounce = null; // the screen set focus itself — it owns the initial announce (or its silence)
+            var snapshot = new List<UIElement>(Path);
+            BuildPathTo(target);
+            if (announce) AnnounceDelta(snapshot);
+        }
+
+        /// <summary>Append an element to the path; if it's a container, descend to the INNERMOST
+        /// remembered/selected element. A tree NODE is only descended into when it's expanded AND
+        /// actually remembers (or has selected) a deeper target — otherwise focus lands on the node
+        /// itself (we never auto-dive into expanded nodes via the first-focusable fallback).</summary>
+        private void AppendWithDescend(UIElement element)
+        {
+            if (element == null) return;
+            Path.Add(element);
+            DescendFrom(element);
+        }
+
+        /// <summary>Continue descending from an element ALREADY on the path to the innermost
+        /// remembered/selected element (same rules as <see cref="AppendWithDescend"/>). Used after a
+        /// Tab lands on a stop, so re-entering a tree restores the deep position, not the top node.</summary>
+        private void DescendFrom(UIElement element)
+        {
+            while (true)
+            {
+                var container = element as Container;
+                if (container == null) return;
+
+                UIElement next;
+                // A tree NODE (a tree-shaped container nested inside the tree; the tree ROOT always
+                // exposes its children).
+                bool isTreeNode = container.Shape == ContainerShape.Tree
+                    && container.Parent is Container parent && parent.Shape == ContainerShape.Tree;
+                if (isTreeNode)
+                {
+                    if (!container.Expanded) return; // collapsed → its children aren't navigable
+                    next = RememberedOrSelected(container);
+                    if (next == null) return;        // nothing remembered/selected → stay on the node
+                }
+                else
+                {
+                    next = RepresentativeChild(container);
+                    if (next == null) return;
+                }
+                container.SetFocusedChild(next);
+                Path.Add(next);
+                element = next;
+            }
+        }
+
+        /// <summary>
+        /// Diff a pre-move snapshot against the settled path and speak the delta:
+        /// newly-entered nodes in path order (descend/sibling), or just the new
+        /// innermost element (ascend). Called once, after the move is complete.
+        /// </summary>
+        private void AnnounceDelta(List<UIElement> oldPath, bool interrupt = false)
+        {
+            // interrupt == true marks an actual focus MOVE (arrow/tab), not a screen-entry readout —
+            // so it's where the game would play its control-hover sound. Current is already the
+            // destination here, so its HoverSoundType picks the themed sound (Analog/Plastick/…) the
+            // mouse would produce on that control (null ⇒ generic hover).
+            if (interrupt) RTAccess.UiSound.Hover(Current?.HoverSoundType);
+
+            int i = 0;
+            while (i < oldPath.Count && i < Path.Count && oldPath[i] == Path[i]) i++;
+
+            if (i < Path.Count)
+            {
+                var sb = new List<string>();
+                for (int j = i; j < Path.Count; j++)
+                {
+                    // Skip a container whose label just duplicates the node beneath it (e.g. a
+                    // "Game difficulty" section wrapping the "Game difficulty" control).
+                    if (j + 1 < Path.Count)
+                    {
+                        var label = Path[j].GetLabelText();
+                        if (!string.IsNullOrEmpty(label) && label == Path[j + 1].GetLabelText())
+                            continue;
+                    }
+                    // The leaf cell of an associated-element table reads as the whole row (element focus +
+                    // columns), so first-focus / focus-restore match arrowing. Its FlowSheet container is
+                    // already a path node above, so the region label is omitted here.
+                    var d = (j == Path.Count - 1 ? (Path[j].Parent as FlowSheet)?.ComposeAssociatedReadout(Path[j], false) : null)
+                            ?? Path[j].GetFocusMessage().Resolve();
+                    if (!string.IsNullOrEmpty(d)) sb.Add(d);
+                }
+                if (sb.Count > 0) Speak(string.Join(", ", sb), interrupt);
+            }
+            else if (Current != null)
+            {
+                var ar = (Current.Parent as FlowSheet)?.ComposeAssociatedReadout(Current, false);
+                Speak(ar ?? Current.GetFocusMessage().Resolve(), interrupt); // ascended: announce the now-innermost focus
+            }
+        }
+
+        /// <summary>Rebuild the focus path as the ancestor chain from the screen down to <paramref name="target"/>.</summary>
+        private void BuildPathTo(UIElement target)
+        {
+            Path.Clear();
+            if (target == null) return;
+            var chain = new List<UIElement>();
+            var e = target;
+            while (e != null && e != Screen)
+            {
+                chain.Add(e);
+                if (e.Parent != null) e.Parent.SetFocusedChild(e);
+                e = e.Parent;
+            }
+            chain.Reverse();
+            Path.AddRange(chain);
+        }
+
+        /// <summary>
+        /// Ordered Tab-stops for the screen: descend through Panels; a List/Grid is a
+        /// single stop (its current/first item); leaves under a Panel are stops.
+        /// </summary>
+        private List<UIElement> ComputeTabStops()
+        {
+            var stops = new List<UIElement>();
+            if (Screen != null) AddStops(Screen, stops);
+            return stops;
+        }
+
+        private static void AddStops(Container c, List<UIElement> stops)
+        {
+            if (c.Shape != ContainerShape.Panel)
+            {
+                var item = RepresentativeChild(c);
+                if (item != null) stops.Add(item);
+                return;
+            }
+            var children = c.Children;
+            for (int i = 0; i < children.Count; i++)
+            {
+                var child = children[i];
+                if (child is Container cc) AddStops(cc, stops);
+                else if (child.CanFocus) stops.Add(child);
+            }
+        }
+
+        private void BuildInitialFocus()
         {
             ClearSearch(announce: false); // a (re)attached screen starts with no live search
             // An unfocused screen (exploration) starts with nothing focused — arrows bubble to the overlay,
