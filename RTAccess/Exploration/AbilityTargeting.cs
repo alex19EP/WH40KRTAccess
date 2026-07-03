@@ -38,9 +38,22 @@ internal sealed class AbilityTargeting
         if (!h.OnClick(go, point, 0)) return; // refused → the game spoke the reason; nothing to add
 
         bool moreTargets = h.Ability != null; // still armed → a multi-target ability wants the next target
-        if (moreTargets) Speaker.Speak(Loc.T("aim.target_added"), interrupt: true);
+        if (moreTargets) Speaker.Speak(MultiTargetProgress(h), interrupt: true);
         else if (unit != null) Speaker.Speak(Loc.T("aim.firing_on", new { name = unit.CharacterName }), interrupt: true);
         else Speaker.Speak(Loc.T("aim.ability_used"), interrupt: true);
+    }
+
+    /// <summary>"Target k of n chosen, pick the next." — k is the count picked so far (post-commit), n the total the
+    /// ability wants, recomputed HERE each commit (not cached at arm) because some multi-target abilities make the
+    /// remaining budget a function of prior picks. Falls back to the countless "Target chosen" when n is unknown.</summary>
+    private static string MultiTargetProgress(ClickWithSelectedAbilityHandler h)
+    {
+        var mt = h.MultiTargetHandler;
+        int k = mt?.Targets?.Count ?? 0;
+        int n = k;
+        try { while (mt?.AbilityMultiTarget != null && mt.AbilityMultiTarget.TryGetNextTargetAbility(h.RootAbility, n, out _)) n++; }
+        catch { n = 0; }
+        return n > k ? Loc.T("aim.target_k_of_n", new { k, n }) : Loc.T("aim.target_added");
     }
 
     /// <summary>Abandon aiming — drop the armed ability / pointer mode (the same path a right-click takes).</summary>

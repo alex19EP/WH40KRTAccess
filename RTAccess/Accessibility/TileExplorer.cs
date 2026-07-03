@@ -290,6 +290,13 @@ internal static class TileExplorer
             var tail = RTAccess.Exploration.DeploymentMode.CursorTail(MapCursor.Node);
             if (!string.IsNullOrWhiteSpace(tail)) line += ". " + tail;
         }
+        // While AIMING an AoE / point ability, follow it with the holographic area preview (shape / range / caught
+        // units). Null for single-target aim, so the v1 unit-target loop is untouched. Mutually exclusive with deploy.
+        else if (RTAccess.Exploration.Targeting.Aiming)
+        {
+            var tail = RTAccess.Exploration.AoEPreview.CursorTail(MapCursor.Node);
+            if (!string.IsNullOrWhiteSpace(tail)) line += ". " + tail;
+        }
         return line;
     }
 

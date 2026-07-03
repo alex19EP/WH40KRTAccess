@@ -102,6 +102,11 @@ internal static class Targeting
         if (range > 0) sb.Append(", ").Append(Loc.T(range == 1 ? "aim.range_one" : "aim.range", new { cells = range }));
         sb.Append(". ");
 
+        // For an AoE / point ability, name the template up front ("Blast, 2-cell radius") so the player knows the
+        // shape before stepping the cursor; the per-cell tail (AoEPreview.CursorTail) then adds range / caught units.
+        var shape = AoEPreview.ShapeLine(ability);
+        if (shape != null) sb.Append(shape).Append(". ");
+
         if (ability.CanTargetEnemies)
             sb.Append(Loc.T("aim.enemies_help"));
         else if (ability.CanTargetFriends)
