@@ -74,9 +74,11 @@ internal sealed class SpaceEvents :
                     if (poi != null && poi.IsVisible()
                         && poi.Status != Kingmaker.Globalmap.Interaction.BasePointOfInterest.ExplorationStatus.Explored)
                         pois++;
-            if (pois > 0) line.Append(' ').Append(Loc.T("systemmap.scan_pois", new { n = pois }));
+            if (pois == 1) line.Append(' ').Append(Loc.T("systemmap.scan_pois_one"));
+            else if (pois > 1) line.Append(' ').Append(Loc.T("systemmap.scan_pois", new { n = pois }));
             int res = entity.ResourcesOnObject?.Count ?? 0;
-            if (res > 0) line.Append(' ').Append(Loc.T("systemmap.scan_res", new { n = res }));
+            if (res == 1) line.Append(' ').Append(Loc.T("systemmap.scan_res_one"));
+            else if (res > 1) line.Append(' ').Append(Loc.T("systemmap.scan_res", new { n = res }));
             Speaker.Speak(line.ToString(), interrupt: false);
         }
         catch (Exception e) { Main.Log?.Log("scan announce failed: " + e.Message); }

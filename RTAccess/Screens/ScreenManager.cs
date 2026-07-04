@@ -139,6 +139,22 @@ namespace RTAccess.Screens
             // Layer 0, mutually exclusive with ctx.ingame (IsSurface is false in space). Objects/Status/Actions
             // tab stops; SpaceEvents voices travel/scan/research. See docs/plans/orbital-listing-wilkes.md.
             Register(new SystemMapScreen());
+            // The planet-exploration tablet (SpaceStaticPartVM.ExplorationVM.IsExploring — auto-opens on
+            // landing) — layer 9, Exclusive: above the map, below service windows (10) / dialogue (15) /
+            // loot (24) that stack on it. Scan, POIs, resources/miners, colony + projects. M2 of
+            // docs/plans/orbital-listing-wilkes.md.
+            Register(new ExplorationScreen());
+            // The anomaly research window (SpaceStaticPartVM.AnomalyVM, Show/Hide-tracked) — layer 9,
+            // Exclusive; never coexists with the tablet.
+            Register(new AnomalyScreen());
+            // Stat-check-for-loot modal (POI + anomaly flavours share it) — layer 26 above the tablet;
+            // the resulting loot window is the existing LootScreen.
+            Register(new StatCheckLootScreen());
+            // Expedition send dialog (crew-size slider + reward tiers) — layer 26 above the tablet.
+            Register(new ExpeditionScreen());
+            // Party picker (GroupChangerContextVM, Surface OR Space) — layer 27; the window GroundOperation
+            // POIs raise before loading the ground map, and capital-area party changes elsewhere.
+            Register(new GroupChangerScreen());
             // New Game wizard (MainMenuVM.NewGameVM) — layer 5, above the menu sidebar it's launched from.
             Register(new NewGameScreen());
             // Character generation (MainMenuVM.CharGenContextVM.CharGenVM) — layer 15, full-screen flow.
