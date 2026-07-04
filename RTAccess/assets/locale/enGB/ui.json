@@ -119,7 +119,6 @@
   "log.tab.events": "Events",
   "log.tab.dialogue": "Dialogue",
   "log.tab.combat": "Combat",
-  "log.active_marker": "current",
 
   "combat.mode_turn_based": "Turn-based mode",
   "combat.mode_real_time": "Real-time mode",

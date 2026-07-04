@@ -50,6 +50,11 @@ namespace RTAccess.Accessibility
         public static List<Entry> Gather(TooltipBaseTemplate tpl)
             => Gather(tpl == null ? null : TooltipViewScraper.ReadRaw(tpl, TooltipTemplateType.Info), null);
 
+        /// <summary>The resolvable glossary terms in a RAW (markup-intact) game string — the source for a
+        /// graph-native row that carries its game text directly (a log line), with no backing element or
+        /// template to mine. Resolution matches the element overload minus the element-specific probe.</summary>
+        public static List<Entry> Gather(string raw) => Gather(raw, null);
+
         private static List<Entry> Gather(string raw, UIElement el)
         {
             var outList = new List<Entry>();

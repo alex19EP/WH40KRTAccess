@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
-using Kingmaker.UI.Models.Log.CombatLog_ThreadSystem;   // LogThreadService, LogChannelType, LogThreadBase, CombatLogMessage
+using System.Linq;
+using Kingmaker.UI.Models.Log.CombatLog_ThreadSystem;   // LogThreadService, LogChannelType, CombatLogMessage
+using RTAccess.Accessibility;                            // TooltipReader, GlossaryLinks
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
@@ -15,12 +17,18 @@ namespace RTAccess.Screens
     /// Reads the game's OWN retained history directly — <see cref="LogThreadService"/> keeps every thread's
     /// messages (uncapped, session-scoped, wiped on load, but surviving surface↔space) — so there is no
     /// second copy to maintain: the tap (<see cref="RTAccess.Accessibility.LogTap"/>) only decides what to
-    /// SPEAK live; the whole history is always here to review. A channel Bar mirrors the game's four tabs
-    /// (All / Events / Dialogue / Combat via the same thread groupings the game's <c>CombatLogVM</c> uses);
-    /// the selected channel's lines fill a list NEWEST-FIRST (so opening lands on "what just happened"),
-    /// capped at <see cref="MaxLines"/>. Each row is a <see cref="LogRow"/>: spoken as the spaced-stripped
-    /// text, but Space drills into the message's rich tooltip and any inline glossary links (reusing the #4
-    /// tooltip/link machinery). It is a snapshot taken on open / channel switch (reopen to refresh).
+    /// SPEAK live; the whole history is always here to review. A channel tab row mirrors the game's four
+    /// tabs (All / Events / Dialogue / Combat via the same thread groupings the game's <c>CombatLogVM</c>
+    /// uses); the selected channel's lines fill the content stop NEWEST-FIRST (so opening lands on "what
+    /// just happened"), capped at <see cref="MaxLines"/>. Each line speaks its spaced-stripped text; Space
+    /// drills into the message's rich tooltip and any inline glossary links.
+    ///
+    /// Graph-native and IMMEDIATE-MODE, which makes the log LIVE: new lines appear as they arrive — the
+    /// old adapter version was a snapshot that needed a reopen to refresh. A line's key is its ABSOLUTE
+    /// index in the channel's chronological history (with the message object as the id's reference tier),
+    /// so focus stays on ITS line while new lines land above it; content keys carry the channel, so a tab
+    /// switch re-keys the content only (tab focus survives). Per-line positions are suppressed — "37 of
+    /// 200" per log line is noise.
     /// </summary>
     public sealed class LogReviewScreen : Screen
     {
@@ -46,8 +54,9 @@ namespace RTAccess.Screens
             new Tab("log.tab.combat", new[] { LogChannelType.AnyCombat, LogChannelType.InGameCombat }),
         };
 
+        // The selected channel tab — genuine mod-side VIEW state (which tab you're reading is
+        // cursor-adjacent, not game state; the game's own log panel is not disturbed).
         private int _channel;
-        private Panel _content;
 
         private LogReviewScreen() { Wrap = true; }
 
@@ -60,12 +69,13 @@ namespace RTAccess.Screens
 
         public override string Key => "overlay.log";
         public override string ScreenName => Loc.T("log.title");
-        // Resuming your place in the history is the point of the log — keep nav state across close/reopen.
+        // Nav state survives close/reopen (singleton + KeepStateOnPop): a line still in the window resumes
+        // by identity, anything else reconciles toward the newest — reopen-at-newest is the accepted
+        // behavior; no position memory beyond what identity reconciliation gives for free.
         public override bool KeepStateOnPop => true;
         public override bool IsActive() => false; // only ever a child
 
-        public override void OnPush() { _channel = 0; Clear(); _content = new Panel(); Add(_content); Fill(); }
-        public override void OnPop() { Clear(); _content = null; }
+        public override void OnPush() { _channel = 0; } // always reopen on the All tab
 
         public override IEnumerable<ElementAction> GetActions()
         {
@@ -73,63 +83,125 @@ namespace RTAccess.Screens
                 _ => ParentScreen?.RemoveChild(this));
         }
 
-        // (Re)build the content: the selected channel's messages (newest-first) then the channel bar. On the
-        // initial build the framework's EnsureFocus lands first-focus on the newest line; on a channel switch
-        // we focus it explicitly (the navigator is already attached to this screen).
-        private void Fill(bool focusNewest = false)
+        public override bool BuildsGraph => true;
+
+        public override void Build(GraphBuilder b)
         {
-            if (_content == null) return;
-            _content.Clear();
-
-            var sheet = new FlowSheet();
-
             var msgs = Messages(_channel);
-            var list = sheet.List(Loc.T(Tabs[_channel].LocKey));
-            if (msgs.Count == 0) list.Item(new TextElement(Loc.T("log.empty")));
-            else foreach (var m in msgs) list.Item(new LogRow(m));
 
-            var bar = sheet.Bar(Loc.T("log.channels"));
+            // The selected channel's lines, newest first — declared FIRST so opening lands on the newest
+            // line (the graph's start node). Keys are the lines' absolute chronological indices (stable as
+            // lines append) + the message object as reference (focus follows its line even if indices
+            // shift); an empty channel emits a single placeholder line.
+            b.BeginStop("content").PushContext(Loc.T(Tabs[_channel].LocKey), role: null, positions: false);
+            if (msgs.Count == 0)
+            {
+                b.AddItem(ControlId.Structural("log:ch" + _channel + ":empty"),
+                    GraphNodes.Text(() => Loc.T("log.empty")));
+            }
+            else
+            {
+                int start = msgs.Count > MaxLines ? msgs.Count - MaxLines : 0;
+                for (int i = msgs.Count - 1; i >= start; i--)
+                {
+                    var m = msgs[i]; // capture: label and tooltip read the live message per speak/press
+                    b.AddItem(ControlId.Referenced(m, MsgKey(_channel, i)), LogLine(m));
+                }
+            }
+            b.PopContext();
+
+            // The channel bar: one horizontal row of tabs (Left/Right walks it; Tab jumps lines ↔ channels).
+            b.BeginStop("tabs").PushContext(Loc.T("log.channels"), Loc.T("role.list"));
+            b.StartRow();
             for (int i = 0; i < Tabs.Length; i++)
-            {
-                int idx = i;
-                bar.Cell(new ProxyActionButton(() => TabLabel(idx), () => true, () => SelectChannel(idx),
-                    actionVerb: "select"));
-            }
-
-            sheet.Reflow();
-            _content.Add(sheet);
-
-            if (focusNewest)
-            {
-                var cell = sheet.CellAt(0, 0); // first row = newest line (or the "No messages" placeholder)
-                if (cell != null) Navigation.Focus(cell, announce: true);
-            }
+                b.AddItem(ControlId.Structural("log:tab:" + i), TabNode(i));
+            b.EndRow();
+            b.PopContext();
         }
 
+        private static string MsgKey(int channel, int absIndex) => "log:ch" + channel + ":msg" + absIndex;
+
+        // One log line: a plain text node whose Space offers everything the line can drill into — the
+        // message's own rich tooltip (rendered live per press) PLUS any inline glossary <link> terms in the
+        // RAW (markup-intact) message text, through the shared chooser: exactly what the adapter path
+        // (GraphNavigator.OpenTooltipOrLinks over the old LogRow element) offered.
+        private static NodeVtable LogLine(CombatLogMessage msg)
+        {
+            var vt = GraphNodes.Text(() => Clean(msg.Message));
+            vt.OnTooltip = () => OpenDetail(msg);
+            return vt;
+        }
+
+        private static void OpenDetail(CombatLogMessage msg)
+        {
+            string raw = msg?.Message;
+            var tpl = msg?.Tooltip;
+            TooltipChooser.Open(Clean(raw), tpl != null ? TooltipReader.GetFull(tpl) : null,
+                sections: null, links: GlossaryLinks.Gather(raw));
+        }
+
+        // A channel tab ("All, tab[, selected], n of 4"): selecting reads live view state, activation
+        // switches the channel and lands on its newest line.
+        private NodeVtable TabNode(int idx)
+        {
+            Func<string> label = () => Loc.T(Tabs[idx].LocKey);
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Tab,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    GraphNodes.LabelPart(label),
+                    GraphNodes.SelectedPart(() => _channel == idx),
+                },
+                SearchText = label,
+                OnActivate = () => SelectChannel(idx),
+                ActivateSound = Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick,
+            };
+        }
+
+        // Switch the channel and land on its NEWEST line (the adapter behavior) — a focus request the
+        // navigator applies on the next render; the landing is announced by the frame differ, never
+        // hand-spoken. The content re-keys (keys carry the channel), the tabs keep their keys.
         private void SelectChannel(int idx)
         {
             if (idx < 0 || idx >= Tabs.Length) return;
             _channel = idx;
-            Fill(focusNewest: true);
+            var msgs = Messages(idx);
+            var target = msgs.Count > 0 ? MsgKey(idx, msgs.Count - 1) : "log:ch" + idx + ":empty";
+            Navigation.Active?.FocusNode(ControlId.Structural(target), announce: true);
         }
 
-        private string TabLabel(int idx)
-        {
-            var name = Loc.T(Tabs[idx].LocKey);
-            return idx == _channel ? name + ", " + Loc.T("log.active_marker") : name;
-        }
+        // ---- the channel's merged history ----
+        // A perf memo over the game's own store, NOT view state: immediate mode rebuilds the graph every
+        // frame, and re-merging + re-sorting every thread's history per frame would churn. The merge is a
+        // pure function of the store, which is append-only within a service lifetime (threads only Add;
+        // Cleanup/game-load swaps or empties them), so (service, channel, total raw count) is a complete
+        // invalidation key. Labels/tooltips still read each LIVE message at speak time (ReplaceMessage
+        // edits flow through), and the stable OrderBy keeps every line's absolute index fixed as new
+        // lines append — the key contract above.
+        private LogThreadService _cacheService;
+        private int _cacheChannel = -1;
+        private int _cacheCount = -1;
+        private List<CombatLogMessage> _cacheMsgs = new List<CombatLogMessage>();
 
-        // The selected channel's retained messages, newest-first, separators dropped, capped at MaxLines.
-        // Read straight from the game's own store (the single source of truth); null-safe if services aren't up.
-        private static List<CombatLogMessage> Messages(int channel)
+        // The selected channel's retained messages, CHRONOLOGICAL (oldest first — index = the line's
+        // absolute position in the channel history), separators dropped. Read straight from the game's
+        // own store (the single source of truth); null-safe if services aren't up.
+        private List<CombatLogMessage> Messages(int channel)
         {
-            var result = new List<CombatLogMessage>();
             try
             {
                 var svc = LogThreadService.Instance;
-                if (svc == null) return result;
+                if (svc == null) { _cacheService = null; return _cacheMsgs = new List<CombatLogMessage>(); }
                 var threads = svc.GetThreadsByChannelType(Tabs[channel].Channels);
-                if (threads == null) return result;
+                if (threads == null) return _cacheMsgs = new List<CombatLogMessage>();
+
+                int count = 0;
+                foreach (var t in threads) count += t?.AllMessages?.Count ?? 0;
+                if (ReferenceEquals(svc, _cacheService) && channel == _cacheChannel && count == _cacheCount)
+                    return _cacheMsgs;
+
+                var gathered = new List<CombatLogMessage>(count);
                 foreach (var t in threads)
                 {
                     var all = t?.AllMessages;
@@ -137,33 +209,21 @@ namespace RTAccess.Screens
                     for (int i = 0; i < all.Count; i++)
                     {
                         var m = all[i];
-                        if (m != null && !m.IsSeparator) result.Add(m);
+                        if (m != null && !m.IsSeparator) gathered.Add(m);
                     }
                 }
-                result.Sort((a, b) => b.Received.CompareTo(a.Received)); // newest first
-                if (result.Count > MaxLines) result.RemoveRange(MaxLines, result.Count - MaxLines);
+                // STABLE sort (OrderBy): equal timestamps keep the fixed thread enumeration order, so a
+                // line's index never changes between renders — appends land at the end.
+                _cacheMsgs = gathered.OrderBy(m => m.Received).ToList();
+                _cacheService = svc;
+                _cacheChannel = channel;
+                _cacheCount = count;
             }
             catch (Exception e) { Main.Log?.Log("log review gather failed: " + e.Message); }
-            return result;
+            return _cacheMsgs;
         }
 
-        // One log line: spoken as the spaced-stripped text, but exposes the RAW (markup-intact) message as its
-        // link source so Space drills any inline glossary <link> (via GlossaryLinks), and carries the message's
-        // own rich tooltip for the fuller breakdown.
-        private sealed class LogRow : TextElement
-        {
-            private readonly string _raw;
-
-            public LogRow(CombatLogMessage msg)
-                : base(() => msg == null ? null : Clean(msg.Message), tooltip: () => msg?.Tooltip)
-            {
-                _raw = msg?.Message;
-            }
-
-            public override string GetLinkSourceText() => _raw;
-
-            private static string Clean(string raw)
-                => string.IsNullOrWhiteSpace(raw) ? null : TextUtil.StripRichTextSpaced(raw);
-        }
+        private static string Clean(string raw)
+            => string.IsNullOrWhiteSpace(raw) ? null : TextUtil.StripRichTextSpaced(raw);
     }
 }
