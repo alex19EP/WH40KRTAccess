@@ -161,6 +161,9 @@ namespace RTAccess.Screens
             Register(new CharGenScreen());
             // Settings (CommonVM.SettingsVM) — layer 25, sits above the menu/in-game context when opened.
             Register(new SettingsScreen());
+            // Key-binding capture dialog (SettingsVM.CurrentKeyBindDialog) — layer 27, raw-input
+            // passthrough while the game's own capture view reads the pressed combo.
+            Register(new KeyBindCaptureScreen());
             // Tutorial popup (CommonVM.TutorialVM, big modal + small hint) — layer 28, a blocking popup that
             // reads its text on appearance even with Focus Mode off. Above windows/dialogue/settings, below
             // the confirm modal (30).

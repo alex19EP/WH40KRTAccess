@@ -1,15 +1,22 @@
 using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.Settings;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
     /// <summary>
     /// The settings window (shared CommonVM screen — covers the main-menu options AND the in-game pause
-    /// menu's options). Tree: root Panel = [tabs List, content TreeGroup of per-header sections, Close].
-    /// The content is rebuilt when the tab changes (poll-detected); the tabs/Close stay stable so tab-list
-    /// focus survives the rebuild. Layer 25 → sits above the base context (e.g. the main menu) on the stack.
+    /// menu's options). Tab-stops: the tab strip (Game / Difficulty / Controls / Graphics / …), then the
+    /// current tab's settings as a tree of collapsible header sections (one stop you arrow through), then
+    /// the Apply / Reset-to-default / Close buttons. Layer 25 → sits above the base context (e.g. the
+    /// main menu) on the stack.
+    ///
+    /// Graph-native: declared fresh from the live VM every render. The graph starts on the SELECTED tab;
+    /// content node keys carry the selected tab's identity, so switching tabs re-keys only the content
+    /// (focus on the tab strip is untouched) and section expansion is remembered per tab by key. A VM
+    /// swap while open (locale/theme apply rebuilds it) just changes every key — focus re-homes with no
+    /// rebuild bookkeeping.
     /// </summary>
     public sealed class SettingsScreen : Screen
     {
@@ -21,21 +28,14 @@ namespace RTAccess.Screens
 
         public override bool IsActive() => Vm() != null;
 
-        private SettingsVM _builtFrom;
-        private object _lastTab;
-        private TreeGroup _content;
-
         private static SettingsVM Vm()
         {
             var cvm = Game.Instance?.RootUiContext?.CommonVM;
             return cvm?.SettingsVM.Value;
         }
 
-        public override void OnPush() { _builtFrom = null; _lastTab = null; Rebuild(); }
-        public override void OnPop() { Clear(); _builtFrom = null; _content = null; }
-
-        // Back (Escape) closes settings. (Close prompts a save dialog if there are unconfirmed changes —
-        // that modal isn't navigable yet.)
+        // Back (Escape) closes settings — through the VM's own Close, which prompts the save-changes
+        // dialog when there are unconfirmed changes (MessageBoxScreen makes it navigable).
         public override System.Collections.Generic.IEnumerable<ElementAction> GetActions()
         {
             var vm = Vm();
@@ -43,62 +43,50 @@ namespace RTAccess.Screens
                 yield return new ElementAction(ActionIds.Back, Message.Localized("ui", "action.close"), _ => vm.Close());
         }
 
-        public override void OnUpdate()
+        public override bool BuildsGraph => true;
+
+        public override void Build(GraphBuilder b)
         {
             var vm = Vm();
             if (vm == null) return;
-            if (vm != _builtFrom)
+            string k = "settings:" + vm.GetHashCode() + ":";
+
+            // The tab strip: one stop, arrows between tabs; the graph STARTS on the selected tab.
+            b.BeginStop("tabs").PushContext(Loc.T("label.tabs"), Loc.T("role.list"));
+            var tabs = vm.MenuEntitiesList;
+            for (int i = 0; i < tabs.Count; i++)
             {
-                // Settings VM swapped while open (e.g. locale/theme apply rebuilds it). Re-home focus.
-                Rebuild();
-                Navigation.Attach(this);
-                return;
+                var id = ControlId.Referenced(tabs[i], k + "tab:" + i);
+                b.AddItem(id, GraphNodes.SettingsTab(tabs[i], vm));
+                if (ReferenceEquals(vm.SelectedMenuEntity.Value, tabs[i])) b.SetStart(id);
             }
-            if (!ReferenceEquals(vm.SelectedMenuEntity.Value, _lastTab))
-                RebuildContent(vm);
-        }
+            b.PopContext();
 
-        private void Rebuild()
-        {
-            Clear();
-            _content = null;
-            var vm = Vm();
-            _builtFrom = vm;
-            if (vm == null) return;
+            // The current tab's settings: header sections as collapsible groups in one stop. Keys carry
+            // the selected tab, so a tab switch re-keys the content and expansion is remembered per tab.
+            var selected = vm.SelectedMenuEntity.Value;
+            string contentKey = k + "tab" + (selected != null ? selected.GetHashCode().ToString() : "?") + ":";
+            b.BeginStop("content");
+            SettingsEntityGraph.Emit(b, vm.SettingEntities, contentKey);
 
-            var tabs = new ListContainer(Loc.T("label.tabs"));
-            foreach (var tab in vm.MenuEntitiesList)
-                tabs.Add(new ProxySettingsTab(tab));
-            Add(tabs);
-
-            // The current tab's settings as a treeview: each header group is one collapsible node, so it's
-            // a single Tab-stop you arrow through (and can collapse to skip), not dozens of stops.
-            _content = new TreeGroup();
-            Add(_content);
-            RebuildContent(vm);
-
-            // Apply / Reset-to-default — each opens the game's own confirm dialog (the MessageBoxScreen
-            // makes it navigable). Apply is live-gated on there being unsaved changes; Default on the tab
-            // supporting it. Close (and Escape) prompts the same save dialog if there are unsaved changes.
-            // The game's settings chrome buttons are Plastick (SettingsPCView.SetButtonsSounds).
+            // Apply / Reset-to-default / Close: individual stops, like a Windows dialog. Apply and Reset
+            // each open the game's own confirm dialog (MessageBoxScreen makes it navigable); Apply is
+            // live-gated on there being unsaved changes, Reset on the tab supporting it. The game's
+            // settings chrome buttons are Plastick (SettingsPCView.SetButtonsSounds).
             var plastick = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound;
-            Add(new ProxyActionButton(() => Loc.T("settings.apply"),
-                () => Kingmaker.Settings.SettingsController.Instance.HasUnconfirmedSettings(),
-                () => vm.OpenApplySettingsDialog(), hoverSoundType: plastick, clickSoundType: plastick));
-            Add(new ProxyActionButton(() => Loc.T("action.reset"),
-                () => vm.IsDefaultButtonInteractable.Value, () => vm.OpenDefaultSettingsDialog(),
-                hoverSoundType: plastick, clickSoundType: plastick));
-            Add(new ProxyActionButton(() => Loc.T("action.close"), () => true, () => vm.Close(),
-                hoverSoundType: plastick, clickSoundType: plastick));
-        }
-
-        // Refills only the content (tabs/Close stay put), so tab-list focus survives a tab switch.
-        private void RebuildContent(SettingsVM vm)
-        {
-            _lastTab = vm.SelectedMenuEntity.Value;
-            if (_content == null) return;
-            _content.Clear();
-            SettingsEntityBuilder.BuildInto(_content, vm.SettingEntities, tree: true);
+            b.BeginStop("apply").AddItem(ControlId.Structural(k + "apply"),
+                GraphNodes.Button(() => Loc.T("settings.apply"),
+                    () => vm.OpenApplySettingsDialog(),
+                    () => Kingmaker.Settings.SettingsController.Instance.HasUnconfirmedSettings(),
+                    hoverSound: plastick, clickSound: plastick));
+            b.BeginStop("reset").AddItem(ControlId.Structural(k + "reset"),
+                GraphNodes.Button(() => Loc.T("action.reset"),
+                    () => vm.OpenDefaultSettingsDialog(),
+                    () => vm.IsDefaultButtonInteractable.Value,
+                    hoverSound: plastick, clickSound: plastick));
+            b.BeginStop("close").AddItem(ControlId.Structural(k + "close"),
+                GraphNodes.Button(() => Loc.T("action.close"), () => vm.Close(),
+                    hoverSound: plastick, clickSound: plastick));
         }
     }
 }

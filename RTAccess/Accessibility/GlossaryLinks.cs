@@ -13,7 +13,9 @@ namespace RTAccess.Accessibility
     /// and resolves each to its definition, so the tooltip key (Space) can offer them as drill-in entries —
     /// the blind-player equivalent of hovering a highlighted term in the sighted UI.
     ///
-    /// The source is <see cref="UIElement.GetLinkSourceText"/> (raw, markup intact). Dialogue cue/answer text
+    /// The source is <see cref="UIElement.GetLinkSourceText"/> (raw, markup intact) — or, for a factory
+    /// (graph-native) tooltip that carries only a template, the template's own markup-intact view render
+    /// (see the <see cref="TooltipBaseTemplate"/> overload). Dialogue cue/answer text
     /// arrives here already <c>&lt;link&gt;</c>-expanded because <c>LocalizedString</c> runs the text-tool
     /// engine on read (glossary text-tools → real TMP link tags). Resolution reuses the game's own path:
     /// <c>UIUtility.GetKeysFromLink</c> → the element's own <see cref="UIElement.ResolveLink"/> (tried first)
@@ -38,10 +40,19 @@ namespace RTAccess.Accessibility
 
         /// <summary>The resolvable glossary terms in an element's text as (label, definition) pairs, in
         /// first-appearance order, deduped by link id. Empty when the element exposes none.</summary>
-        public static List<Entry> Gather(UIElement el)
+        public static List<Entry> Gather(UIElement el) => Gather(el?.GetLinkSourceText(), el);
+
+        /// <summary>The resolvable glossary terms in a tooltip TEMPLATE's rendered text — the source for
+        /// factory (graph-native) tooltips, which carry a template but no backing element. The raw text is
+        /// the game's own view render scraped MARKUP-INTACT (<see cref="TooltipViewScraper.ReadRaw"/> —
+        /// the clean read strips the very tags we match); resolution is the same as the element overload,
+        /// minus the element-specific <see cref="UIElement.ResolveLink"/> probe.</summary>
+        public static List<Entry> Gather(TooltipBaseTemplate tpl)
+            => Gather(tpl == null ? null : TooltipViewScraper.ReadRaw(tpl, TooltipTemplateType.Info), null);
+
+        private static List<Entry> Gather(string raw, UIElement el)
         {
             var outList = new List<Entry>();
-            var raw = el?.GetLinkSourceText();
             if (string.IsNullOrEmpty(raw) || raw.IndexOf("<link=", System.StringComparison.Ordinal) < 0)
                 return outList;
 
@@ -64,14 +75,15 @@ namespace RTAccess.Accessibility
             return outList;
         }
 
-        // Element-specific link first (e.g. a dialogue skill-check link built from the cue's own data), else
-        // the game's standard glossary/encyclopedia resolution — kept only when it is a glossary definition.
+        // Element-specific link first (e.g. a dialogue skill-check link built from the cue's own data; null
+        // element = the template path, which has none), else the game's standard glossary/encyclopedia
+        // resolution — kept only when it is a glossary definition.
         private static TooltipBaseTemplate ResolveGlossary(UIElement el, string id)
         {
             try
             {
                 var keys = UIUtility.GetKeysFromLink(id);
-                var tpl = el.ResolveLink(id, keys) ?? TooltipHelper.GetLinkTooltipTemplate(id);
+                var tpl = (el != null ? el.ResolveLink(id, keys) : null) ?? TooltipHelper.GetLinkTooltipTemplate(id);
                 return tpl is TooltipTemplateGlossary ? tpl : null;
             }
             catch { return null; }

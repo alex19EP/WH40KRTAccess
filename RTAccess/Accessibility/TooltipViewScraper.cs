@@ -42,20 +42,28 @@ internal static class TooltipViewScraper
 
     /// <summary>Render <paramref name="tpl"/>'s Info bricks through the game's factory and return the joined
     /// visible text, or null if nothing was scraped (caller should fall back to the brick-walk).</summary>
-    public static string Read(TooltipBaseTemplate tpl, TooltipTemplateType type)
+    public static string Read(TooltipBaseTemplate tpl, TooltipTemplateType type) => Read(tpl, type, raw: false);
+
+    /// <summary>Like <see cref="Read"/> but MARKUP-INTACT (no tag strip, no placeholder filter): the raw TMP
+    /// source text of the rendered bricks. The link-extraction source for template-backed (factory) tooltips —
+    /// <see cref="GlossaryLinks"/> matches the inline <c>&lt;link&gt;</c> tags the clean read strips. Same
+    /// on-demand cost profile as <see cref="Read"/> (a Space press, never per-frame).</summary>
+    public static string ReadRaw(TooltipBaseTemplate tpl, TooltipTemplateType type) => Read(tpl, type, raw: true);
+
+    private static string Read(TooltipBaseTemplate tpl, TooltipTemplateType type, bool raw)
     {
         var cfg = Config;
         if (cfg == null || tpl == null) return null;
         try { tpl.Prepare(type); } catch { }
 
         var sb = new StringBuilder();
-        Harvest(cfg, tpl.GetHeader(type), sb);
-        Harvest(cfg, tpl.GetBody(type), sb);
-        Harvest(cfg, tpl.GetFooter(type), sb);
+        Harvest(cfg, tpl.GetHeader(type), sb, raw);
+        Harvest(cfg, tpl.GetBody(type), sb, raw);
+        Harvest(cfg, tpl.GetFooter(type), sb, raw);
         return sb.Length > 0 ? sb.ToString() : null;
     }
 
-    private static void Harvest(TooltipBricksView cfg, IEnumerable<ITooltipBrick> bricks, StringBuilder sb)
+    private static void Harvest(TooltipBricksView cfg, IEnumerable<ITooltipBrick> bricks, StringBuilder sb, bool raw)
     {
         if (bricks == null) return;
         foreach (var brick in bricks)
@@ -72,6 +80,16 @@ internal static class TooltipViewScraper
                 // Only ACTIVE TMP children are what a sighted player sees (bind logic disables absent fields).
                 foreach (var tmp in view.GetComponentsInChildren<TMP_Text>(includeInactive: false))
                 {
+                    if (raw)
+                    {
+                        // Markup-intact harvest: keep the source string as-is (link/color tags survive);
+                        // newline-joined so tags never glue across fields.
+                        var rt = tmp?.text;
+                        if (string.IsNullOrWhiteSpace(rt)) continue;
+                        if (sb.Length > 0) sb.Append('\n');
+                        sb.Append(rt);
+                        continue;
+                    }
                     var t = Clean(tmp?.text);
                     // Drop prefab design-time placeholders left in active-but-unbound fields ("+++", "-//---",
                     // bare separators): a real tooltip value always carries at least one letter or digit.

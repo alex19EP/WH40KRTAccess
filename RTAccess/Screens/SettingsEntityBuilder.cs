@@ -10,7 +10,9 @@ namespace RTAccess.Screens
     /// <summary>
     /// Builds nav elements from a settings-entity collection (the SettingsEntity* VMs), grouping runs of
     /// entities under their headers into labeled sections. Key bindings / difficulty / accessibility-image
-    /// entities fall back to <see cref="ProxyUnsupportedSetting"/> until they get their own proxies.
+    /// entities fall back to <see cref="ProxyUnsupportedSetting"/>. ADAPTER-ERA: only the New Game
+    /// difficulty phase still builds through here — the Settings screen migrated to the graph path
+    /// (<see cref="SettingsEntityGraph"/>); this dies with the wizard's migration.
     /// </summary>
     internal static class SettingsEntityBuilder
     {
