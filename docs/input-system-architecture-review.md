@@ -219,7 +219,7 @@ to be rebuilt on top of KeyboardAccess anyway.
 - **Improves:** nothing new; zero risk.
 - **Costs:** the dislike stands; genuine dead code (dormant rebinding, vestigial `Held()`, unregistered
   `ui.regionPrev/Next`) and **fragmented parallel polls** (`Main.cs` F6/F9/F10/F12; `PartyHotkeys.cs`;
-  `LandmarkNav`/`CharGenAnnounce`; type-ahead in `TraditionalNavigator.cs`) remain — these bypass the
+  `LandmarkNav`/`CharGenAnnounce`; type-ahead in `GraphNavigator.cs`) remain — these bypass the
   category/shadow/typematic machinery and can conflict with registered chords.
 - **Risk: none.**
 
