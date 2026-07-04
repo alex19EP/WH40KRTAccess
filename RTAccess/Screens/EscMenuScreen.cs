@@ -11,7 +11,7 @@ namespace RTAccess.Screens
     /// so a blind player can pause, save, reach the options, and quit.
     ///
     /// Unlike WOTR (whose EscMenuVM held a collection of ContextMenuEntityVM buttons we could reuse via
-    /// <see cref="MainMenuButton"/>), RT's <see cref="EscMenuVM"/> exposes NO button collection: it has
+    /// <see cref="UI.GraphNodes.MenuEntry"/>), RT's <see cref="EscMenuVM"/> exposes NO button collection: it has
     /// direct command methods (<c>OnSave</c>/<c>OnLoad</c>/<c>OnSettings</c>/<c>OnMainMenu</c>/<c>OnQuit</c>/
     /// …) plus plain gating flags (<c>IsSavingAllowed</c>/<c>IsOptionsAllowed</c>/…). So we drive
     /// <see cref="ProxyActionButton"/>s straight off those methods, with live <c>enabled</c> funcs reading

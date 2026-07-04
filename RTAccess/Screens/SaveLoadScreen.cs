@@ -124,8 +124,8 @@ namespace RTAccess.Screens
         // playthrough opens; the rest start collapsed (the game's own IsFirst default).
         private TreeGroup BuildTree(SaveLoadVM vm)
         {
-            // SaveSlotGroups is a private auto-property exposed by Code.dll's publicize (same mechanism the
-            // shipped MainMenuButton relies on for ContextMenuEntityVM.m_Entity).
+            // SaveSlotGroups is a private auto-property exposed by Code.dll's publicize (same mechanism
+            // GraphNodes.MenuEntry relies on for ContextMenuEntityVM.m_Entity).
             var groups = vm.SaveSlotCollectionVm?.SaveSlotGroups;
             if (groups == null) return null;
 

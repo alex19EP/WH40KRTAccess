@@ -98,7 +98,7 @@ namespace RTAccess.UI
         {
             if (string.IsNullOrEmpty(c.Label)) return false;
             string role = c.Shape == ContainerShape.VerticalList || c.Shape == ContainerShape.HorizontalList
-                ? "list" : null;
+                ? Loc.T("role.list") : null; // localized — the old path spoke RoleAnnouncement("list")
             b.PushContext(c.Label, role);
             return true;
         }

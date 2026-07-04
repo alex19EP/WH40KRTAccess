@@ -1,15 +1,19 @@
 using Kingmaker;
 using Kingmaker.Code.UI.MVVM;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
     /// <summary>
-    /// The main menu — our first navigable RT screen. Its root is a vertical list of the sidebar entries
+    /// The main menu — the screen the game boots into. A vertical list of the sidebar entries
     /// (Continue / New Game / Load / …) read from <c>MainMenuSideBarVM</c>, so the navigator can arrow
     /// through them and confirm to run each entry's real command — letting a blind player start/load a
     /// game with our own nav and unlock the downstream screens.
+    ///
+    /// Graph-native: the entries are declared fresh from the live VMs every render — enabled state reads
+    /// the live entity per entry (<see cref="UI.GraphNodes.MenuEntry"/>), and entry identity rides the
+    /// entry VMs (tier 1).
     /// </summary>
     public sealed class MainMenuScreen : Screen
     {
@@ -35,32 +39,29 @@ namespace RTAccess.Screens
             return true;
         }
 
-        public override void OnPush()
+        public override bool BuildsGraph => true;
+
+        public override void Build(GraphBuilder b)
         {
-            Clear();
             var sidebar = RootUIContext.Instance?.MainMenuVM?.MainMenuSideBarVM;
-            if (sidebar == null)
+            if (sidebar == null) return; // nothing declared = closed until the VM exists
+
+            // The same labeled level the old ListContainer provided: focusing into the list announces
+            // "Main Menu, list" (the context) then the first entry — via the focus-path diff.
+            b.PushContext(Loc.T("screen.main_menu"), Loc.T("role.list"));
+            var entries = new[]
             {
-                Main.Log?.Error("MainMenuScreen: sidebar VM was null at OnPush.");
-                return;
+                sidebar.ContinueVm, sidebar.NewGameVm, sidebar.LoadVm, sidebar.DlcManagerVm,
+                sidebar.NetVm, sidebar.OptionsVm, sidebar.CreditVm, sidebar.FeedbackVm,
+                sidebar.LicenseVm, sidebar.ExitVm,
+            };
+            for (int i = 0; i < entries.Length; i++)
+            {
+                var vm = entries[i];
+                if (vm == null || vm.IsSeparator) continue; // a separator was never focusable
+                b.AddItem(ControlId.Referenced(vm, "mainmenu:" + i), GraphNodes.MenuEntry(vm));
             }
-
-            // Sidebar entries in a labeled list, so focusing into it announces "Main Menu" (the container)
-            // then the first entry — exercising the path diff.
-            var list = new ListContainer(Loc.T("screen.main_menu"));
-            list.Add(MainMenuButton.For(sidebar.ContinueVm));
-            list.Add(MainMenuButton.For(sidebar.NewGameVm));
-            list.Add(MainMenuButton.For(sidebar.LoadVm));
-            list.Add(MainMenuButton.For(sidebar.DlcManagerVm));
-            list.Add(MainMenuButton.For(sidebar.NetVm));
-            list.Add(MainMenuButton.For(sidebar.OptionsVm));
-            list.Add(MainMenuButton.For(sidebar.CreditVm));
-            list.Add(MainMenuButton.For(sidebar.FeedbackVm));
-            list.Add(MainMenuButton.For(sidebar.LicenseVm));
-            list.Add(MainMenuButton.For(sidebar.ExitVm));
-            Add(list);
+            b.PopContext();
         }
-
-        public override void OnPop() => Clear();
     }
 }
