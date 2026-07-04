@@ -89,13 +89,29 @@ dotnet msbuild RTAccess.csproj -t:Compile -p:Configuration=Debug -p:SolutionDir=
   (`Logs.Init` / `ResetAll`).
 - The game's own log is `<GameData>\Player.log`.
 
-## Navigation strategy (decided — the WrathAccess paradigm)
+## Navigation strategy (decided — the graph paradigm)
 We build a **mod-owned parallel accessible-UI tree**, NOT a ride on the game's console-nav /
 gamepad focus ring (that pivot is committed; earlier console-nav experiments are retired).
 `Screens.ScreenManager` resolves the active screen stack over `RootUiContext` each frame and
-attaches our `Navigator`; per-widget **Proxies** (`UI/Proxies/`) mirror the game's live VMs and
-speak a browse-label that **mirrors what the card shows visually** (tooltip-only detail stays on
-Space). We read/activate by driving the game's own VMs and handlers.
+attaches the **`GraphNavigator`** — the pull-based key-graph core ported from WrathAccess
+(`UI/Graph/`, BCL-only, unit-tested): the graph rebuilds per operation/frame, focus reconciles
+by `ControlId` identity, and a focus change is **announced exactly once no matter what caused
+it** (input, screen-moved focus, VM swap/rebuild). Never hand-write announce calls around
+focus mutations — the frame differ owns that.
+Screens come in two kinds:
+- **Adapter (legacy)**: retained `Container`/`UIElement` trees with per-widget **Proxies**
+  (`UI/Proxies/`) mirroring the game's live VMs; compiled by `TreeGraphAdapter` per frame.
+- **Graph-native**: `BuildsGraph => true` + `Build(GraphBuilder)` declaring nodes fresh from
+  live game state each render (immediate mode — node contents hold **NO view state**: read the
+  game's own state, flip it via the game's own methods; read the SELECTION, not hover-poisoned
+  reactives; some control state lives on game VIEWS, not VMs — reflect the live view).
+**Policy: every NEW screen is born graph-native.** When a legacy screen migrates, the
+VM-contract knowledge in its proxies moves into a node factory and the proxy is deleted once
+its last user is gone (waves + WA recipe commits: `docs/plans/keyed-graphing-tarjan.md`).
+Either way we read/activate by driving the game's own VMs and handlers, and a spoken
+browse-label **mirrors what the card shows visually** (tooltip-only detail stays on Space).
+Upstream sync rule: WA `graph-nav` deleted its element layer at HEAD — adapter-era files are
+pinned at WA `4715f3d`; take only core `Graph/*` fixes, tests, and native-screen recipes.
 
 **Keyboard ownership** is per-chord arbitration, not a blanket mute: `FocusMode` +
 `KeyboardArbitration` suppress only the chords the mod claims each frame, and `GameKeybinds`
@@ -138,8 +154,10 @@ Load-bearing knowledge about how the game world works (all verified in-harness):
 - `Input/` — `InputManager` (registry + per-frame poll), `InputBindings` (the action set),
   `GameKeybinds` (the Ctrl+letter rebind), keyboard arbitration glue.
 - `Screens/` (+ `Screens/CharGen/`) — the mod-owned screen tree resolved by `ScreenManager`.
-- `UI/` — `Navigation` (navigator + typeahead), `UI/Proxies/` (per-widget VM adapters),
-  `UI/Announcements/`.
+- `UI/` — `Navigation` facade + `GraphNavigator`, `UI/Graph/` (the BCL-only key-graph core:
+  KeyGraph, GraphBuilder, differ/announcer — pinned to upstream, tested by link from `tests/`;
+  run `just test` or `dotnet test tests/RTAccess.Tests.csproj`, never the slnx),
+  `TreeGraphAdapter` + `UI/Proxies/` (adapter-era per-widget VM adapters), `UI/Announcements/`.
 - `Accessibility/` — event readers/announcers (`ExplorationEvents`, `BarkEvents`, `CombatEvents`,
   `WarningReader`, `ConvictionEvents`, `LogTap`, `SelectionAnnouncer`, `TileExplorer`, …).
 - `Exploration/` — `WorldModel` (per-frame entity registry), `Scanner` (the review/scan cursor),
