@@ -207,6 +207,9 @@ public static class HitPredictor
     {
         if (los == LosCalculations.CoverType.Half) sb.Append(", ").Append(Loc.T("cover.half"));
         else if (los == LosCalculations.CoverType.Full) sb.Append(", ").Append(Loc.T("cover.full"));
+        // A LOS-ignoring / indirect ability targets past a sight-blocker: CanTargetFromNode succeeds (so we never hit
+        // the no_los early-return), but the target is Invisible. The overtip lights its blocked icon here, so say it.
+        else if (los == LosCalculations.CoverType.Invisible) sb.Append(", ").Append(Loc.T("combat.no_los"));
     }
 
     private static void AppendPct(StringBuilder sb, string key, float pct)

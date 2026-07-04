@@ -116,33 +116,40 @@ internal static class InteractableDescriber
             else sb.Append(node.Walkable ? "clear" : "wall");
         }
 
-        // 2. Combat-only tactical overlay, mirroring the game's own cover meshes exactly. Cover is a combat-only
-        //    mechanic and the CoverVisualizer only paints it on the tiles the acting unit can REACH this turn (the
-        //    movable-area set) — never out of combat, never on out-of-range tiles. So we read the same set: a
-        //    reachable tile gets its per-edge cover (N/E/S/W = dirs 2/1/0/3, the same LosCalculations source the
-        //    mesh reads); an unreachable tile is flagged "unreachable" instead and never carries cover — the cue a
-        //    sighted player reads from the ABSENCE of the blue reachable-highlight on that tile. CurrentUnit is
-        //    non-null only on a directly-controllable unit's turn, so it tells a live area from one left stale after
-        //    the unit changed; when there is none (enemy turn, between turns, or no movement left) we say neither,
-        //    exactly as the game shows no mesh.
-        if (seen && Game.Instance?.Player?.IsInCombat == true)
+        // 2. Combat tactical overlay, mirroring the game's own cover meshes (CoverVisualizer). The mesh shows a
+        //    tile's per-edge cover whenever it is the player's turn (or the deployment phase) and the tile is
+        //    WALKABLE — crucially NOT only on the reachable set: holding Ctrl reveals cover on every nearby walkable
+        //    cell, in or out of movement range. Full mesh predicate (IsNodeCoverVisible):
+        //    (playerTurn && (inMovableArea || ctrlHold) && !abilityArmed) || deploymentPhase. So cover is NOT gated on
+        //    reachability here — the scanned tile always names its cover, and reachability is an ADDITIVE cue:
+        //    "unreachable" flags the absence of the blue move-highlight, it does not suppress the cover (the old
+        //    reachable-only gate dropped every cover a sighted player scouts with Ctrl before moving, and stayed silent
+        //    through the whole deployment phase). While an ability is ARMED the mesh hides cover (the targeting overlay
+        //    replaces it), so we suppress too — EXCEPT in the deployment phase, where the mesh shows cover regardless.
+        //    Directions N/E/S/W = dirs 2/1/0/3, read from the same LosCalculations source the mesh uses, with the
+        //    mesh's own BySource perspective (the selected/acting unit) when a unit is selected so exclusive-user
+        //    forced cover resolves as on-screen; ByTarget only when nothing is selected (pre-deploy), to avoid
+        //    dereferencing a null selection.
+        var turn = Game.Instance?.TurnController;
+        bool deployment = turn != null && turn.IsPreparationTurn && turn.IsDeploymentAllowed;
+        bool abilityArmed = Game.Instance?.CursorController?.SelectedAbility != null;   // mesh hides cover while aiming
+        bool coverShown = seen && node.Walkable && turn != null && turn.TurnBasedModeActive
+            && (deployment || (turn.IsPlayerTurn && !abilityArmed));
+        if (coverShown)
         {
+            var checkType = Game.Instance?.SelectionCharacter?.SelectedUnit?.Value != null
+                ? LosCalculations.ForcedCoverCheckType.BySource
+                : LosCalculations.ForcedCoverCheckType.ByTarget;
+            AppendCover(sb, node, 2, "north", checkType);
+            AppendCover(sb, node, 1, "east", checkType);
+            AppendCover(sb, node, 0, "south", checkType);
+            AppendCover(sb, node, 3, "west", checkType);
+
+            // Reachability is an additive note, not a cover gate. UnitMovableAreaController.CurrentUnit is non-null
+            // only for a live directly-controllable turn; a tile outside that unit's movable area is "unreachable".
             var controller = Game.Instance?.UnitMovableAreaController;
-            var area = controller?.CurrentUnit != null ? controller.CurrentUnitMovableArea : null;
-            if (area != null)
-            {
-                if (area.Contains(node))
-                {
-                    AppendCover(sb, node, 2, "north");
-                    AppendCover(sb, node, 1, "east");
-                    AppendCover(sb, node, 0, "south");
-                    AppendCover(sb, node, 3, "west");
-                }
-                else
-                {
-                    Append(sb, "unreachable");
-                }
-            }
+            if (controller?.CurrentUnit != null && controller.CurrentUnitMovableArea?.Contains(node) == false)
+                Append(sb, "unreachable");
         }
 
         // 3. Offset from the anchor unit, in tiles (+Z = north, +X = east — matches the compass above).
@@ -228,12 +235,14 @@ internal static class InteractableDescriber
         return o.GetOptional<AreaTransitionPart>() != null;
     }
 
-    /// <summary>Append "half/full cover &lt;dir&gt;" (or "blocked &lt;dir&gt;" for sight-blocking) for one edge.</summary>
-    private static void AppendCover(StringBuilder sb, CustomGridNodeBase node, int direction, string word)
+    /// <summary>Append "half/full cover &lt;dir&gt;" (or "blocked &lt;dir&gt;" for sight-blocking) for one edge, read
+    /// with the same <paramref name="checkType"/> the game's cover mesh uses (BySource on the acting unit).</summary>
+    private static void AppendCover(StringBuilder sb, CustomGridNodeBase node, int direction, string word,
+        LosCalculations.ForcedCoverCheckType checkType)
     {
         LosCalculations.CoverType cover;
-        try { cover = LosCalculations.GetCellCoverStatus(node, direction).CoverType; }
-        catch { return; }
+        try { cover = LosCalculations.GetCellCoverStatus(node, direction, checkType).CoverType; }
+        catch (Exception e) { Main.Log?.Error("DescribeTile cover read failed: " + e); return; }
         switch (cover)
         {
             case LosCalculations.CoverType.Half: Append(sb, "half cover " + word); break;
