@@ -1,7 +1,7 @@
 using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.MessageBox;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 using TMPro;
 
 namespace RTAccess.Screens
@@ -14,6 +14,10 @@ namespace RTAccess.Screens
     /// gets an Edit affordance that hands the box's live input field to <see cref="TextEntry"/> to type;
     /// Accept then forwards the field's value (InputText) to the box's text callback. Layer 30, Exclusive
     /// (owns the keyboard above whatever opened it). Progress / checkbox variants aren't handled yet.
+    ///
+    /// Graph-native: declared fresh from the live VM every render. Node keys carry the VM's identity, so a
+    /// modal SWAP (one closed, another opened) drops the old keys and focus re-homes to the new message
+    /// with a fresh readout — no rebuild bookkeeping.
     /// </summary>
     public sealed class MessageBoxScreen : Screen
     {
@@ -36,43 +40,32 @@ namespace RTAccess.Screens
             return cvm?.MessageBoxVM.Value;
         }
 
-        private MessageBoxVM _builtFrom;
+        public override bool BuildsGraph => true;
 
-        public override void OnPush() { _builtFrom = null; Rebuild(); }
-        public override void OnPop() { Clear(); _builtFrom = null; }
-
-        public override void OnUpdate()
+        public override void Build(GraphBuilder b)
         {
             var vm = Vm();
-            if (vm != null && vm != _builtFrom)
-            {
-                // Modal VM swapped (one closed, another opened) — re-home focus.
-                Rebuild();
-                Navigation.Attach(this);
-            }
-        }
-
-        private void Rebuild()
-        {
-            Clear();
-            var vm = Vm();
-            _builtFrom = vm;
             if (vm == null) return;
+            string k = "msgbox:" + vm.GetHashCode() + ":";
 
-            // Message body first (focusable so it can be re-read), then the buttons — all direct children
-            // of the root panel, so they're individual Tab-stops.
+            // Message body first (focusable so it can be re-read), then the buttons — each its own
+            // Tab-stop, so Tab cycles message ↔ buttons.
             if (!string.IsNullOrEmpty(vm.MessageText))
-                Add(new TextElement(vm.MessageText));
+                b.BeginStop("msg").AddItem(ControlId.Structural(k + "msg"), GraphNodes.Text(() => vm.MessageText));
 
-            // Text-field box: an Edit affordance types into the box's live field (the label reads the current
-            // value so it's heard before Accept). Accept forwards the field's value; Decline cancels.
+            // Text-field box: an Edit affordance types into the box's live field (the label reads the
+            // current value live, so it's heard before Accept). Accept forwards the field's value;
+            // Decline cancels.
             if (vm.BoxType == DialogMessageBoxBase.BoxType.TextField)
-                Add(new ProxyActionButton(() => Loc.T("modal.edit_text", new { value = vm.InputText.Value ?? "" }),
-                    () => true, () => StartEditing(vm), actionVerb: "edit"));
+                b.BeginStop("edit").AddItem(ControlId.Structural(k + "edit"), GraphNodes.Button(
+                    () => Loc.T("modal.edit_text", new { value = vm.InputText.Value ?? "" }),
+                    () => StartEditing(vm)));
 
-            Add(new ProxyActionButton(vm.AcceptText, () => true, () => vm.OnAcceptPressed()));
+            b.BeginStop("accept").AddItem(ControlId.Structural(k + "accept"),
+                GraphNodes.Button(() => vm.AcceptText, () => vm.OnAcceptPressed()));
             if (vm.ShowDecline.Value)
-                Add(new ProxyActionButton(vm.DeclineText, () => true, () => vm.OnDeclinePressed()));
+                b.BeginStop("decline").AddItem(ControlId.Structural(k + "decline"),
+                    GraphNodes.Button(() => vm.DeclineText, () => vm.OnDeclinePressed()));
         }
 
         // Hand the box's own TMP field to TextEntry so Unity/TMP own caret, Unicode and IME; typing routes

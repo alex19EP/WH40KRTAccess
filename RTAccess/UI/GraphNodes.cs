@@ -32,6 +32,15 @@ namespace RTAccess.UI
             => new NodeAnnouncement(() => enabled == null || enabled() ? null : Loc.T("state.disabled"),
                 live: true, kind: AnnouncementKinds.Enabled);
 
+        /// <summary>A plain read-only text line (a modal body, a help paragraph): label only — no role
+        /// word (<see cref="ControlTypes.Text"/> carries none), no actions, no sound — the TextElement
+        /// readout. Focusable so it can be re-read.</summary>
+        public static NodeVtable Text(Func<string> text) => new NodeVtable
+        {
+            ControlType = ControlTypes.Text,
+            Announcements = new List<NodeAnnouncement> { LabelPart(text) },
+        };
+
         /// <summary>One option of a single-select group ("label, radio button[, selected][, n of m]") —
         /// a dropdown option, a tab row entry. Activation selects it; the navigator plays the generic
         /// button click (the sound ProxyChoiceOption inherited from UIElement). Positions come from the
