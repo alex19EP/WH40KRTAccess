@@ -7,7 +7,7 @@ using Kingmaker.EntitySystem.Persistence;
 using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
@@ -18,8 +18,8 @@ namespace RTAccess.Screens
     /// menu).
     ///
     /// The saves are a <b>collapsible tree</b> (mirroring the game's own structure — <c>SaveSlotGroupVM</c>
-    /// is natively an <c>ExpandableTitleVM</c>): one <see cref="TreeGroup"/> node per playthrough (character),
-    /// its saves nested inside. The current playthrough opens; the rest start collapsed (the game's own
+    /// is natively an <c>ExpandableTitleVM</c>): one graph group per playthrough (character), its saves
+    /// nested inside. The current playthrough opens; the rest start collapsed (the game's own
     /// <c>IsFirst</c> default), so a many-playthrough list stays skimmable — Left/Right fold a run you don't
     /// want. Navigation is node-centric, matching the loot/inventory idiom: <b>Enter</b> on a save loads it
     /// (or overwrites, in Save mode); <b>Backspace</b> deletes it; <b>Space</b> reads its required-DLC names;
@@ -28,6 +28,14 @@ namespace RTAccess.Screens
     /// of sync — the original "loads a save I didn't pick" bug is gone by construction, and browsing never
     /// drives the game's selection so it stays silent. Tab-stops: the mode selector (dual-mode only), New save
     /// (Save mode only — it isn't a slot in any playthrough), then the tree.
+    ///
+    /// Graph-native: declared fresh from the live VM every render, so the old sig/rebuild/focus-restore
+    /// machinery is gone. Identity keys carry what they must survive: save nodes key by the save's
+    /// FolderName (the game's own save identity — slot VMs persist across list refreshes, but a
+    /// deleted save's node genuinely vanishes and the differ slides focus to the nearest survivor and
+    /// announces it); playthrough groups key by GameId+CharacterName (the game's own group identity), so
+    /// fold state and focus survive the async list refresh after a save/delete. The mode selector keys by
+    /// entity, so selector focus survives a Save/Load flip.
     ///
     /// Layer 22: above the Esc menu (20) it's launched from — though they never actually coexist, since
     /// OnSave/OnLoad close the Esc menu first — and below the MessageBox confirm (30) that Load / Delete /
@@ -50,13 +58,16 @@ namespace RTAccess.Screens
         private static SaveLoadVM Vm()
             => Game.Instance?.RootUiContext?.CommonVM?.SaveLoadVM?.Value;
 
-        private SaveLoadVM _builtFor;
-        private SaveLoadMode _modeBuilt;
-        private int _slotsBuilt = -1;
         private bool _wasUpdating;      // last-seen SaveListUpdating, to announce the refresh on its rising edge
 
-        public override void OnPush() { _builtFor = null; _wasUpdating = false; Rebuild(); }
-        public override void OnPop() { Clear(); _builtFor = null; }
+        // OUR per-playthrough fold state (cursor-adjacent view state, the LogReview-channel precedent):
+        // keyed by playthrough identity — NOT by ControlId — so it survives VM churn across the async list
+        // refresh. Only entries the user explicitly folded/unfolded live here; an untouched group defaults
+        // to the game's own IsFirst (read live, so when a delete-all moves IsFirst the new first playthrough
+        // opens, exactly as the game's list does). Reset on push: reopening starts fresh, like the game.
+        private readonly Dictionary<string, bool> _fold = new Dictionary<string, bool>();
+
+        public override void OnPush() { _wasUpdating = false; _fold.Clear(); }
 
         public override void OnUpdate()
         {
@@ -68,13 +79,6 @@ namespace RTAccess.Screens
             bool updating = vm.SaveListUpdating.Value;
             if (updating && !_wasUpdating && FocusMode.Active) Tts.Speak(Loc.T("save.updating"));
             _wasUpdating = updating;
-            // Rebuild on VM swap, mode flip (Save<->Load tab), or the slot list changing (save/delete settles
-            // asynchronously after the list refresh).
-            if (vm != _builtFor || vm.Mode.Value != _modeBuilt || SlotCount(vm) != _slotsBuilt)
-            {
-                Rebuild();
-                Navigation.Attach(this);
-            }
         }
 
         // Escape / Back closes the window through the VM's own close (the same path the game's close uses).
@@ -85,84 +89,141 @@ namespace RTAccess.Screens
                 yield return new ElementAction(ActionIds.Back, Message.Localized("ui", "action.close"), _ => vm.OnClose());
         }
 
-        // AllTitlesAndSlots (public) holds the group titles + real slots; its count is a cheap change signal.
-        private static int SlotCount(SaveLoadVM vm)
-            => vm.SaveSlotCollectionVm?.AllTitlesAndSlots?.Count ?? 0;
+        public override bool BuildsGraph => true;
 
-        private void Rebuild()
+        public override void Build(GraphBuilder b)
         {
-            Clear();
             var vm = Vm();
-            _builtFor = vm;
             if (vm == null) return;
-            _modeBuilt = vm.Mode.Value;
-            _slotsBuilt = SlotCount(vm);
-            bool saveMode = vm.Mode.Value == SaveLoadMode.Save;
+            string k = "save:" + vm.GetHashCode() + ":"; // a new VM = a fresh window = fresh keys
 
-            // 1) Mode selector — only when both modes are offered (dual-mode, from the main menu).
+            // 1) Mode selector — only when both modes are offered (dual-mode, from the main menu). Keyed by
+            // entity (mode-independent), so selector focus survives the Save/Load flip it causes; the graph
+            // starts on the selected mode.
             var modes = vm.SaveLoadMenuVM?.SelectionGroup?.EntitiesCollection;
             if (modes != null && modes.Count > 1)
             {
-                var modeList = new ListContainer(Loc.T("save.mode"));
+                b.BeginStop("modes").PushContext(Loc.T("save.mode"), Loc.T("role.list"));
+                int i = 0;
                 foreach (var e in modes)
-                    if (e != null) { var me = e; modeList.Add(new ProxySelectionItem(me, () => ModeLabel(me.Mode), role: "tab")); }
-                Add(modeList);
+                {
+                    if (e == null) continue;
+                    var me = e; // capture
+                    var id = ControlId.Referenced(me, k + "mode:" + i++);
+                    b.AddItem(id, ModeTab(me));
+                    if (me.IsSelected.Value) b.SetStart(id);
+                }
+                b.PopContext();
             }
 
-            // 2) New save — its own Tab-stop (Save mode only; it isn't a slot in any playthrough).
-            if (saveMode)
-                Add(new ProxyActionButton(Loc.T("save.new"), () => vm.NewSaveSlotVM != null, NewSave));
+            // 2) New save — its own Tab-stop (Save mode only; it isn't a slot in any playthrough). Enabled
+            // once the VM's async NewSaveSlotVM materializes.
+            if (vm.Mode.Value == SaveLoadMode.Save)
+                b.BeginStop("new").AddItem(ControlId.Structural(k + "new"),
+                    GraphNodes.Button(() => Loc.T("save.new"), NewSave, () => Vm()?.NewSaveSlotVM != null));
 
-            // 3) The saves as a collapsible tree — one node per playthrough, its saves nested inside.
-            var tree = BuildTree(vm);
-            if (tree != null) Add(tree);
-        }
-
-        // The saves as a tree: a structural root TreeGroup holding one collapsible node per playthrough, each
-        // holding its saves. Enter loads/overwrites a save, Backspace deletes it, Backspace on the playthrough
-        // node deletes that character — all on the focused node, so nothing drifts out of sync. The first
-        // playthrough opens; the rest start collapsed (the game's own IsFirst default).
-        private TreeGroup BuildTree(SaveLoadVM vm)
-        {
+            // 3) The saves as a collapsible tree — one group per playthrough, its saves nested inside.
             // SaveSlotGroups is a private auto-property exposed by Code.dll's publicize (same mechanism
             // GraphNodes.MenuEntry relies on for ContextMenuEntityVM.m_Entity).
             var groups = vm.SaveSlotCollectionVm?.SaveSlotGroups;
-            if (groups == null) return null;
+            if (groups == null) return;
 
             // Two playthroughs can share a character name (the game keys groups by GameId, not name, and its own
             // headers collide too — it leans on the screenshot to tell them apart, which a blind player can't).
             // Find the colliding names so their headers get a date suffix to distinguish them.
             var ambiguous = AmbiguousGroupNames(groups);
 
-            var root = new TreeGroup();
-            bool first = true;
+            b.BeginStop("slots");
             foreach (var g in groups)
             {
                 if (g == null || g.SaveLoadSlots == null || g.SaveLoadSlots.Count == 0) continue;
                 // Keep the game VM's slots available/actionable regardless of OUR fold state — the two are
-                // independent (the game's IsExpanded gates slot availability; our tree node gates navigation).
+                // independent (the game's IsExpanded gates slot availability; our graph group gates navigation).
                 g.IsExpanded.Value = true;
-                var group = g; // capture for the delete-all closure
-                var node = new TreeGroup(GroupNodeLabel(group, ambiguous))
-                {
-                    ContextLabel = () => Loc.T("save.delete_all", new { character = group.CharacterName }),
-                    ContextAction = () => group.ExpandableTitleVM.DeleteAll(), // the game's own confirming delete-all
-                };
+                var group = g; // capture for the closures
+                string gkey = GroupKey(group);
+                bool expanded;
+                if (!_fold.TryGetValue(gkey, out expanded)) expanded = group.IsFirst; // the game's own default
+                b.BeginGroup(ControlId.Referenced(group, k + "grp:" + gkey),
+                    GroupNode(group, ambiguous, gkey), expanded: expanded);
                 foreach (var slot in group.SaveLoadSlots)
                 {
                     if (slot == null) continue;
-                    var s = slot;
-                    // Node-centric: Enter loads/overwrites THIS save (SaveOrLoad self-gates on mode/type),
-                    // Backspace deletes it (the game's confirm), Space reads the required-DLC names.
-                    node.Add(new ProxySelectionItem(s, () => SlotBrowseLabel(s), role: "item",
-                        onActivate: () => s.SaveOrLoad(),
-                        onContext: () => s.Delete(), contextLabel: () => Loc.T("save.action.delete"),
-                        detail: () => DlcDetail(s)));
+                    var s = slot; // capture
+                    b.AddItem(ControlId.Referenced(s, k + "slot:" + SlotKey(s)), SlotNode(s));
                 }
-                root.Add(node);
-                if (first) { node.Expand(); first = false; }
+                b.EndGroup();
             }
-            return root.Children.Count > 0 ? root : null;
+        }
+
+        // A mode tab (Save / Load) — the game's selection contract (SetSelectedFromView flips SaveLoadVM.Mode
+        // through the selection group), announced "selected" synchronously after activation.
+        private static NodeVtable ModeTab(SaveLoadMenuEntityVM me)
+        {
+            Func<bool> selected = () => me.IsSelected.Value;
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Tab,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    GraphNodes.LabelPart(() => ModeLabel(me.Mode)),
+                    GraphNodes.SelectedPart(selected),
+                    GraphNodes.DisabledPart(() => me.IsAvailable.Value),
+                },
+                SearchText = () => ModeLabel(me.Mode),
+                StateText = () => selected() ? Loc.T("state.selected") : null,
+                OnActivate = () => me.SetSelectedFromView(true),
+                ActivateSound = Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick,
+            };
+        }
+
+        // The playthrough header: an expandable group node. Expand/collapse is OUR fold (written back to the
+        // per-playthrough fold map — the game's IsExpanded stays forced true); Backspace deletes the whole
+        // character through the game's own confirming DeleteAll.
+        private NodeVtable GroupNode(SaveSlotGroupVM group, HashSet<string> ambiguous, string gkey)
+        {
+            var vt = GraphNodes.Group(() => GroupNodeLabel(group, ambiguous));
+            vt.OnExpand = () => _fold[gkey] = true;
+            vt.OnCollapse = () => _fold[gkey] = false;
+            vt.OnSecondary = () => group.ExpandableTitleVM.DeleteAll(); // the game's own confirming delete-all
+            return vt;
+        }
+
+        // A save node. Node-centric: Enter loads/overwrites THIS save (SaveOrLoad self-gates on mode/type),
+        // Backspace deletes it (the game's confirm — deliberately ungated by availability, like the proxy:
+        // a save that can't be overwritten can still be deleted), Space reads the required-DLC names. No
+        // selected-part: an "item" carries no selection state, so browsing stays silent and nothing drifts.
+        private static NodeVtable SlotNode(SaveSlotVM s)
+        {
+            bool available = s.IsAvailable.Value; // live per render (our IsExpanded force keeps it true)
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Item,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    GraphNodes.LabelPart(() => SlotBrowseLabel(s)),
+                    GraphNodes.DisabledPart(() => s.IsAvailable.Value),
+                },
+                SearchText = () => SlotName(s),
+                OnActivate = available ? () => s.SaveOrLoad() : (Action)null,
+                OnSecondary = () => s.Delete(),
+                OnTooltip = () => TooltipChooser.Open(SlotName(s), DlcDetail(s), sections: null, links: null),
+                ActivateSound = available ? Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick : null,
+            };
+        }
+
+        // The playthrough's stable identity — the game's own group key (SaveSlotCollectionVM.HandleNewSave
+        // matches groups on GameId AND PlayerCharacterName), so fold state and node identity survive the
+        // group VM being disposed/recreated across list refreshes.
+        private static string GroupKey(SaveSlotGroupVM g)
+            => (g.GameId ?? "") + ":" + (g.CharacterName ?? "");
+
+        // The save's stable identity — FolderName, the same field the game's own ReferenceSaveEquals
+        // compares (globally unique per save on disk; slot VMs are deduped on it).
+        private static string SlotKey(SaveSlotVM s)
+        {
+            var f = s.Reference?.FolderName;
+            return string.IsNullOrEmpty(f) ? "vm" + s.GetHashCode() : f;
         }
 
         // Create a new save with a player-typed name. The game's own new-save flow uses an inline field that
@@ -279,6 +340,7 @@ namespace RTAccess.Screens
 
         // The card shows only "DLC required" (SlotType); on Space, name the missing DLC(s) so the player knows
         // what to enable. DlcRequiredMap is a list of requirement groups — flatten to the distinct names.
+        // Returns null when not DLC-gated — the chooser then speaks "No tooltip", like the proxy path did.
         private static string DlcDetail(SaveSlotVM s)
         {
             if (s == null || !s.ShowDlcRequiredLabel.Value) return null;

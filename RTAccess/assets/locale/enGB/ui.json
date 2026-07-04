@@ -200,6 +200,8 @@
   "scan.choose_object": "Choose what to activate",
   "scan.unit_hp": "{current} of {max} HP",
   "scan.unit_hp_hidden": "health unknown",
+  "scan.unit_talk": "talk",
+  "scan.unit_interact": "interact",
   "predict.can_kill": "can kill",
   "predict.can_push": "can knock back",
   "predict.shielded": "has shield",
