@@ -86,19 +86,9 @@ namespace RTAccess.Input
             }).AddBinding(KeyCode.F8);
             // F6 — speak the room-map stats (count + current room) and dump the full room table to the mod log.
             // The /eval-less twin of the watershed prototype; confirms the classifier built and what it produced.
-            // (F6 not F7: F7 is the graph/classic navigator A/B below; F6 has been free since console-nav retired.)
+            // (F6 has been free since console-nav retired; F7 is also free but stays unclaimed.)
             InputManager.Register("scan.debug_rooms", "Dump room map stats", InputCategory.Global,
                 Ex.RoomMap.DebugSpeak).AddBinding(KeyCode.F6);
-            // F7 — A/B toggle between the graph and classic (traditional) navigators. Debug-only: Release
-            // ships graph-only (TraditionalNavigator stays compiled as the fallback until Phase 4). Swapping
-            // re-attaches the current screen; per-screen nav state resets — fine for a dev tool. Bare F7 is
-            // free in the game (see the keymap notes) and unclaimed by the mod.
-            InputManager.Register("diag.toggle_navigator", "Toggle graph/classic navigator", InputCategory.Global, () =>
-            {
-                bool toGraph = !(Navigation.Active is GraphNavigator);
-                Navigation.SetNavigator(toGraph ? (Navigator)new GraphNavigator() : new TraditionalNavigator());
-                Tts.Speak(toGraph ? "graph navigator" : "classic navigator", interrupt: true);
-            }).AddBinding(KeyCode.F7);
 #endif
 
             // ---- UI: screen/menu navigation (dispatched into the active navigator) ----

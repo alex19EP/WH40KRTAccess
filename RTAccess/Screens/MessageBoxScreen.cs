@@ -49,7 +49,6 @@ namespace RTAccess.Screens
                 // Modal VM swapped (one closed, another opened) — re-home focus.
                 Rebuild();
                 Navigation.Attach(this);
-                if (FocusMode.Active) Navigation.AnnounceCurrent();
             }
         }
 

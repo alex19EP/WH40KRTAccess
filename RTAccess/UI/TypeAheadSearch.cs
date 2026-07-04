@@ -6,7 +6,7 @@ namespace RTAccess.UI
     /// <summary>
     /// Type-ahead search engine — ported, with permission, from OniAccess (VisionNotIncluded,
     /// C:\Users\bradj\code\VisionNotIncluded, Handlers/TypeAheadSearch.cs); adapted to RTAccess
-    /// (speech + key routing live in <see cref="TraditionalNavigator"/>, which feeds typed characters
+    /// (speech + key routing live in <see cref="GraphNavigator"/>, which feeds typed characters
     /// and arrows in; this class is pure matching/result state).
     ///
     /// Builds a filtered results list over a flat item list with TIERED matching: start-of-string

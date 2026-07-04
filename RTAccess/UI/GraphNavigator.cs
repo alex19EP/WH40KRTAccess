@@ -11,8 +11,8 @@ namespace RTAccess.UI
     /// a focus change is announced exactly once no matter what caused it (input, a screen moving focus,
     /// a content rebuild, or the game yanking a VM). Screens keep their retained Container trees and
     /// their existing Navigation API; behavior policies (tree expand/collapse, sheet/table readouts,
-    /// tab semantics, tooltip fall-throughs, type-ahead) carry over from the push-based navigator
-    /// unchanged. Ported from WrathAccess's GraphNavigator with the RT adaptations: node-based
+    /// tab semantics, tooltip fall-throughs, type-ahead) carry over from the retired push-based
+    /// navigator unchanged. Ported from WrathAccess's GraphNavigator with the RT adaptations: node-based
     /// <see cref="HasFocus"/>, RT's three-slot sound model at the navigator chokepoints, the base
     /// <see cref="Navigator.PumpFocus"/> riding graph focus (re-armed on <see cref="Attach"/>), RT's
     /// tooltip chain (TooltipReader / GlossaryLinks / TooltipScreen) with the associated-element and
@@ -803,7 +803,7 @@ namespace RTAccess.UI
         // Space on an element offers everything it can drill into: its own tooltip (plain text, or a
         // brick TEMPLATE read via TooltipReader), any extra rendered SECTIONS it carries (an inventory
         // item's compare-vs-equipped cards), PLUS any inline glossary <link> targets in its text —
-        // RT's tooltip chain, mirroring the push-based navigator. Two grafts from the graph-era
+        // RT's tooltip chain. Two grafts from the graph-era
         // upstream: a cell with no tooltip of its own falls through to (1) its row's ASSOCIATED element's
         // template, then (2) the row-level tooltip a Table/FlowSheet row declared — so Space on a table
         // VALUE cell reads the row's detail.
@@ -848,7 +848,7 @@ namespace RTAccess.UI
                 hasSections ? (el.GetLabelText() ?? Loc.T("nav.references")) : Loc.T("nav.references"), items);
         }
 
-        // ---- type-ahead search (glue ported from TraditionalNavigator; landing goes via the graph) ----
+        // ---- type-ahead search (glue carried over from the retired push-based navigator; landing goes via the graph) ----
 
         private readonly TypeAheadSearch _search = new TypeAheadSearch();
         private readonly List<UIElement> _searchItems = new List<UIElement>();

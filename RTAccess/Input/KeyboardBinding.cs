@@ -4,8 +4,8 @@ namespace RTAccess.Input
 {
     /// <summary>
     /// A keyboard combo polled against Unity Input. Phase-agnostic: it reports
-    /// JustPressed/Held/Released so the dispatcher can route each phase into the
-    /// navigator (OnInputJustPressed/Held/Released).
+    /// JustPressed/Held/Released so the dispatcher (and per-frame pollers like the
+    /// navigator's type-ahead) can read whichever phase they need.
     /// </summary>
     public class KeyboardBinding : InputBinding
     {

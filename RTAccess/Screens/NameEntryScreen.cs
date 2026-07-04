@@ -49,7 +49,6 @@ namespace RTAccess.Screens
                 _box = box;
                 Build();
                 Navigation.Attach(this);
-                if (FocusMode.Active) Navigation.AnnounceCurrent();
             }
         }
 

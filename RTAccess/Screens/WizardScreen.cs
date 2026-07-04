@@ -55,7 +55,6 @@ namespace RTAccess.Screens
                 Rebuild();
                 Navigation.Attach(this);
                 if (phaseChange) UiSound.PageTurn();
-                if (FocusMode.Active) Navigation.AnnounceCurrent();
                 return;
             }
             // Same phase: let subclasses refresh selection-driven content in place (e.g. a detail

@@ -74,7 +74,6 @@ namespace RTAccess.Screens
             {
                 Rebuild();
                 Navigation.Attach(this);
-                if (FocusMode.Active) Navigation.AnnounceCurrent();
             }
         }
 

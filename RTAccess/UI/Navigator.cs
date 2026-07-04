@@ -6,8 +6,8 @@ namespace RTAccess.UI
 {
     /// <summary>
     /// The navigation contract <see cref="Navigation"/> drives: bind to a screen, consume input, keep
-    /// focus established, and announce focus changes. Implementations are pluggable
-    /// (<see cref="TraditionalNavigator"/> today; the key-graph core over TreeGraphAdapter next), where
+    /// focus established, and announce focus changes. The active implementation is
+    /// <see cref="GraphNavigator"/> (the key-graph core over <see cref="Graph.TreeGraphAdapter"/>), where
     /// announcements are PULL-based: focus is diffed per frame and a change speaks exactly once no
     /// matter what caused it — so implementations and screens never make per-callsite announce
     /// decisions. The base carries only the shared focus-restore rules (remembered/selected descent),
@@ -43,8 +43,6 @@ namespace RTAccess.UI
         public abstract void EnsureFocus();
 
         public abstract bool OnInputJustPressed(InputAction action);
-        public virtual bool OnInputHeld(InputAction action) => false;
-        public virtual bool OnInputReleased(InputAction action) => false;
 
         /// <summary>Per-frame hook for typed-character input (type-ahead search).</summary>
         public virtual void TickTypeahead() { }
