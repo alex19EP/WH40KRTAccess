@@ -45,6 +45,9 @@
 		<!-- The mod's own speech strings (framework glue: roles, positions, screen names). Deployed under
 		     assets/locale/<lang>/<table>.json; LocalizationManager reads them from Main.ModDir/assets/locale. -->
 		<None Include="assets\**\*.json" CopyToOutputDirectory="PreserveNewest" Link="assets\%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- Bundled audio stems (wall tones, sonar interactable stems, cue earcons) — sourced from WrathAccess.
+		     Deployed under assets/audio/**; AudioAssets.Dir reads them from Main.ModDir/assets/audio. -->
+		<None Include="assets\**\*.wav" CopyToOutputDirectory="PreserveNewest" Link="assets\%(RecursiveDir)%(Filename)%(Extension)" />
 		<None Include="prism.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('prism.dll')" />
 		<None Include="nvdaControllerClient64.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('nvdaControllerClient64.dll')" />
 	</ItemGroup>

@@ -42,6 +42,16 @@ namespace RTAccess.Audio
         /// <summary>An error / refusal (not enough AP, out of range) — a low descending pair.</summary>
         public static void Error() => PlaySeq("error", new[] { (392, 80), (294, 120) }, 0.8f);
 
+        /// <summary>The exploration cursor crossed OUT of the party's sight, into fog — a higher, short decaying tone.</summary>
+        public static void FogEnter() => PlayUngated("fog_enter", 2080, 349, 0.8f);
+
+        /// <summary>The exploration cursor crossed back INTO the party's sight — a lower, longer decaying tone.</summary>
+        public static void FogExit() => PlayUngated("fog_exit", 1590, 458, 0.8f);
+        // FogEnter/FogExit pitch+length are matched to WrathAccess's fog_enter/fog_exit wavs (measured: exponentially-
+        // decaying tones ≈2080 Hz/0.35 s and ≈1590 Hz/0.46 s), so RT sounds the same while shipping no WAV. They are
+        // driven by Exploration/FogCue on its own default-on toggle, so — unlike the rest of this deferred palette —
+        // they bypass the master Enabled gate (see PlayUngated).
+
         /// <summary>Audition the whole palette in sequence (call from /eval to tune). Ignores
         /// <see cref="Enabled"/> so it can be heard even with the feature off.</summary>
         public static void Test()
@@ -59,6 +69,11 @@ namespace RTAccess.Audio
             if (!Enabled) return;
             AudioMixer.Instance.Play(Get(key, () => Chime(freq, ms)), Volume * gain);
         }
+
+        // As Play, but bypasses the master Enabled gate — for cues owned by a feature that carries its own on/off
+        // (FogCue's exploration.fog_cue), so they can ship live while the general palette stays deferred.
+        private static void PlayUngated(string key, float freq, int ms, float gain)
+            => AudioMixer.Instance?.Play(Get(key, () => Chime(freq, ms)), Volume * gain);
 
         private static void PlaySeq(string key, (int freq, int ms)[] notes, float gain)
         {

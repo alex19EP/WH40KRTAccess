@@ -206,6 +206,7 @@
   "proxyann.direction": "Direction",
   "proxyann.height": "Height difference",
   "proxyann.coordinates": "Coordinates (debug)",
+  "exploration.fog_cue": "Fog boundary cue",
   "category.sonar": "Sonar",
   "category.log": "Log",
   "audio.volumes": "System volumes",

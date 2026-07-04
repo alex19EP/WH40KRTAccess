@@ -67,6 +67,27 @@ namespace RTAccess.Input
                 RTAccess.Diagnostics.KeybindingsDump.Dump(RTAccess.Main.ModDir);
                 Tts.Speak("Keybindings dumped.", interrupt: true);
             }).AddBinding(KeyCode.F10);
+            // F11 — dump the scanner's live registry with the per-surface visibility gates, flagging the
+            // "phantom" items (IsVisible but not CurrentlySeen) that show in the category browse yet are missing
+            // from the M object-cycle / tile exploration. The one-stop probe for the "shows in the scanner but
+            // not the M-cycle" report; writes Scanner_visibility_dump.json + logs the phantom list.
+            InputManager.Register("diag.dump_scanner", "Dump scanner visibility", InputCategory.Global, () =>
+            {
+                RTAccess.Diagnostics.ScannerDump.Dump(RTAccess.Main.ModDir);
+                Tts.Speak("Scanner objects dumped.", interrupt: true);
+            }).AddBinding(KeyCode.F11);
+            // F8 — explain why the scanner's I key and the tile cursor's Enter disagree on the CURRENT selection
+            // (Enabled vs CanInteract() vs actually-fireable, plus the co-located interactables). Select the
+            // offending object with M first, then press F8. Full breakdown → Player.log; see DevApi.DebugScannerInteract.
+            InputManager.Register("diag.debug_interact", "Dump selection interactability", InputCategory.Global, () =>
+            {
+                RTAccess.Exploration.Scanner.DebugInteract();
+                Tts.Speak("Interact diagnostic logged.", interrupt: true);
+            }).AddBinding(KeyCode.F8);
+            // F7 — speak the room-map stats (count + current room) and dump the full room table to the mod log.
+            // The /eval-less twin of the watershed prototype; confirms the classifier built and what it produced.
+            InputManager.Register("scan.debug_rooms", "Dump room map stats", InputCategory.Global,
+                Ex.RoomMap.DebugSpeak).AddBinding(KeyCode.F7);
 #endif
 
             // ---- UI: screen/menu navigation (dispatched into the active navigator) ----
@@ -140,6 +161,15 @@ namespace RTAccess.Input
                 () => Ex.Scanner.ReviewZones(false)).AddBinding(KeyCode.Z).Grouped("scanner");
             InputManager.Register("scan.review_zones_back", "Scanner: cycle area effects (reverse)", InputCategory.Exploration,
                 () => Ex.Scanner.ReviewZones(true)).AddBinding(KeyCode.Z, shift: true).Grouped("scanner");
+            // V / Shift+V — cycle the CURRENT room's exits (doorway openings to neighbouring rooms; see RoomMap),
+            // the same keys WrathAccess uses (muscle-memory parity). Speaks "Exit to Room N, class" + bearing/distance
+            // and plants the shared cursor on the opening so Backspace walks the party there. Bare V was freed for this
+            // by moving the combat vantage read to Semicolon below (GameKeybinds already moved the game's ship
+            // customization to Ctrl+V). Grouped with the scanner review cycles.
+            InputManager.Register("scan.exit_next", "Scanner: next room exit", InputCategory.Exploration,
+                Ex.Scanner.ExitNext).AddBinding(KeyCode.V).Grouped("scanner");
+            InputManager.Register("scan.exit_prev", "Scanner: previous room exit", InputCategory.Exploration,
+                Ex.Scanner.ExitPrev).AddBinding(KeyCode.V, shift: true).Grouped("scanner");
             InputManager.Register("scan.interact", "Scanner: interact with selection", InputCategory.Exploration,
                 Ex.Scanner.InteractSelected).AddBinding(KeyCode.I).Grouped("scanner");
             // Home / Slash — plant the movement cursor on the current review selection's tile (the coupling core;
@@ -244,6 +274,17 @@ namespace RTAccess.Input
             // by each gauge's visibility. K is a confirmed-free letter (see PartyHotkeys keymap notes).
             InputManager.Register("hud.gauges", "Read HUD gauges (momentum / veil / profit factor / timers)",
                 InputCategory.Exploration, Ax.HudGauges.ReadAll).AddBinding(KeyCode.K).Grouped("party");
+
+            // Ctrl+F1 — cycle the directional wall-tone bed (Off → When moving → Continuous), spoken. Same chord
+            // WrathAccess uses for its wall-tone mode toggle, kept identical for muscle-memory parity. Ctrl+F1 is
+            // free (bare F1 is the UI tooltip read; exact-modifier match keeps them apart). See WallTones.
+            InputManager.Register("walltones.toggle", "Toggle wall tones (off / when moving / continuous)",
+                InputCategory.Exploration, Ex.WallTones.ToggleMode).AddBinding(KeyCode.F1, ctrl: true).Grouped("scanner");
+
+            // Ctrl+F2 — cycle the object sonar (Off → When moving → Continuous), spoken. Same chord WrathAccess
+            // uses for its sonar-mode toggle. Ships Off; per-type recorded stems, live-tracked in 3D. See Sonar.
+            InputManager.Register("sonar.toggle", "Toggle sonar (off / when moving / continuous)",
+                InputCategory.Exploration, Ex.Sonar.ToggleMode).AddBinding(KeyCode.F2, ctrl: true).Grouped("scanner");
         }
 
         // The review-buffer keys are Global (always polled), so their handlers stand down when not in a

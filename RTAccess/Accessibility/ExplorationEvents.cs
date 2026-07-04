@@ -94,6 +94,9 @@ internal sealed class ExplorationEvents :
             _lastChosen = null; // new area — drop the stale pick + throttle state
             _lastSpoken = null;
             TileExplorer.Reset(); // the tile cursor pointed at a node in the old area's grid — clear it
+            RTAccess.Exploration.WallTones.Reset(); // release the wall-tone voices; they rebuild against the new grid
+            RTAccess.Audio.SpatialSources.Clear(); // stop tracking sonar pings anchored to the old grid's points
+            RTAccess.Exploration.RoomMap.Invalidate(); // the room map was built for the old area's grid
             var name = Game.Instance?.CurrentlyLoadedArea?.AreaDisplayName;
             Speaker.Speak(string.IsNullOrWhiteSpace(name) ? Loc.T("explore.new_area") : Loc.T("explore.entering", new { name }), interrupt: false);
         }

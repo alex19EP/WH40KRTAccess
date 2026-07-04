@@ -36,6 +36,55 @@ public static class Main {
             var explCat = Settings.ModSettingsRegistry.EnsureCategory("exploration", "Exploration");
             if (explCat.GetByKey("camera_follow") == null)
                 explCat.Add(new Settings.BoolSetting("camera_follow", "Camera follows cursor", true, "exploration.camera_follow"));
+            // Ambient sonar (Exploration/Sonar.cs) — the first spatial-audio system. GATED OFF by default: audio
+            // quality is un-self-verifiable, so it ships silent for the maintainer's ear-tuning pass (Off / When
+            // moving / Continuous). See docs/plans/echoing-charting-lovelace.md (audio pass, Phase G).
+            if (explCat.GetByKey("sonar") == null)
+                explCat.Add(new Settings.ChoiceSetting("sonar", "Sonar", new[]
+                {
+                    new Settings.Choice("off", "Off", "overlay.mode.off"),
+                    new Settings.Choice("when_moving", "When moving", "overlay.mode.when_moving"),
+                    new Settings.Choice("continuous", "Continuous", "overlay.mode.continuous"),
+                }, "off", "exploration.sonar"));
+            if (explCat.GetByKey("sonar_volume") == null)
+                explCat.Add(new Settings.IntSetting("sonar_volume", "Sonar volume", 60, 0, 100, 5, "exploration.sonar_volume"));
+            // Fog-of-war boundary cue (Exploration/FogCue.cs) — a brief tone as the cursor crosses the edge of the
+            // party's current sight. ON by default: it's a discrete event, not a continuous bed, so it ships live
+            // without the ear-tuning pass (no keybind — toggle it here). Pitch/length match WrathAccess's fog wavs.
+            if (explCat.GetByKey("fog_cue") == null)
+                explCat.Add(new Settings.BoolSetting("fog_cue", "Fog boundary cue", true, "exploration.fog_cue"));
+            // Room-change announcement (Exploration/RoomMap.cs) — speak "Room 12, large hall" as the party (or the
+            // planted cursor) crosses into a differently-classified room. ON by default: a discrete event, dwell-gated
+            // so a boundary graze doesn't flap. The label rides the pre-staged overlay.cursor.announce_rooms key.
+            if (explCat.GetByKey("announce_rooms") == null)
+                explCat.Add(new Settings.BoolSetting("announce_rooms", "Announce room changes", true, "overlay.cursor.announce_rooms"));
+            // Directional wall tones (Exploration/WallTones.cs) — the continuous "shape of the room" bed: four
+            // looping cardinal voices whose volume rises as a wall nears. Ships OFF: the continuous bed is
+            // ambient/fatiguing, so the maintainer opts in with the Ctrl+F1 toggle (Off → When moving →
+            // Continuous, same chord as WrathAccess) and the volume defaults low. See the audio pass, Phase H.
+            if (explCat.GetByKey("walltones") == null)
+                explCat.Add(new Settings.ChoiceSetting("walltones", "Wall tones", new[]
+                {
+                    new Settings.Choice("off", "Off", "overlay.mode.off"),
+                    new Settings.Choice("when_moving", "When moving", "overlay.mode.when_moving"),
+                    new Settings.Choice("continuous", "Continuous", "overlay.mode.continuous"),
+                }, "off", "exploration.walltones"));
+            if (explCat.GetByKey("walltones_volume") == null)
+                explCat.Add(new Settings.IntSetting("walltones_volume", "Wall tone volume", 25, 0, 100, 5, "exploration.walltones_volume"));
+            if (explCat.GetByKey("walltones_set") == null)
+                explCat.Add(new Settings.ChoiceSetting("walltones_set", "Wall tone set", new[]
+                {
+                    new Settings.Choice("1", "Set 1", "exploration.walltones_set.1"),
+                    new Settings.Choice("2", "Set 2", "exploration.walltones_set.2"),
+                }, "1", "exploration.walltones_set"));
+            // Spatial-audio realism toggles (read by Audio/Spatializer.Cue) — the object sonar's per-source 3D on
+            // top of pan: an interaural time delay (headphone left/right sharpness) and a rear low-pass (muffled =
+            // behind). Both default ON; separated so the maintainer can A/B each by ear. See the audio pass.
+            var audioCat = Settings.ModSettingsRegistry.EnsureCategory("audio", "Audio");
+            if (audioCat.GetByKey("itd") == null)
+                audioCat.Add(new Settings.BoolSetting("itd", "Interaural time delay (stereo depth)", true, "audio.itd"));
+            if (audioCat.GetByKey("front_back_filter") == null)
+                audioCat.Add(new Settings.BoolSetting("front_back_filter", "Front/back muffling", true, "audio.front_back_filter"));
             Settings.ModSettings.Initialize(System.IO.Path.Combine(Application.persistentDataPath, "RTAccess"));
             // Parallel accessible-UI framework (Phase 2): register input actions + the screens whose
             // ScreenManager resolves over RootUiContext each frame (MainMenu first).
@@ -126,6 +175,29 @@ public static class Main {
         // current-frame registry; the persistent proxies are what future object/sonar cues attach to. See
         // RTAccess.Exploration.WorldModel.
         Exploration.WorldModel.Tick();
+
+        // The room map: segment the area's walkable grid into orientation ROOMS ("Room 12, large hall") via a
+        // persistence watershed, and announce room changes (dwell-gated). Self-latches its build on area-part change
+        // (the grid streams in late) and rebuilds once per load. See RTAccess.Exploration.RoomMap.
+        Exploration.RoomMap.Tick();
+
+        // Ambient sonar sweep: ping the perceivable things around the shared cursor with their recorded per-type
+        // stems (the "feel the room" layer). Gated OFF by default (exploration.sonar); reads the current-frame
+        // WorldModel registry above. See RTAccess.Exploration.Sonar.
+        Exploration.Sonar.Tick(dt);
+
+        // Fog-boundary cue: a brief tone as the shared cursor crosses the edge of the party's current sight
+        // (into fog / back into view). ON by default; fog-gated so it's inherently visual-parity-safe. See FogCue.
+        Exploration.FogCue.Tick(dt);
+
+        // Live-track every sonar ping still sounding: re-pan / re-attenuate it in 3D against the moving cursor +
+        // the item's nearest edge until it drains, so a source follows you instead of freezing. See SpatialSources.
+        Audio.SpatialSources.Tick();
+
+        // Directional wall tones: the continuous "shape of the room" bed — four looping cardinal voices whose volume
+        // rises as a wall nears the shared cursor. Ships OFF (Ctrl+F1 toggles Off/When-moving/Continuous); volume
+        // slews ~0.5 s so a tile step doesn't jump it. See RTAccess.Exploration.WallTones.
+        Exploration.WallTones.Tick(dt);
 
         // Ability targeting: the moment an action-bar ability arms (SetAbility → aiming), hand the keyboard from the
         // HUD to the cursor/scanner so the player can commit the aim (Enter at the cursor, I on the selection,

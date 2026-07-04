@@ -73,6 +73,8 @@ internal static class Scanner
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
+    private static int _exitIndex = -1;     // current room-exit cycle position (reset when the room changes)
+    private static RoomMap.Room _exitRoom;  // the room the exit cycle is scoped to
 
     // Cached reflection handle for the indoors flag — BlueprintAreaPart.m_IndoorType is private with no public
     // accessor. Resolved once at load; null (→ treated as outdoors) if a game update ever renames the field.
@@ -98,6 +100,8 @@ internal static class Scanner
     internal static void ReviewObjects(bool back) => Safe(() => Review(Group.Objects, back ? -1 : 1));
     // Cycle the live area effects (hazards + buff zones) nearest the cursor — the AoE-awareness cycle for combat.
     internal static void ReviewZones(bool back) => Safe(() => Review(Group.Zones, back ? -1 : 1));
+    internal static void ExitNext() => Safe(() => CycleExit(1));
+    internal static void ExitPrev() => Safe(() => CycleExit(-1));
     internal static void InteractSelected() => Safe(() =>
     {
         // While an ability is armed, I commits the aim on the review selection instead of interacting (see Targeting).
@@ -313,6 +317,15 @@ internal static class Scanner
             }
         }
 
+        // Room name (RoomMap watershed): the planted cursor's room when scouting ahead, else the anchor's. Ready is
+        // false for the first few frames after an area load (the map self-builds once the grid streams in).
+        if (RoomMap.Ready)
+        {
+            var rpos = MapCursor.Has ? MapCursor.Position : (anchor != null ? anchor.Position : Vector3.zero);
+            var room = RoomMap.RoomAt(rpos);
+            if (room != null) parts.Add(RoomMap.Describe(room));
+        }
+
         // Fog "unexplored": query the tile the player is oriented to — the planted cursor when the tile explorer is
         // active (scouting ahead into the unknown), otherwise the anchor's live position (which, being a party unit,
         // is always revealed, so the word only ever fires for a planted cursor sitting on never-seen ground).
@@ -325,9 +338,33 @@ internal static class Scanner
         Speak(parts.Count > 0 ? string.Join(", ", parts) : Loc.T("where.unknown"));
     }
 
+    // V / Shift+V: cycle the current room's exits (doorway openings to neighbouring rooms). Speaks
+    // "Exit to Room N, class" + bearing/distance and plants the shared cursor on the opening so Backspace walks the
+    // party there. The room is resolved from the scan origin (planted cursor, else anchor); the cycle resets when
+    // that room changes. See RTAccess.Exploration.RoomMap.
+    private static void CycleExit(int dir)
+    {
+        if (!RoomMap.Ready) { Speak(Loc.T("scan.no_rooms")); return; }
+        // Scope the cycle to the room the PARTY is in — a stable origin, so re-planting the cursor on an exit each
+        // press (below) doesn't re-resolve the room to a boundary and reset the cycle. Distance is from there too.
+        var anchor = Anchor();
+        var origin = anchor != null ? Geo.Live(anchor) : ScanFrom();
+        var room = RoomMap.RoomAt(origin);
+        if (room == null || room.Exits.Count == 0) { Speak(Loc.T("scan.no_exits")); return; }
+        if (!ReferenceEquals(room, _exitRoom)) { _exitRoom = room; _exitIndex = -1; }
+        var exits = room.Exits;
+        _exitIndex = Wrap(_exitIndex + dir, exits.Count);
+        var ex = exits[_exitIndex];
+        MapCursor.Set(ex.Position); // plant so cursor.move_to (Backspace) walks the party to the opening
+        string line = Loc.T("exit.to_room", new { room = RoomMap.Describe(ex.To) })
+            + ", " + RTAccess.Accessibility.InteractableDescriber.DirectionAndDistance(origin, ex.Position)
+            + ", " + Loc.T("nav.position", new { index = _exitIndex + 1, count = exits.Count });
+        Speak(line);
+    }
+
     // Is the loaded area part flagged indoors? Read from the blueprint's private IndoorType (any value but None is an
     // interior). Best-effort: a null field handle / missing area part / read failure → outdoors (the word is omitted).
-    // (The fog "unexplored" branch is now handled above via FogProbe; room name stays deferred — no RoomMap yet.)
+    // (The fog "unexplored" branch is handled above via FogProbe; the room name via RoomMap.RoomAt above it.)
     private static bool IsIndoors()
     {
         try

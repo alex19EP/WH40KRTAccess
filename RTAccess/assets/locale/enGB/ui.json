@@ -951,6 +951,8 @@
 
   "review.others": "Objects",
   "exit.to_room": "Exit to {room}",
+  "scan.no_rooms": "No room map yet",
+  "scan.no_exits": "No exits from this room",
 
   "where.indoors": "indoors",
   "where.unexplored": "unexplored",
