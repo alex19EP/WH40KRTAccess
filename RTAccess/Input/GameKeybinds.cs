@@ -53,6 +53,9 @@ namespace RTAccess.Input
             (k => k.General.OpenShipCustomization, KeyCode.V, "OpenShipCustomization"),
             (k => k.General.OpenCargoManagement,   KeyCode.B, "OpenCargoManagement"),
             (k => k.General.OpenFormation,         KeyCode.N, "OpenFormation"),
+            // DLC3 Augmentations opener — missed by the original nine (M0 keybind dump found it live on
+            // bare U in StarSystem mode); U stays a free letter for mod verbs.
+            (k => k.General.OpenAugmentations,     KeyCode.U, "OpenAugmentations"),
             (k => k.ActionBar.ChangeWeaponSet,     KeyCode.X, "ChangeWeaponSet"),
         };
 

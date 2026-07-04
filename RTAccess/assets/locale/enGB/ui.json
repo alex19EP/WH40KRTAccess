@@ -1096,5 +1096,16 @@
   "groupchanger.effects": "Active effects: {list}",
   "groupchanger.no_effects": "No active effects",
   "groupchanger.confirm": "Confirm party",
-  "groupchanger.cannot_close": "A party must be chosen to continue."
+  "groupchanger.cannot_close": "A party must be chosen to continue.",
+
+  "systemmap.radar": "Radar contacts: {n}",
+  "systemmap.no_anomalies": "No anomalies in system",
+  "colonymgmt.colonies": "Colonies",
+  "colonymgmt.no_colonies": "No colonies established",
+  "colony.rewards": "Rewards since last visit",
+  "colony.finished_project": "Project finished: {name}",
+  "colony.items_received": "Items received",
+  "colony.cargo_received": "{n} cargo received",
+  "colony.other_rewards": "{n} other rewards",
+  "colony.collect": "Collect"
 }

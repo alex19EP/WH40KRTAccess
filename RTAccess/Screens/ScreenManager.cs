@@ -183,6 +183,10 @@ namespace RTAccess.Screens
             Register(new EquipSelectorScreen());
             Register(new JournalScreen());
             Register(new CharacterInfoScreen());
+            // Colony Management service window (Ctrl+Y; remote colony administration) — layer 10; content
+            // renders through the shared ColonyNodes builders the exploration tablet also uses. M3 of
+            // docs/plans/orbital-listing-wilkes.md.
+            Register(new ColonyManagementScreen());
             // In-game pause/Escape menu (CommonVM.EscMenuContextVM.EscMenu) — layer 20, above contexts/windows,
             // below Settings(25)/MessageBox(30) (it raises a confirm box while staying open).
             Register(new EscMenuScreen());

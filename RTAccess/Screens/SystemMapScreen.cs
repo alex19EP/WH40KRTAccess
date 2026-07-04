@@ -111,6 +111,7 @@ namespace RTAccess.Screens
             b.AddLabel(ControlId.Structural("status:resources"), ResourcesLine);
             b.AddLabel(ControlId.Structural("status:ship"), () => Loc.T(
                 ZoneExit()?.ShipIsMoving.Value == true ? "systemmap.ship_underway" : "systemmap.ship_holding"));
+            b.AddLabel(ControlId.Structural("status:radar"), RadarLine);
             b.PopContext();
 
             // -- Actions --
@@ -411,6 +412,23 @@ namespace RTAccess.Screens
             }
             catch (Exception e) { Main.Log?.Log("resources line failed: " + e.Message); }
             return Loc.T("systemmap.resources_none");
+        }
+
+        // The anomaly radar's readout — sighted players get every un-interacted, non-hidden anomaly as a
+        // radar blip plus a type list after the sweep (SystemScannerVM), so the count + types are parity.
+        private static string RadarLine()
+        {
+            try
+            {
+                var scanner = Game.Instance?.RootUiContext?.SpaceVM?.StaticPartVM?.SystemScannerVM;
+                int n = scanner?.ObjectsList?.Count ?? 0;
+                if (n == 0) return Loc.T("systemmap.no_anomalies");
+                var s = Loc.T("systemmap.radar", new { n });
+                var types = scanner.AnomaliesTypesText;
+                if (types != null && types.Count > 0) s += ": " + string.Join(", ", types);
+                return s;
+            }
+            catch (Exception e) { Main.Log?.Log("radar line failed: " + e.Message); return Loc.T("systemmap.no_anomalies"); }
         }
 
         private static ZoneExitVM ZoneExit() => Game.Instance?.RootUiContext?.SpaceVM?.StaticPartVM?.ZoneExitVM;

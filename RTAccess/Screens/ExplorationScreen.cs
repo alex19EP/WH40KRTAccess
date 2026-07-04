@@ -66,8 +66,19 @@ namespace RTAccess.Screens
             BuildHeader(b, vm, k);
             if (vm.ExplorationScanButtonWrapperVM.ActiveOnScreen.Value) BuildScan(b, vm, k);
             if (vm.ExplorationPointOfInterestListWrapperVM.ActiveOnScreen.Value) BuildPois(b, vm, k);
-            if (vm.ExplorationColonyStatsWrapperVM.ActiveOnScreen.Value) BuildColony(b, vm, k);
-            if (vm.ExplorationColonyProjectsWrapperVM.ActiveOnScreen.Value) BuildProjects(b, vm, k);
+            if (vm.ExplorationColonyRewardsWrapperVM.ActiveOnScreen.Value)
+                ColonyNodes.BuildRewards(b, k, vm.ExplorationColonyRewardsWrapperVM.ColonyRewardsVM);
+            if (vm.ExplorationColonyStatsWrapperVM.ActiveOnScreen.Value)
+                ColonyNodes.BuildComponents(b, k,
+                    vm.ExplorationColonyStatsWrapperVM.ColonyStatsVM,
+                    vm.ExplorationColonyTraitsWrapperVM.ColonyTraitsVM,
+                    vm.ExplorationColonyEventsWrapperVM.ColonyEventsVM,
+                    vm.ExplorationColonyProjectsBuiltListWrapperVM.ColonyProjectsBuiltListVM,
+                    vm.OpenColonyProjects,
+                    () => Locked(vm));
+            if (vm.ExplorationColonyProjectsWrapperVM.ActiveOnScreen.Value)
+                ColonyNodes.BuildProjects(b, k, vm.ExplorationColonyProjectsWrapperVM.ColonyProjectsVM,
+                    () => Locked(vm));
         }
 
         // ---- header (VIEW-owned in the game: read the blueprint with the view's own gating) ----
@@ -187,149 +198,6 @@ namespace RTAccess.Screens
             var s = (string.IsNullOrWhiteSpace(r.Name.Value) ? "???" : r.Name.Value) + ", " + r.Count.Value;
             if (r.IsBeingMined.Value) s += ", " + Loc.T("systemmap.has_extractor");
             return s;
-        }
-
-        // ---- Colony section (stats / traits / events / projects button / built list) ----
-
-        private static void BuildColony(GraphBuilder b, ExplorationVM vm, string k)
-        {
-            b.BeginStop("colony").PushContext(Loc.T("exploration.colony"), role: "list");
-
-            var stats = vm.ExplorationColonyStatsWrapperVM.ColonyStatsVM;
-            int si = 0;
-            if (stats != null)
-                foreach (var stat in stats.StatVMs)
-                {
-                    var s = stat; // capture
-                    if (s == null) continue;
-                    b.AddItem(ControlId.Referenced(s, k + "stat:" + si++), GraphNodes.Button(
-                        () => s.StatName.Value + ": " + s.StatValue.Value
-                              + (s.IsNegativelyModified.Value ? ", " + Loc.T("exploration.stat_reduced") : ""),
-                        () => { },
-                        () => false,
-                        tooltip: () => s.Tooltip.Value));
-                }
-
-            var traits = vm.ExplorationColonyTraitsWrapperVM.ColonyTraitsVM;
-            int ti = 0;
-            if (traits != null)
-                foreach (var trait in traits.TraitsVMs)
-                {
-                    var t = trait; // capture
-                    if (t == null) continue;
-                    b.AddItem(ControlId.Referenced(t, k + "trait:" + ti++), GraphNodes.Button(
-                        () => Loc.T("exploration.trait") + ": " + t.Name.Value,
-                        () => { },
-                        () => false,
-                        tooltip: () => t.Tooltip.Value));
-                }
-
-            var events = vm.ExplorationColonyEventsWrapperVM.ColonyEventsVM;
-            int ei = 0;
-            if (events != null)
-                foreach (var ev in events.EventsVMs)
-                {
-                    var e = ev; // capture
-                    if (e == null) continue;
-                    b.AddItem(ControlId.Referenced(e, k + "event:" + ei++), GraphNodes.Button(
-                        () => Loc.T("exploration.event") + ": " + e.Name.Value,
-                        () => { if (!Locked(vm)) e.HandleColonyEvent(); }, // starts the event dialog in-system
-                        tooltip: () => e.Tooltip?.Value));
-                }
-
-            var built = vm.ExplorationColonyProjectsBuiltListWrapperVM.ColonyProjectsBuiltListVM;
-            int bi = 0;
-            if (built != null)
-                foreach (var proj in built.ProjectsVMs)
-                {
-                    var p = proj; // capture
-                    if (p == null) continue;
-                    b.AddLabel(ControlId.Referenced(p, k + "built:" + bi++), () => BuiltProjectLabel(p));
-                }
-
-            b.AddItem(ControlId.Structural(k + "projects"), GraphNodes.Button(
-                () => Loc.T("exploration.open_projects"),
-                () => { if (!Locked(vm)) vm.OpenColonyProjects(); }));
-            b.PopContext();
-        }
-
-        private static string BuiltProjectLabel(Kingmaker.UI.MVVM.VM.Colonization.Projects.ColonyProjectVM p)
-        {
-            var s = p.Title.Value ?? "";
-            if (p.IsBuilding.Value)
-                s += ", " + Loc.T("exploration.project_building",
-                    new { done = p.Progress.Value, total = p.SegmentsToBuild.Value });
-            return s;
-        }
-
-        // ---- ColonyProjects section: the rank-tiered picker + the selected project's page ----
-
-        private static void BuildProjects(GraphBuilder b, ExplorationVM vm, string k)
-        {
-            var pvm = vm.ExplorationColonyProjectsWrapperVM.ColonyProjectsVM;
-            if (pvm == null) return;
-
-            b.BeginStop("projlist").PushContext(Loc.T("exploration.projects"), role: "list");
-            int pi = 0;
-            foreach (var proj in pvm.NavigationVM.NavigationElements)
-            {
-                var p = proj; // capture
-                if (p == null || !p.ShouldShow.Value) continue;
-                b.AddItem(ControlId.Referenced(p, k + "proj:" + pi++), GraphNodes.ChoiceOption(
-                    () => ProjectCardLabel(p),
-                    () => p.IsSelected.Value,
-                    () => p.SelectPage()));
-            }
-            b.PopContext();
-
-            var page = pvm.ColonyProjectPageVM;
-            b.BeginStop("projpage").PushContext(Loc.T("exploration.project_page"), role: "list");
-            b.AddLabel(ControlId.Structural(k + "pg:title"), () => page.Title.Value ?? "");
-            b.AddLabel(ControlId.Structural(k + "pg:desc"), () => page.Description.Value ?? "");
-            int i = 0;
-            foreach (var req in page.Requirements)
-            {
-                var r = req; // capture
-                if (r == null) continue;
-                b.AddLabel(ControlId.Referenced(r, k + "pg:req:" + i++), () =>
-                    Loc.T("exploration.requires") + ": " + r.Description.Value
-                    + (string.IsNullOrEmpty(r.CountText.Value) ? "" : " " + r.CountText.Value)
-                    + ", " + Loc.T(r.IsChecked.Value ? "exploration.req_met" : "exploration.req_unmet"));
-            }
-            int j = 0;
-            foreach (var rew in page.Rewards)
-            {
-                var r = rew; // capture
-                if (r == null) continue;
-                b.AddLabel(ControlId.Referenced(r, k + "pg:rew:" + j++), () =>
-                    Loc.T("exploration.reward") + ": " + r.Description.Value
-                    + (string.IsNullOrEmpty(r.CountText.Value) ? "" : " " + r.CountText.Value));
-            }
-            b.AddItem(ControlId.Structural(k + "pg:start"), GraphNodes.Button(
-                () => Loc.T("exploration.start_project"),
-                () => { if (!Locked(vm)) pvm.StartProject(); },
-                () => pvm.StartAvailable.Value));
-            b.AddItem(ControlId.Structural(k + "pg:blocked"), GraphNodes.Toggle(
-                () => Loc.T("exploration.show_blocked"),
-                () => pvm.ShowBlockedProjects.Value,
-                () => pvm.SwitchBlockedProjects()));
-            b.AddItem(ControlId.Structural(k + "pg:finished"), GraphNodes.Toggle(
-                () => Loc.T("exploration.show_finished"),
-                () => pvm.ShowFinishedProjects.Value,
-                () => pvm.SwitchFinishedProjects()));
-            b.PopContext();
-        }
-
-        private static string ProjectCardLabel(Kingmaker.UI.MVVM.VM.Colonization.Projects.ColonyProjectVM p)
-        {
-            var parts = new List<string> { p.Title.Value ?? "" };
-            if (p.IsFinished.Value) parts.Add(Loc.T("exploration.project_finished"));
-            else if (p.IsBuilding.Value)
-                parts.Add(Loc.T("exploration.project_building",
-                    new { done = p.Progress.Value, total = p.SegmentsToBuild.Value }));
-            if (p.IsExcluded.Value) parts.Add(Loc.T("state.disabled"));
-            else if (p.IsNotMeetRequirements.Value) parts.Add(Loc.T("exploration.req_unmet"));
-            return string.Join(", ", parts);
         }
 
         // ---- input ----
