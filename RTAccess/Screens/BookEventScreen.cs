@@ -5,20 +5,21 @@ using Kingmaker.Code.UI.MVVM.VM.Dialog.BookEvent; // BookEventVM
 using Kingmaker.Code.UI.MVVM.VM.Dialog.Epilog;    // EpilogVM (a BookEventVM subclass)
 using Kingmaker.DialogSystem.Blueprints;          // BlueprintBookPage
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
     /// <summary>
     /// A book event (<see cref="BookEventVM"/>) — the illustrated storybook page with a passage of narrative
     /// and numbered choices. It rides the SAME dialog HUD context as ordinary dialogue
-    /// (<c>DialogContextVM.BookEventVM</c>, beside <c>DialogVM</c>) and reuses the dialogue
-    /// <c>AnswerVM</c> → <see cref="DialogAnswerButton"/>.
+    /// (<c>DialogContextVM.BookEventVM</c>, beside <c>DialogVM</c>) and reuses the conversation
+    /// <c>AnswerVM</c> → <see cref="DialogNodes.AnswerNode"/>.
     ///
-    /// A page carries several cues (the paragraphs, shown together) plus the answers; we read the whole
-    /// passage when a new page appears (keyed on <c>BlueprintBookPage</c>, like the dialogue cue), and the
-    /// passage is the first focusable element so you can re-read it. Choosing an answer advances to the next
-    /// page in place until the book closes.
+    /// Graph-native and IMMEDIATE MODE: one silent transcript stop declared fresh from the live VM each render
+    /// (the passage lines, then the choices). A page carries several cues (the paragraphs, shown together) plus
+    /// the answers; we read the whole passage when a new page appears (keyed on <c>BlueprintBookPage</c>, like
+    /// the dialogue cue) and point focus at the passage top silently, so you can re-read it. Choosing an answer
+    /// advances to the next page in place until the book closes.
     ///
     /// Epilogue narration is the same thing — <see cref="EpilogVM"/> derives from BookEventVM (it merges its
     /// paragraphs into one cue and carries a <c>Title</c>) — so we pick that VM up too and read its title
@@ -34,8 +35,8 @@ namespace RTAccess.Screens
         // Like dialogue: a book event can hide without closing (cutscene gap / pause menu) — keep state.
         public override bool KeepStateOnPop => true;
 
-        private BlueprintBookPage _builtPage;  // page the tree was built for
-        private BlueprintBookPage _spokenPage; // page we've read aloud
+        private BlueprintBookPage _focusedPage; // page focus was homed to
+        private BlueprintBookPage _spokenPage;  // page read aloud
 
         private static DialogContextVM Context()
         {
@@ -55,9 +56,19 @@ namespace RTAccess.Screens
 
         public override bool IsActive() => Vm() != null;
 
-        public override void OnPush() { Clear(); Reset(); }
-        public override void OnPop() { Clear(); Reset(); }
-        private void Reset() { _builtPage = null; _spokenPage = null; }
+        public override void OnPush() { Reset(); }
+
+        // A hide (cutscene gap / pause menu) POPS us with KeepStateOnPop=true. Clear ONLY the focus marker so the
+        // next OnUpdate re-homes focus to the CURRENT page top (WA ff35982 — otherwise re-showing lands on the
+        // top of the whole transcript); keep the spoken marker so the passage isn't re-read on a mere hide. A
+        // real close (Vm()==null) fully resets.
+        public override void OnPop()
+        {
+            _focusedPage = null;
+            if (Vm() == null) Reset();
+        }
+
+        private void Reset() { _focusedPage = null; _spokenPage = null; }
 
         public override void OnUpdate()
         {
@@ -66,50 +77,65 @@ namespace RTAccess.Screens
             var page = vm.BlueprintBookPage.Value;
             if (page == null) return; // the VM exists a frame before the first page is pushed
 
-            if (!ReferenceEquals(page, _builtPage)) { _builtPage = page; Rebuild(vm); }
+            // On a new page (or after a hide cleared the focus marker), point focus at the passage TOP SILENTLY —
+            // the passage read below is the speech. If the page has no passage rows, the navigator seats the
+            // first answer instead. announce:false always here.
+            if (!ReferenceEquals(page, _focusedPage))
+            {
+                _focusedPage = page;
+                Navigation.Active?.FocusNode(ControlId.Structural(PageKey(vm, page) + "row:0"), announce: false);
+            }
             if (!ReferenceEquals(page, _spokenPage)) { _spokenPage = page; Speak(vm); }
         }
 
-        // Same transcript FlowSheet shape as ordinary dialogue: the passage as the log region, the choices
-        // as the answers region. Focus lands at the top of the passage; Down reaches the choices.
-        private void Rebuild(BookEventVM vm)
-        {
-            Clear();
-            var lines = PassageLines(vm);
+        public override bool BuildsGraph => true;
 
-            var sheet = new FlowSheet();
-            var log = sheet.List(null);
-            UIElement focus = null;
-            foreach (var line in lines)
+        // Same transcript shape as ordinary dialogue: one silent, positions-off scope holding the passage lines,
+        // then the choices. Focus lands at the top of the passage; Down reaches the choices.
+        public override void Build(GraphBuilder b)
+        {
+            var vm = Vm();
+            if (vm == null) return;
+            var page = vm.BlueprintBookPage.Value;
+            if (page == null) return;
+
+            string k = PageKey(vm, page);
+            b.PushContext("", role: null, positions: false);
+
+            var lines = PassageLines(vm);
+            for (int i = 0; i < lines.Count; i++)
             {
-                var text = line;
-                var row = new TextElement(text);
-                log.Item(row);
-                if (focus == null) focus = row;
+                var captured = lines[i];
+                b.AddItem(ControlId.Structural(k + "row:" + i), GraphNodes.Text(() => captured));
             }
 
-            var answers = sheet.List(null);
-            int count = 0;
+            // Choices — the game's own AnswerVM list, through the shared answer node factory (numbered label,
+            // Space tooltip, activation routed through DialogChoiceGate). Keys carry the page identity, so a new
+            // page drops the old choices and adds the new.
             var list = vm.Answers.Value;
             if (list != null)
+            {
+                int ai = 0;
                 foreach (var a in list)
-                    if (a != null) { answers.Item(DialogAnswerButton.For(a)); count++; }
-            if (count == 0) sheet.RemoveRegion(answers);
+                {
+                    if (a == null) continue;
+                    b.AddItem(ControlId.Referenced(a, k + "ans:" + ai++), DialogNodes.AnswerNode(a));
+                }
+            }
 
-            sheet.Reflow();
-            Add(sheet);
-            Navigation.Attach(this);
-            if (focus == null) focus = sheet.FirstFocusable();
-            if (focus != null) Navigation.Focus(focus, announce: false);
+            b.PopContext();
         }
 
         // Read the whole passage once per page, QUEUED (never interrupting — the dialogue rule). Re-reading
         // individual paragraphs is done by arrowing the rows.
-        private void Speak(BookEventVM vm)
+        private static void Speak(BookEventVM vm)
         {
             var lines = PassageLines(vm);
             if (lines.Count > 0) Tts.Speak(string.Join("\n", lines.ToArray()), interrupt: false);
         }
+
+        private static string PageKey(BookEventVM vm, BlueprintBookPage page)
+            => "book:" + vm.GetHashCode() + ":page:" + page.GetHashCode() + ":";
 
         // The page as transcript lines: the epilogue title first (if any), then one line per cue paragraph
         // (RawText = BlueprintCue.DisplayText, split on newlines, rich-text stripped).
