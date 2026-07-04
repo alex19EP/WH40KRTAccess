@@ -76,13 +76,45 @@ namespace RTAccess.Screens
 
         // One member row: Enter moves them between party and reserve — the card's own Click command
         // (GroupChangerCommonVM subscribes it to MoveCharacter). Locked = required by the operation.
+        // Space reads the tooltip-only detail (active effects, an overload warning) the card conveys
+        // only as icons.
         private static NodeVtable CharacterNode(GroupChangerCharacterVM c)
-            => GraphNodes.Button(
-                () => c.CharacterName
-                      + (c.IsLock.Value ? ", " + Loc.T("groupchanger.required") : "")
-                      + (c.IsLevelUp ? ", " + Loc.T("groupchanger.levelup") : ""),
-                () => c.Click.Execute(c),
-                () => !c.IsLock.Value);
+        {
+            var vt = GraphNodes.Button(() => CharLabel(c), () => c.Click.Execute(c), () => !c.IsLock.Value);
+            vt.OnTooltip = () => TooltipScreen.Open(c.CharacterName, Detail(c));
+            return vt;
+        }
+
+        // The browse-label mirrors the card: name, the level number the card prints, and the badges it
+        // overlays (lock = required-in-party, the level-up flag). In-party vs reserve is conveyed by
+        // which list the card sits in (the two Tab-stop headers) — how the two columns read visually.
+        private static string CharLabel(GroupChangerCharacterVM c)
+        {
+            string s = c.CharacterName + ", " + Loc.T("groupchanger.level", new { level = c.CharacterLevel });
+            if (c.IsLock.Value) s += ", " + Loc.T("groupchanger.required");
+            if (c.IsLevelUp) s += ", " + Loc.T("groupchanger.levelup");
+            return s;
+        }
+
+        // Space detail — the tooltip-only fields the card only hints at with icons: an overload warning
+        // and the active effects (the buff row). Kept off the browse-label to keep browsing terse.
+        private static string Detail(GroupChangerCharacterVM c)
+        {
+            var lines = new List<string>();
+            if (c.IsCharacterOverload) lines.Add(Loc.T("groupchanger.overloaded"));
+            var names = new List<string>();
+            var buffs = c.BuffPartVm?.Buffs;
+            if (buffs != null)
+                foreach (var b in buffs)
+                {
+                    string n = b?.Buff?.Name;
+                    if (!string.IsNullOrWhiteSpace(n)) names.Add(n);
+                }
+            lines.Add(names.Count > 0
+                ? Loc.T("groupchanger.effects", new { list = string.Join(", ", names) })
+                : Loc.T("groupchanger.no_effects"));
+            return string.Join("\n", lines);
+        }
 
         // The view's own OnAccept: net-gate, then the AcceptChangeGroup command with the VM's live lists.
         private static void Accept(GroupChangerVM vm)

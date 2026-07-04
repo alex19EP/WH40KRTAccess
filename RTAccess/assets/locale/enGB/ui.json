@@ -933,6 +933,8 @@
   "levelup.complete": "Level up complete.",
   "filter.all": "All",
   "settings.apply": "Apply",
+  "settings.show_statistics": "Open statistics settings",
+  "settings.delete_statistics": "Delete statistics data",
   "bind.slot": "binding {index}",
   "tutorial.title": "Tutorial",
   "tutorial.prev_page": "Previous page",
@@ -1089,6 +1091,10 @@
   "groupchanger.reserve_empty": "No one in reserve",
   "groupchanger.required": "required",
   "groupchanger.levelup": "level up available",
+  "groupchanger.level": "level {level}",
+  "groupchanger.overloaded": "Overloaded",
+  "groupchanger.effects": "Active effects: {list}",
+  "groupchanger.no_effects": "No active effects",
   "groupchanger.confirm": "Confirm party",
   "groupchanger.cannot_close": "A party must be chosen to continue."
 }
