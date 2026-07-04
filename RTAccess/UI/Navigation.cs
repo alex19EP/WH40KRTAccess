@@ -17,8 +17,10 @@ namespace RTAccess.UI
         public static void ScreenClosed(Screen screen) => Active?.ScreenClosed(screen);
 
         /// <summary>True when something is focused (the navigator owns the keys). False in an unfocused
-        /// screen like exploration, where arrows bubble to the overlay.</summary>
-        public static bool HasFocus => Active != null && Active.Current != null;
+        /// screen like exploration, where arrows bubble to the overlay. Delegates to the navigator's own
+        /// <see cref="Navigator.HasFocus"/> (node presence on the graph navigator, where the focused node
+        /// may have no backing UIElement), so every consumer inherits the right answer.</summary>
+        public static bool HasFocus => Active != null && Active.HasFocus;
 
         /// <summary>The currently focused element, or null.</summary>
         public static UIElement Current => Active?.Current;

@@ -125,6 +125,29 @@ namespace RTAccess.UI.Graph
         /// <summary>If true, type-ahead never matches this control.</summary>
         public bool ExcludeFromSearch;
 
+        // ---- sounds (graph-native controls; adapter nodes read the backing UIElement's slots instead).
+        // These mirror UIElement's three-slot model but are typed OPAQUE (object): this file is BCL-only
+        // by design (the tests compile Graph/** standalone, enforcing the boundary), while the slot
+        // values are game types. The GraphNavigator casts at its chokepoints.
+
+        /// <summary>Optional. The game's themed hover sound-type for a focus MOVE onto this control — a
+        /// boxed <c>Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum</c>. Null = the generic button hover; a
+        /// boxed <c>NoSound</c> value SILENCES hover (the dense-grid convention). Played by the navigator
+        /// exactly on the interrupt (keypress-driven) move paths.</summary>
+        public object HoverSound;
+
+        /// <summary>Optional. The game's themed click sound-type for activation — a boxed
+        /// <c>Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum</c>. Takes precedence over
+        /// <see cref="ActivateSound"/> when set (the game's two distinct click mechanisms — a control
+        /// uses one or the other).</summary>
+        public object ClickSound;
+
+        /// <summary>Optional. The blueprint-typed activation sound — a
+        /// <c>Kingmaker.UI.Sound.BlueprintUISound.UISound</c> instance. Null (and no
+        /// <see cref="ClickSound"/>) = the control's own action plays its sound (the VM/view path), so
+        /// the navigator adds nothing.</summary>
+        public object ActivateSound;
+
         /// <summary>Optional (Expandable groups): override HOW expansion state changes. When null the
         /// engine mutates the persistent expansion set (<see cref="GraphState.Expanded"/>); the adapter
         /// wires these to the retained Container's Expand/Collapse instead.</summary>

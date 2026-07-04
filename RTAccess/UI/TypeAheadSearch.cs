@@ -12,9 +12,12 @@ namespace RTAccess.UI
     /// Builds a filtered results list over a flat item list with TIERED matching: start-of-string
     /// whole word, start-of-string prefix, mid-string whole word, mid-string word prefix, substring
     /// anywhere, then space-delimited word-prefix abbreviation ("ga pi" matches "gas pipe"). Within a
-    /// tier, shorter names rank first (match position breaks ties), and matches in the item's NAME
-    /// (before the first comma) rank ahead of matches in its appended metadata. Diacritics are
-    /// ignored. Typing the same letter repeatedly cycles the starts-with results.
+    /// tier, items keep their LIST ORDER (the screen's element order — ear-driven change from
+    /// OniAccess's shortest-name ranking: "l" must land on Load Game by menu position, not License by
+    /// length), and matches in the item's NAME (before the first comma) rank ahead of matches in its
+    /// appended metadata. Diacritics are ignored. Typing the same letter repeatedly cycles ALL of that
+    /// letter's matches in list order (starts-with first, then the weaker tiers — so "l" reaches
+    /// Load Game, License, then DLC).
     /// </summary>
     public class TypeAheadSearch
     {
@@ -84,14 +87,14 @@ namespace RTAccess.UI
         /// <summary>Run the tiered search over the items and move/announce the best result.</summary>
         public void Search(int itemCount, System.Func<int, string> nameByIndex, System.Action<int> announceResult)
         {
-            // Repeat single-letter: typing the same letter again cycles the starts-with results
-            // (b -> Beaver, b -> Bat, b -> Brewery).
+            // Repeat single-letter: typing the same letter again cycles ALL its matches in list
+            // order (l -> Load Game, l -> License, l -> DLC), wrapping.
             string bufferStr = _buffer.ToString();
             if (_isSearchActive && _resultIndices.Count > 0 && _buffer.Length > 1 && IsAllSameChar(bufferStr))
             {
                 _buffer.Length = 1;
                 if (announceResult != null) _announceResult = announceResult;
-                CycleStartsWithResults();
+                NavigateResults(1);
                 return;
             }
 
@@ -137,10 +140,7 @@ namespace RTAccess.UI
                 }
             }
 
-            for (int t = 0; t < TierCount; t++)
-                if (_tierIndices[t].Count > 1)
-                    SortByLength(_tierIndices[t], _tierNames[t], _tierPositions[t], _tierSortLengths[t], _tierInSegment[t]);
-
+            // Within a tier, entries stay in ITEM order (collected 0..n above) — no length re-ranking.
             // Merge: name (pre-comma) matches across all tiers before metadata (post-comma) matches.
             _workIndices.Clear();
             _workNames.Clear();
@@ -173,23 +173,6 @@ namespace RTAccess.UI
                 _isSearchActive = true;
                 AnnounceCurrentResult();
             }
-        }
-
-        // Cycle forward within starts-with results only, so single-letter repeat doesn't wrap into
-        // mid-string or substring matches.
-        private void CycleStartsWithResults()
-        {
-            if (_resultIndices.Count == 0) return;
-            char letter = char.ToLowerInvariant(_buffer[0]);
-            int count = 0;
-            for (int i = 0; i < _resultNames.Count; i++)
-            {
-                if (_resultNames[i].Length > 0 && char.ToLowerInvariant(_resultNames[i][0]) == letter) count++;
-                else break;
-            }
-            if (count == 0) return;
-            _resultCursor = (_resultCursor + 1) % count;
-            AnnounceCurrentResult();
         }
 
         /// <summary>Step within the filtered results (wrapping). +1 next, -1 previous.</summary>
@@ -227,35 +210,6 @@ namespace RTAccess.UI
             for (int i = 1; i < s.Length; i++)
                 if (s[i] != first) return false;
             return true;
-        }
-
-        // Insertion-sort parallel lists by sort length ascending, position as tiebreaker (stable).
-        private static void SortByLength(List<int> indices, List<string> names, List<int> positions,
-            List<int> sortLengths, List<int> inSegment)
-        {
-            for (int i = 1; i < positions.Count; i++)
-            {
-                int pos = positions[i];
-                int idx = indices[i];
-                string name = names[i];
-                int len = sortLengths[i];
-                int seg = inSegment[i];
-                int j = i - 1;
-                while (j >= 0 && (sortLengths[j] > len || (sortLengths[j] == len && positions[j] > pos)))
-                {
-                    positions[j + 1] = positions[j];
-                    indices[j + 1] = indices[j];
-                    names[j + 1] = names[j];
-                    sortLengths[j + 1] = sortLengths[j];
-                    inSegment[j + 1] = inSegment[j];
-                    j--;
-                }
-                positions[j + 1] = pos;
-                indices[j + 1] = idx;
-                names[j + 1] = name;
-                sortLengths[j + 1] = len;
-                inSegment[j + 1] = seg;
-            }
         }
 
         /// <summary>Match tier for a prefix against a name (both lowercase), or -1. 0 = start whole

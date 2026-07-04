@@ -118,6 +118,13 @@ namespace RTAccess.Input
                 .AddBinding(KeyCode.Space).YieldsWhenUnfocused();
             InputManager.Register("ui.home", "Jump to first item", InputCategory.UI).AddBinding(KeyCode.Home);
             InputManager.Register("ui.end", "Jump to last item", InputCategory.UI).AddBinding(KeyCode.End);
+            // Ctrl+Up/Down jump between regions of a sheet (the navigators consume these only while the
+            // focus is inside a regioned structure; elsewhere the chord bubbles). Localized as
+            // bind.ui.regionPrev / bind.ui.regionNext in settings.json.
+            InputManager.Register("ui.regionPrev", "Previous sheet region", InputCategory.UI)
+                .AddBinding(KeyCode.UpArrow, ctrl: true).Repeating();
+            InputManager.Register("ui.regionNext", "Next sheet region", InputCategory.UI)
+                .AddBinding(KeyCode.DownArrow, ctrl: true).Repeating();
 
             // ---- Exploration: the scanner / review cursor (a categorized, distance-sorted browse of everything in
             // the area). Live only while the in-game screen has world control (see InGameScreen / ControlState), so

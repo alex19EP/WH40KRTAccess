@@ -20,6 +20,14 @@ namespace RTAccess.UI
         /// <summary>The currently focused element, or null (e.g. an unfocused exploration screen).</summary>
         public abstract UIElement Current { get; }
 
+        /// <summary>True when the navigator holds an engaged focus — the single chokepoint
+        /// <see cref="Navigation.HasFocus"/> reads (and through it chord claiming, the in-game screen's
+        /// category flip, and every exploration gate). Default: an element is focused. GraphNavigator
+        /// overrides with NODE presence, because a graph-native node's focus has no backing UIElement —
+        /// a Current-based read would mis-report "unfocused" there and leak the YieldsWhenUnfocused
+        /// chords (Space/Escape) to the game while our handlers also act: a double-fire.</summary>
+        public virtual bool HasFocus => Current != null;
+
         /// <summary>Bind to a screen. Re-attaching the SAME screen means "content changed" (focus and
         /// announce memory survive); a new screen resets both.</summary>
         public abstract void Attach(Screen screen);
