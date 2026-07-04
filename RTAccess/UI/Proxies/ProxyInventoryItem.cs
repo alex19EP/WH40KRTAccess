@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using Kingmaker;
+using Kingmaker.Blueprints.Root.Strings;
+using Kingmaker.Cargo;
 using Kingmaker.Code.UI.MVVM.VM.Slots;
 using Kingmaker.GameCommands;
+using Kingmaker.Items;
 using Kingmaker.PubSubSystem.Core;
 using Owlcat.Runtime.UI.Tooltips;
 using RTAccess.Screens;
@@ -67,6 +70,26 @@ namespace RTAccess.UI.Proxies
             return t != null && t.Count > 0 ? t[t.Count - 1] : null;
         }
 
+        // Space drills into the item's own card (above); when the slot also carries compare-vs-equipped
+        // templates (the LEADING entries — the equipped items rendered with deltas against this item), expose
+        // them as extra sections so Space opens a drill menu: the item first, then each comparison. Mirrors
+        // the game's hover, which shows the item card alongside the equipped items it would replace.
+        public override IReadOnlyList<(string label, string body)> GetTooltipSections()
+        {
+            var t = _slot?.Tooltip.Value;
+            if (t == null || t.Count <= 1) return null; // count 1 = own card only, no comparison
+            int compares = t.Count - 1;
+            var list = new List<(string, string)>();
+            for (int i = 0; i < compares; i++)
+            {
+                var body = RTAccess.Accessibility.TooltipReader.GetFull(t[i]);
+                if (string.IsNullOrWhiteSpace(body)) continue;
+                var label = compares > 1 ? Loc.T("inv.compare_n", new { index = i + 1 }) : Loc.T("inv.compare");
+                list.Add((label, body));
+            }
+            return list.Count > 0 ? list : null;
+        }
+
         public override IEnumerable<ElementAction> GetActions()
         {
             if (_slot == null || !_slot.HasItem) yield break;
@@ -78,24 +101,30 @@ namespace RTAccess.UI.Proxies
         }
 
         // The live context-menu set — mirrors InventorySlotPCView.SetupContextMenu, each entry gated by the
-        // same VM predicate, evaluated now (so a non-applicable action just isn't listed).
+        // same VM predicate, evaluated now (so a non-applicable action just isn't listed). Labels are the
+        // game's own localized context-menu strings (pass-through game content).
         private void OpenMenu()
         {
             var labels = new List<string>();
             var runs = new List<Action>();
             void Add(bool when, string label, Action run) { if (when) { labels.Add(label); runs.Add(run); } }
 
-            Add(_slot.IsEquipPossible, "Equip", Equip);
-            Add(_slot.IsInStash && _slot.CanTransferToCargo, "Send to cargo", MoveToCargo);
-            Add(_slot.SlotsGroupType == ItemSlotsGroupType.Cargo && _slot.CanTransferToInventory,
-                "Send to inventory", MoveToInventory);
-            Add(_slot.IsPosibleSplit, "Split", Split);
-            Add(_slot.HasItem && _slot.IsInStash, "Drop", Drop);
-            Add(_slot.HasItem,
-                (_slot.Item.Value != null && _slot.Item.Value.IsFavorite) ? "Remove from favorites" : "Add to favorites",
-                ToggleFavorite);
+            var item = _slot.Item.Value;
+            var cm = UIStrings.Instance.ContextMenu;
 
-            if (labels.Count == 0) { Tts.Speak("No actions", interrupt: true); return; }
+            Add(_slot.IsEquipPossible, cm.Equip.Text, Equip);
+            Add(_slot.IsInStash && _slot.CanTransferToCargo, UIStrings.Instance.LootWindow.SendToCargo.Text, MoveToCargo);
+            Add(_slot.SlotsGroupType == ItemSlotsGroupType.Cargo && _slot.CanTransferToInventory,
+                UIStrings.Instance.LootWindow.SendToInventory.Text, MoveToInventory);
+            Add(_slot.IsPosibleSplit, cm.Split.Text, Split);
+            Add(_slot.HasItem && _slot.IsInStash, cm.Drop.Text, Drop);
+            Add(_slot.HasItem, (item != null && item.IsFavorite) ? cm.RemoveFromFav.Text : cm.AddToFav.Text, ToggleFavorite);
+            // Auto-add-to-Cargo: a per-item toggle (game shows a checkmark) — we append its on/off state.
+            Add(item != null && CargoHelper.CanTransferFromCargo(item) && CargoHelper.CanTransferToCargo(item),
+                cm.AutoAddToCargo.Text + ", " + Loc.T(item != null && item.ToCargoAutomatically ? "value.on" : "value.off"),
+                () => _slot.AddToCargoAutomatically());
+
+            if (labels.Count == 0) { Tts.Speak(Loc.T("inv.no_actions"), interrupt: true); return; }
             var actions = runs;
             ChoiceSubmenuScreen.Open(Name(), labels, -1, idx => { if (idx >= 0 && idx < actions.Count) actions[idx]?.Invoke(); });
         }

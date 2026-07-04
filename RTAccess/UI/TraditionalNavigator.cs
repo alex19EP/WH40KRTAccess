@@ -126,20 +126,27 @@ namespace RTAccess.UI
             // "psyker" / "Golden Throne" as <link>s), resolved to their definitions.
             var links = RTAccess.Accessibility.GlossaryLinks.Gather(el);
 
-            if (links.Count == 0)
+            // Extra rendered sections the element carries (e.g. an inventory item's compare-vs-equipped cards).
+            var sections = el.GetTooltipSections();
+            bool hasSections = sections != null && sections.Count > 0;
+
+            if (links.Count == 0 && !hasSections)
             {
-                // No terms → the single-tooltip case (unchanged): open the body directly, or say there's none.
+                // Nothing extra → the single-tooltip case (unchanged): open the body directly, or say none.
                 if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip")); return; }
                 RTAccess.Screens.TooltipScreen.Open(el.GetLabelText(), body);
                 return;
             }
 
-            // Terms present → a drill chooser: the element's own tooltip first (if any), then each glossary term.
+            // A drill chooser: the element's own tooltip first (if any), then its extra sections, then terms.
             var items = new List<(string, string)>();
             if (!string.IsNullOrWhiteSpace(body))
                 items.Add((el.GetLabelText() ?? Loc.T("nav.details"), body));
+            if (hasSections) items.AddRange(sections);
             foreach (var e in links) items.Add((e.Label, e.Body));
-            RTAccess.Screens.DrillMenuScreen.Open(Loc.T("nav.references"), items);
+            // Title by the element (its own name) when it carries sections; glossary-only keeps "References".
+            RTAccess.Screens.DrillMenuScreen.Open(
+                hasSections ? (el.GetLabelText() ?? Loc.T("nav.references")) : Loc.T("nav.references"), items);
         }
 
         private bool Arrow(NavDirection dir)

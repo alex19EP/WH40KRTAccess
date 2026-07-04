@@ -21,9 +21,10 @@ namespace RTAccess.Screens
     /// mass-loot prompt raised when the party reaches an area exit with unlooted loot: it lists everything lootable
     /// in the area with <b>Take all and leave</b> (<see cref="LootVM.TryCollectLoot"/>, which then fires the area
     /// transition), <b>Leave without taking</b> (<see cref="LootVM.LeaveZone"/>), and Escape = <b>Stay</b>
-    /// (<see cref="LootVM.Close"/> cancels the transition). OneSlot (Pass 3, device insert) and PlayerChest (Pass 4,
-    /// two-way stash + cargo) have distinct flows and stay gated off — <see cref="IsActive"/> allows only the
-    /// supported modes. Some loot (star-system finds) also carries a skill-check result, read as a header line.
+    /// (<see cref="LootVM.Close"/> cancels the transition). OneSlot (Pass 3, device insert) has a distinct flow and
+    /// lives in its own <see cref="OneSlotLootScreen"/>; PlayerChest (Pass 4, two-way stash + cargo) stays gated off —
+    /// <see cref="IsActive"/> allows only the supported modes. Some loot (star-system finds) also carries a skill-check
+    /// result, read as a header line.
     /// </summary>
     public sealed class LootScreen : Screen
     {
@@ -78,7 +79,7 @@ namespace RTAccess.Screens
         }
 
         // Pass 1 (read/take: chest, environment, body) + Pass 2 (ZoneExit: mass-loot before leaving). OneSlot
-        // (device insert) and PlayerChest (two-way stash + cargo) have distinct flows and stay gated off for now.
+        // (device insert) has its own OneSlotLootScreen; PlayerChest (two-way stash + cargo) stays gated off for now.
         private static bool IsSupportedMode(LootContextVM.LootWindowMode mode)
             => mode == LootContextVM.LootWindowMode.StandardChest
             || mode == LootContextVM.LootWindowMode.Short

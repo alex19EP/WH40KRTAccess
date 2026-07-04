@@ -55,6 +55,13 @@ namespace RTAccess.UI
         /// <see cref="GetTooltipTemplate"/> is a separate later feature.)</summary>
         public virtual string GetTooltipText() => null;
 
+        /// <summary>Extra tooltip SECTIONS beyond this element's own tooltip — each an already-rendered
+        /// (label, body) pair. When present, Space opens the drill menu with the main tooltip first, then
+        /// these, then any glossary links. Used to surface an inventory item's compare-vs-equipped readouts
+        /// (mirroring the game's hover, which shows the item card plus the equipped items it would replace).
+        /// Default none.</summary>
+        public virtual System.Collections.Generic.IReadOnlyList<(string label, string body)> GetTooltipSections() => null;
+
         /// <summary>Resolve a NON-glossary inline link this element specifically knows how to handle —
         /// e.g. a dialogue skill-check link, built from the element's own check data — given the link's
         /// raw id and the keys the game parsed from it (<c>UIUtility.GetKeysFromLink</c>). Default null

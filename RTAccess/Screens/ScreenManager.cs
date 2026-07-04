@@ -152,6 +152,11 @@ namespace RTAccess.Screens
             // Service windows (CurrentServiceWindow-driven, Surface OR Space) — layer 10, above the in-game
             // base context. Each reads the live game VM / unit; ServiceWindowAnnounce speaks the window name.
             Register(new InventoryScreen());
+            // Empty-slot equip selector (InventoryDollVM.InventorySelectorWindowVM) — layer 12, Exclusive. Raised
+            // from a doll slot (Enter on an empty one / "Choose item" on a filled one → HandleChangeItem), it sits
+            // just above the InventoryScreen (10) and lists the equippable party items. Confirm/Unequip/Back drive
+            // the game's own selector callbacks. See docs/plans/gridless-stocking-babbage.md (slice 4).
+            Register(new EquipSelectorScreen());
             Register(new JournalScreen());
             Register(new CharacterInfoScreen());
             // In-game pause/Escape menu (CommonVM.EscMenuContextVM.EscMenu) — layer 20, above contexts/windows,
@@ -169,12 +174,28 @@ namespace RTAccess.Screens
             // any multi-entrance object raises. Mirrors the reachable rooms; activating one runs the real
             // AreaTransition. Not a ServiceWindowsType, so it carries its own ScreenName announce.
             Register(new TransitionScreen());
+            // Loot window (Surface/Space StaticPartVM.LootContextVM.LootVM) — layer 24, Exclusive. Interacting with
+            // a container already opens this window; the screen makes it navigable (item list + Take all + Close).
+            // Pass 1 handles the read-and-take modes (StandardChest/Short/ShortUnit); ZoneExit/OneSlot/PlayerChest
+            // are gated off in LootScreen.IsActive until their passes. See docs/plans/tiered-gathering-knuth.md.
+            Register(new LootScreen());
+            // The "collect all before leaving?" confirm the game raises from a ZoneExit loot window's collect-all
+            // (ExitLocationWindowVM) — layer 26, Exclusive, sits directly on the LootScreen (24) that spawned it.
+            Register(new ExitLocationScreen());
+            // OneSlot device-insert loot window (LootVM.IsOneSlot) — layer 24, Exclusive. A device you put a party
+            // item into (fuse/cog/key). LootScreen gates OneSlot out of its modes, so exactly one is ever active.
+            // Insert via the game's InventoryHelper.InsertToInteractionSlot. See docs/plans/tiered-gathering-knuth.md.
+            Register(new OneSlotLootScreen());
+            // PlayerChest loot window (LootVM.IsPlayerStash) — layer 24, Exclusive. The personal shared stash: a two-way
+            // Chest + Inventory move (withdraw via ILootHandler.HandleChangeLoot, deposit via IInventoryHandler
+            // .TryMoveToCargo). LootScreen/OneSlotLootScreen both exclude it, so exactly one loot screen is ever active.
+            Register(new PlayerChestScreen());
             // Character level-up (CharacterInfoVM's Progression component in LevelUp mode) — layer 26, Exclusive,
             // sits on and suppresses the read-only CharacterInfoScreen (10). Opened by that screen's "Level Up"
             // action (HandleOpenCharacterInfoPage(LevelProgression)). Career pick → rank selections → commit.
             // See docs/plans/ranked-ascending-lamport.md.
             Register(new LevelUpScreen());
-            // TODO: Vendor, Loot, Encyclopedia + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
+            // TODO: Vendor, Encyclopedia + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }
     }
