@@ -333,7 +333,7 @@ namespace RTAccess.UI
         {
             if (_search.IsSearchActive)
             {
-                if (_searchFocus != null && Current != _searchFocus)
+                if (_searchFocusId != null && !_searchFocusId.Equals(_graph?.CurrentNode?.Id))
                     ClearSearch(announce: false); // focus moved under us → results are stale
                 else if (action.Key == "ui.home" && _search.ResultCount > 0) { _search.JumpToFirstResult(); return true; }
                 else if (action.Key == "ui.end" && _search.ResultCount > 0) { _search.JumpToLastResult(); return true; }
@@ -845,7 +845,7 @@ namespace RTAccess.UI
         private readonly TypeAheadSearch _search = new TypeAheadSearch();
         private readonly List<UIElement> _searchItems = new List<UIElement>();
         private readonly List<GraphNode> _searchNodes = new List<GraphNode>(); // graph-native scope
-        private UIElement _searchFocus;
+        private ControlId _searchFocusId; // where the last result landed (staleness check)
         private RTAccess.Screens.Screen _lastTypeaheadScreen;
         private int _searchHeldDir;
         private float _searchRepeatIn;
@@ -995,7 +995,7 @@ namespace RTAccess.UI
             Speak(ComposeMove(_lastSpokenNode, node, entry: false), interrupt: true);
             _lastSpokenKey = node.Id;
             _lastSpokenNode = node;
-            _searchFocus = Current; // null on graph-native screens; the staleness check keys on it being unchanged
+            _searchFocusId = node.Id; // the staleness check clears results if focus moves off this
         }
 
         private static void CollectSearchLeaves(Container c, List<UIElement> outList)
@@ -1023,7 +1023,7 @@ namespace RTAccess.UI
             if (target is Container c && c.Shape != ContainerShape.Tree)
                 target = c.FirstFocusable() ?? target;
             FocusAndAnnounce(target, interrupt: true);
-            _searchFocus = Current;
+            _searchFocusId = _graph?.CurrentNode?.Id;
         }
 
         private void ClearSearch(bool announce)
@@ -1032,7 +1032,7 @@ namespace RTAccess.UI
             _search.Clear();
             _searchItems.Clear();
             _searchNodes.Clear();
-            _searchFocus = null;
+            _searchFocusId = null;
             _searchHeldDir = 0;
             if (announce && had) Speak(Loc.T("search.cleared"), interrupt: true);
         }
