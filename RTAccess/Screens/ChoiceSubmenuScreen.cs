@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
@@ -9,8 +9,12 @@ namespace RTAccess.Screens
     /// A list of options to pick from (e.g. a dropdown's values), pushed as a CHILD SCREEN of whatever
     /// screen opened it (<see cref="Screen.PushChild"/>). As a child it's the focused screen while open and
     /// owns the keyboard; selecting an option or backing out removes it, and ScreenManager re-focuses the
-    /// parent on its remembered control (the dropdown) automatically. Built eagerly in OnPush, so focus
-    /// lands on the current option immediately. Reusable for any "open a list and pick one".
+    /// parent on its remembered control (the dropdown) automatically. Reusable for any "open a list and
+    /// pick one" interaction.
+    ///
+    /// Graph-native: the option list is immutable per instance, and <c>SetStart</c> lands focus on the
+    /// CURRENT option (the graph's start node), so opening reads the selected value first — the landing
+    /// the old retained tree got from the selected-child preference.
     /// </summary>
     public sealed class ChoiceSubmenuScreen : Screen
     {
@@ -36,29 +40,30 @@ namespace RTAccess.Screens
         public override string ScreenName => _title;
         public override bool IsActive() => false; // never poll-pushed — only ever a child screen
 
-        public override void OnPush() { Clear(); Build(); }
-        public override void OnPop() { Clear(); }
-
         public override IEnumerable<ElementAction> GetActions()
         {
+            // Back closes the submenu without changing the value.
             yield return new ElementAction(ActionIds.Back, Message.Localized("ui", "action.close"), _ => Close());
         }
 
         private void Close() => ParentScreen?.RemoveChild(this);
 
-        private void Build()
+        public override bool BuildsGraph => true;
+
+        public override void Build(GraphBuilder b)
         {
-            var list = new ListContainer();
             for (int i = 0; i < _options.Count; i++)
             {
                 int idx = i;
-                list.Add(new ProxyChoiceOption(_options[i], i == _current, () =>
-                {
-                    _onSelect?.Invoke(idx);
-                    Close();
-                }));
+                string label = _options[i];
+                // Snapshot is safe: the submenu is ephemeral (a fresh instance per open, closed by the
+                // selection itself), so the selected state can't change while it lives.
+                b.AddItem(ControlId.Structural("choice:" + i), GraphNodes.ChoiceOption(
+                    () => label, () => idx == _current,
+                    () => { _onSelect?.Invoke(idx); Close(); }));
             }
-            Add(list);
+            if (_current >= 0 && _current < _options.Count)
+                b.SetStart(ControlId.Structural("choice:" + _current)); // land on the current option
         }
     }
 }
