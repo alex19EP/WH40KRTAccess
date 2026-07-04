@@ -1,7 +1,8 @@
 using Kingmaker;
+using Kingmaker.Blueprints.Root.Strings; // UIStrings.CommonTexts — the card's Accept / Cancel texts
 using Kingmaker.Code.UI.MVVM.VM.Loot;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
@@ -10,12 +11,15 @@ namespace RTAccess.Screens
     /// It is raised by the game's own collect-all path on a ZoneExit loot prompt
     /// (<c>LootCollectorVM.CollectAll → LootVM.HandleOpenExitWindow</c>) — which our <see cref="LootScreen"/> Take-all
     /// invokes verbatim rather than reimplementing. Header + description + hint are read as the screen name;
-    /// <b>Collect all and leave</b> = <see cref="ExitLocationWindowVM.Confirm"/> (collect everything + area transition),
+    /// <b>Accept</b> = <see cref="ExitLocationWindowVM.Confirm"/> (collect everything + area transition),
     /// <b>Cancel</b> / Back = <see cref="ExitLocationWindowVM.Decline"/> (return to the loot list, no transition).
+    /// Button labels mirror the card: <c>ExitLocationWindowBaseView.BindViewImplementation</c> writes
+    /// <c>UIStrings.CommonTexts.Accept</c>/<c>Cancel</c> on the buttons, so they pass through here (and follow
+    /// the game's language), with the mod's locale keys as fallbacks.
     ///
-    /// Built as a plain <see cref="ListContainer"/> of buttons in OnPush — the same proven modal shape as
-    /// <see cref="VariativeInteractionScreen"/> (a FlowSheet is for item tables and left this two-choice confirm
-    /// without a reachable focus target). Exclusive, layer 26 — directly above the LootScreen (24) that spawned it.
+    /// Graph-native: the two buttons declared fresh from the live VM every render. Node keys carry the VM's
+    /// identity, so a confirm swapped under us drops the old keys and focus re-homes with a fresh readout —
+    /// no rebuild bookkeeping. Exclusive, layer 26 — directly above the LootScreen (24) that spawned it.
     /// </summary>
     public sealed class ExitLocationScreen : Screen
     {
@@ -39,26 +43,23 @@ namespace RTAccess.Screens
             return loot?.ExitLocationWindowVM?.Value;
         }
 
-        private ExitLocationWindowVM _built;
+        public override bool BuildsGraph => true;
 
-        // Build in OnPush so a focus target exists before the navigator attaches; rebuild only if the game swaps
-        // the confirm VM under us.
-        public override void OnPush() { _built = null; Rebuild(); }
-        public override void OnPop() { Clear(); _built = null; }
-        public override void OnUpdate() { Rebuild(); }
-
-        private void Rebuild()
+        public override void Build(GraphBuilder b)
         {
             var vm = Vm();
-            if (vm == null || vm == _built) return;
-            _built = vm;
-            Clear();
-            var list = new ListContainer();
-            // Accept → the game's Confirm(): collect everything, close the loot window, fire the area transition.
-            list.Add(new ProxyActionButton(Loc.T("loot.exit_accept"), () => true, () => Vm()?.Confirm(), actionVerb: "choose"));
-            // Decline → return to the loot list (no transition). Also on Escape (Back), below.
-            list.Add(new ProxyActionButton(Loc.T("action.cancel"), () => true, () => Vm()?.Decline(), actionVerb: "choose"));
-            Add(list);
+            if (vm == null) return;
+            string k = "exitloc:" + vm.GetHashCode() + ":";
+
+            // Accept → the game's Confirm(): collect everything, close the loot window, fire the area
+            // transition. The fallback keeps the old descriptive label should the game string go missing.
+            b.AddItem(ControlId.Structural(k + "accept"), GraphNodes.Button(
+                () => GameText.Or(() => UIStrings.Instance.CommonTexts.Accept, "loot.exit_accept"),
+                () => Vm()?.Confirm()));
+            // Cancel → return to the loot list (no transition). Also on Escape (Back), below.
+            b.AddItem(ControlId.Structural(k + "cancel"), GraphNodes.Button(
+                () => GameText.Action("cancel"),
+                () => Vm()?.Decline()));
         }
 
         // Back (Escape) = decline: dismiss the confirm and return to the loot list; the transition does NOT fire.
