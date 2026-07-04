@@ -827,25 +827,10 @@ namespace RTAccess.UI
 
             // Extra rendered sections the element carries (e.g. an inventory item's compare-vs-equipped cards).
             var sections = el.GetTooltipSections();
-            bool hasSections = sections != null && sections.Count > 0;
 
-            if (links.Count == 0 && !hasSections)
-            {
-                // Nothing extra → the single-tooltip case: open the body directly, or say there's none.
-                if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip"), interrupt: true); return; }
-                RTAccess.Screens.TooltipScreen.Open(el.GetLabelText(), body);
-                return;
-            }
-
-            // A drill chooser: the element's own tooltip first (if any), then its extra sections, then terms.
-            var items = new List<(string, string)>();
-            if (!string.IsNullOrWhiteSpace(body))
-                items.Add((el.GetLabelText() ?? Loc.T("nav.details"), body));
-            if (hasSections) items.AddRange(sections);
-            foreach (var e in links) items.Add((e.Label, e.Body));
-            // Title by the element (its own name) when it carries sections; glossary-only keeps "References".
-            RTAccess.Screens.DrillMenuScreen.Open(
-                hasSections ? (el.GetLabelText() ?? Loc.T("nav.references")) : Loc.T("nav.references"), items);
+            // The shared chooser (single tooltip / drill menu / "No tooltip") — the same branch the
+            // graph-native factory OnTooltip slots go through, so both paths drill identically.
+            TooltipChooser.Open(el.GetLabelText(), body, sections, links);
         }
 
         // ---- type-ahead search (glue carried over from the retired push-based navigator; landing goes via the graph) ----

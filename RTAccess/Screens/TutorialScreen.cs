@@ -31,6 +31,8 @@ namespace RTAccess.Screens
     /// </summary>
     public sealed class TutorialScreen : Screen
     {
+        public TutorialScreen() { Wrap = true; } // Tab cycles text ↔ controls (modal-overlay convention, like MessageBox)
+
         public override string Key => "overlay.tutorial";
         // Modal popup: above windows/dialogue/settings, below the generic confirm modal (30).
         public override int Layer => 28;
