@@ -95,6 +95,10 @@ internal sealed class ProxyMapObject : ScanItem
             {
                 if (part == null) continue;
                 if (part is InteractionDoorPart door) { if (part.Enabled || door.IsOpen) return true; continue; }
+                // A disarmed/triggered trap keeps its part Enabled but flips TrapActive=false (TrapObjectData.Deactivate);
+                // it is no longer a live interaction (the game's own CanInteract() goes false), so a pure-trap object
+                // drops out of the scanner once disarmed instead of lingering as a spent, un-actionable "trap".
+                if (part is DisableTrapInteractionPart trapPart) { if (part.Enabled && trapPart.Owner?.TrapActive == true) return true; continue; }
                 if (part.Enabled) return true;
             }
             return _obj.GetOptional<AreaTransitionPart>() != null
@@ -220,6 +224,11 @@ internal sealed class ProxyMapObject : ScanItem
             if (!part.Enabled) continue;
             if (part is InteractionLootPart) nodes.Add(ScanTaxonomy.Containers);
             else if (part is InteractionSkillCheckPart) nodes.Add(ScanTaxonomy.SearchPoints);
+            // Only an ARMED trap is a live "trap" node. A disarmed/triggered trap keeps its part Enabled but flips
+            // TrapActive=false, so it contributes NO node — dropping out of the Traps category and Sonar exactly like a
+            // looted container leaves the Containers category (mirrors the TrapActive gate in Detail). Any other
+            // trap-ish part (name heuristic) with no TrapActive to read still classifies as a trap.
+            else if (part is DisableTrapInteractionPart trapPart) { if (trapPart.Owner?.TrapActive == true) nodes.Add(ScanTaxonomy.Traps); }
             else if (part.GetType().Name.IndexOf("Trap", StringComparison.OrdinalIgnoreCase) >= 0) nodes.Add(ScanTaxonomy.Traps);
             else nodes.Add(ScanTaxonomy.Mechanisms);
         }

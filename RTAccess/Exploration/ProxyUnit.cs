@@ -4,6 +4,7 @@ using Kingmaker.EntitySystem.Entities;           // BaseUnitEntity
 using Kingmaker.UI.Common;                        // UIUtilityUnit.GetSurfaceEnemyDifficulty (enemy threat tier)
 using Kingmaker.UnitLogic;                        // HasMechanicFeature (ext)
 using Kingmaker.UnitLogic.Enums;                  // MechanicsFeatureType (HideRealHealthInUI), UnitCondition (Stunned)
+using Kingmaker.UnitLogic.Parts;                  // UnitPartInteractions (HasDialogInteractions)
 using UnityEngine;
 
 namespace RTAccess.Exploration;
@@ -66,9 +67,56 @@ internal sealed class ProxyUnit : ScanItem
         get { yield return Primary; }
     }
 
-    // A lootable corpse is an actionable interactable (like a chest), so the scanner's generic I acts on it; a
-    // living unit / emptied corpse is not.
-    public override bool CanInteract => LootableCorpse;
+    // Actionable via the scanner's generic I: a lootable corpse (loots like a chest), OR a living unit the game itself
+    // offers a click interaction on — a talkable NPC / merchant / dialog spawner. We don't hand-gate the living case:
+    // we ask the game the same question its own click asks (SelectClickInteraction != null), so I offers a talk exactly
+    // where a sighted click would. Interact() already routes both cases through ClickUnitHandler.OnClick.
+    public override bool CanInteract => LootableCorpse || HasClickInteraction;
+
+    // Does the game offer a click interaction (dialogue / merchant / spawner) on this LIVING unit right now? Mirrors
+    // ClickUnitHandler.HandleClickUnit, whose interaction path only fires out of combat — in combat a unit click
+    // targets, it never talks — so we advertise it only then. The initiator is the selected party member nearest the
+    // unit (else the main character), the one GetNearestSelectedUnit would pick, so SelectClickInteraction's
+    // per-initiator availability matches the real click.
+    private bool HasClickInteraction
+    {
+        get
+        {
+            if (_unit.LifeState.IsDead || _unit.IsInCombat || Game.Instance?.Player?.IsInCombat == true) return false;
+            try
+            {
+                var initiator = Initiator();
+                return initiator != null && _unit.SelectClickInteraction(initiator) != null;
+            }
+            catch { return false; }
+        }
+    }
+
+    // True when at least one of this unit's click interactions is a conversation (DialogOnClick / dialog spawner), so
+    // the browse-label can say "talk" instead of the generic "interact".
+    private bool HasDialogInteraction
+    {
+        get { try { return _unit.GetOptional<UnitPartInteractions>()?.HasDialogInteractions == true; } catch { return false; } }
+    }
+
+    // The party member the game would use to start a click interaction with this unit: the selected unit nearest it,
+    // else the main character. Mirrors ClickUnitHandler's GetNearestSelectedUnit so our actionable answer tracks OnClick.
+    private BaseUnitEntity Initiator()
+    {
+        BaseUnitEntity best = null;
+        float bestSqr = float.MaxValue;
+        var selected = Game.Instance?.SelectionCharacter?.SelectedUnits;
+        if (selected != null)
+        {
+            foreach (var u in selected)
+            {
+                if (u == null) continue;
+                float d = (u.Position - _unit.Position).sqrMagnitude;
+                if (d < bestSqr) { bestSqr = d; best = u; }
+            }
+        }
+        return best ?? Game.Instance?.Player?.MainCharacterEntity;
+    }
 
     // Loot the body through the game's OWN unit-click dispatch — the same context-sensitive handler a mouse click
     // hits, which for a dead-and-has-loot unit out of combat walks the nearest selected party member over and opens
@@ -126,6 +174,11 @@ internal sealed class ProxyUnit : ScanItem
                         if (marker != null) bits.Add(marker);
                     }
                 }
+                // Advertise the game's own click interaction so the player knows I does something on this unit — "talk"
+                // for a conversation, "interact" otherwise (merchant / spawner). Mirrors the interaction highlight a
+                // sighted player sees on the card.
+                if (HasClickInteraction)
+                    bits.Add(Loc.T(HasDialogInteraction ? "scan.unit_talk" : "scan.unit_interact"));
                 return string.Join(", ", bits);
             }
             catch
