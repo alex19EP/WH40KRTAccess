@@ -135,6 +135,10 @@ namespace RTAccess.Screens
             // menu. StartUnfocused: exploration owns the arrows, Tab brings up the HUD (party/vitals/combat/
             // service-window openers). Hosts the re-gated exploration helpers in mouse mode.
             Register(new InGameScreen());
+            // In-system space map base context (GameModeType.StarSystem, area is a BlueprintStarSystemMap) —
+            // Layer 0, mutually exclusive with ctx.ingame (IsSurface is false in space). Objects/Status/Actions
+            // tab stops; SpaceEvents voices travel/scan/research. See docs/plans/orbital-listing-wilkes.md.
+            Register(new SystemMapScreen());
             // New Game wizard (MainMenuVM.NewGameVM) — layer 5, above the menu sidebar it's launched from.
             Register(new NewGameScreen());
             // Character generation (MainMenuVM.CharGenContextVM.CharGenVM) — layer 15, full-screen flow.

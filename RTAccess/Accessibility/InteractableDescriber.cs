@@ -32,7 +32,8 @@ internal static class InteractableDescriber
     private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
 
     // 8-way MAP-relative compass (world axes: +Z = north, +X = east). Stable regardless of camera rotation.
-    private static readonly string[] Compass8 =
+    // internal: the system-map screen speaks the same compass for ship-relative bearings.
+    internal static readonly string[] Compass8 =
         { "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west" };
 
     /// <summary>Full spoken line for a chosen interactable view. Never throws; returns "" if nothing readable.</summary>

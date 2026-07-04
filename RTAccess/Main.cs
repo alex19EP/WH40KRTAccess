@@ -127,6 +127,10 @@ public static class Main {
             // can't ride LogTap like the rest; everything else in the message log is voiced by LogTap (the
             // universal AddMessage tap) into CombatEvents' queue. Persistent subscriber; unsubscribed below.
             EventBus.Subscribe(ConvictionEvents.Instance);
+            // Voice system-map travel state (ship movement, scan results, research %, proximity cues). The
+            // per-frame proximity poll rides OnUpdate (SpaceEvents.Tick). Persistent subscriber; unsubscribed
+            // below. See docs/plans/orbital-listing-wilkes.md (M1).
+            EventBus.Subscribe(SpaceEvents.Instance);
             // Build the review-buffer set (Alt+arrows query a unit's live HP/AP/defenses/buffs without losing
             // UI focus); resolvers read the live selected unit / combat target each refresh.
             Buffers.BufferManager.Instance.RegisterDefaults();
@@ -186,6 +190,9 @@ public static class Main {
         // Announce the post-load "press any key to continue" prompt (a silent barrier for blind players on
         // every area transition). Edge-detected; any key dismisses it.
         LoadingScreenAnnounce.Update();
+
+        // System-map proximity cues (the game's three HUD interference icons, edge-detected). No-op off the map.
+        SpaceEvents.Instance.Tick();
 
         // The live world registry: diff the entity pools into stable per-entity scan proxies (units + map objects +
         // placed area effects), raising Added/Removed. Ticked BEFORE the input tick so the scanner's handlers read a
@@ -298,6 +305,7 @@ public static class Main {
         EventBus.Unsubscribe(WarningReader.Instance);
         EventBus.Unsubscribe(InteractionEvents.Instance);
         EventBus.Unsubscribe(ConvictionEvents.Instance);
+        EventBus.Unsubscribe(SpaceEvents.Instance);
         Speaker.Stop();
         Speaker.Shutdown();
         HarmonyInstance?.UnpatchAll(HarmonyInstance.Id);

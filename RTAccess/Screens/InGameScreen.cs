@@ -177,7 +177,8 @@ namespace RTAccess.Screens
             Add(windows);
         }
 
-        private static string WindowLabel(ServiceWindowsType type)
+        // internal: SystemMapScreen offers the same openers on the space map (same labels/gates, Space VM).
+        internal static string WindowLabel(ServiceWindowsType type)
         {
             switch (type)
             {
@@ -199,7 +200,7 @@ namespace RTAccess.Screens
         // windows read as disabled exactly when the game would hide their buttons, so Enter never drops the player
         // into a window the game is refusing. HandleOpenWindow is itself a no-op when blocked, so this is belt-and-
         // braces, not the only guard.
-        private static bool WindowEnabled(ServiceWindowsType type)
+        internal static bool WindowEnabled(ServiceWindowsType type)
         {
             var player = Game.Instance?.Player;
             if (player == null) return false;
