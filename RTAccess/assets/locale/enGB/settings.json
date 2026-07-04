@@ -317,6 +317,7 @@
   "bind.ui.secondary": "Secondary action",
   "bind.ui.back": "Back / close",
   "bind.ui.tooltip": "Read tooltip",
+  "bind.ui.tooltip.space": "Read tooltip (Space)",
   "bind.ui.home": "Jump to first item",
   "bind.ui.end": "Jump to last item",
   "bind.ui.regionPrev": "Previous sheet region",

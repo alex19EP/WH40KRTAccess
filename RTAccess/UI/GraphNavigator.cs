@@ -352,7 +352,7 @@ namespace RTAccess.UI
                 case "ui.home": return JumpEdge(first: true);
                 case "ui.end": return JumpEdge(first: false);
                 // Region jumps consume only when the focused node is IN a region (adapter FlowSheets
-                // stamp regions too) — elsewhere Ctrl+arrows bubble (the scanner's category cycle).
+                // stamp regions too) — elsewhere Ctrl+arrows bubble (no other action binds them; no-op).
                 case "ui.regionPrev": return _graph?.CurrentNode?.RegionKey != null && RegionJump(-1);
                 case "ui.regionNext": return _graph?.CurrentNode?.RegionKey != null && RegionJump(1);
                 case "ui.activate":
