@@ -21,6 +21,7 @@ namespace RTAccess.UI.Proxies
     /// </summary>
     [AnnouncementOrder(typeof(LabelAnnouncement), typeof(RoleAnnouncement), typeof(SelectedAnnouncement),
         typeof(ValueAnnouncement), typeof(EnabledAnnouncement), typeof(PositionAnnouncement))]
+    [ElementSettingsKey("radio_button")] // shared settings identity with ProxyChoiceOption + ControlTypes.RadioButton
     public sealed class ProxySelectionItem : UIElement
     {
         private readonly SelectionGroupEntityVM _vm;

@@ -76,8 +76,8 @@ namespace RTAccess.UI
             Common = () => RoleWord("tab"),
         };
 
-        /// <summary>One binding slot of a key-binding row (label + current combo; rebind/clear). Key
-        /// matches the legacy collapsed element key.</summary>
+        /// <summary>One binding slot of a key-binding row (label + current combo; rebind/clear). No
+        /// legacy element carried this concept; the loc key ("element.key_binding") is pre-staged.</summary>
         public static readonly ControlType KeyBinding = new ControlType
         {
             Key = "key_binding",

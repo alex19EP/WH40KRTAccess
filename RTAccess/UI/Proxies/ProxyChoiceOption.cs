@@ -7,6 +7,7 @@ namespace RTAccess.UI.Proxies
     /// <summary>One option row in a choice submenu (e.g. a dropdown's options). Activate selects it.</summary>
     [AnnouncementOrder(typeof(LabelAnnouncement), typeof(RoleAnnouncement), typeof(SelectedAnnouncement),
         typeof(PositionAnnouncement))]
+    [ElementSettingsKey("radio_button")] // shared settings identity with ProxySelectionItem + ControlTypes.RadioButton
     public sealed class ProxyChoiceOption : UIElement
     {
         private readonly string _label;

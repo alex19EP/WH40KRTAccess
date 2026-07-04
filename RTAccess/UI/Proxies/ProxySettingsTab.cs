@@ -7,6 +7,7 @@ namespace RTAccess.UI.Proxies
     /// <summary>A settings tab (Game / Controls / Graphics / Sound / Accessibility / …). Activate switches to it.</summary>
     [AnnouncementOrder(typeof(LabelAnnouncement), typeof(RoleAnnouncement), typeof(SelectedAnnouncement),
         typeof(PositionAnnouncement))]
+    [ElementSettingsKey("tab")] // shared settings identity with ControlTypes.Tab
     public sealed class ProxySettingsTab : UIElement
     {
         private readonly SettingsMenuEntityVM _tab;

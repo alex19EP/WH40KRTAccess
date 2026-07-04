@@ -42,6 +42,102 @@ namespace RTAccess.UI.Announcements
                 try { RegisterElementOverrides(t); }
                 catch (Exception e) { Main.Log?.Error("[ann] per-element register failed for " + t.Name + ": " + e.Message); }
             }
+
+            // Graph control types (the registry): the same per-type override schema, keyed on the registry
+            // entry instead of a proxy class. Keys shared with legacy collapsed element keys ("toggle",
+            // "radio_button") land in the SAME categories — one settings identity across both systems.
+            foreach (var ct in RTAccess.UI.ControlTypes.All)
+            {
+                try { RegisterControlTypeOverrides(ct); }
+                catch (Exception e) { Main.Log?.Error("[ann] control-type register failed for " + ct.Key + ": " + e.Message); }
+            }
+        }
+
+        private static void RegisterControlTypeOverrides(RTAccess.UI.Graph.ControlType ct)
+        {
+            if (ct?.Key == null || ct.Order == null) return;
+            var typeDisplay = SnakeToTitle(ct.Key);
+            foreach (var kind in ct.Order)
+            {
+                var kindDisplay = SnakeToTitle(kind);
+                var global = ModSettingsRegistry.EnsureCategory("announcements." + kind, "Announcements/" + kindDisplay);
+                var perType = ModSettingsRegistry.EnsureCategory(
+                    "ui." + ct.Key + ".announcements." + kind,
+                    "UI/" + typeDisplay + "/Announcements/" + kindDisplay,
+                    "/element." + ct.Key + "/announcements_group/announcement." + kind);
+                foreach (var child in global.Children)
+                {
+                    if (perType.GetByKey(child.Key) != null) continue;
+                    var ov = CreateOverride(child);
+                    if (ov != null) perType.Add(ov);
+                }
+            }
+        }
+
+        // ---- one-time schema migration: legacy element keys → graph control-type keys ----
+
+        /// <summary>Old per-element settings prefix → new prefix. The graph port retargeted three shipped
+        /// proxies' [ElementSettingsKey] onto the graph control-type keys (their override paths moved),
+        /// so saved user overrides at the OLD paths would silently become inert unknown keys. Array order
+        /// matters: the earlier source wins when two old prefixes map to the same new path.</summary>
+        private static readonly (string Old, string New)[] LegacyElementKeyRenames =
+        {
+            ("ui.selection_item.", "ui.radio_button."),
+            ("ui.choice_option.",  "ui.radio_button."),
+            ("ui.settings_tab.",   "ui.tab."),
+        };
+
+        /// <summary>One-time migration of saved user overrides from the legacy element-key paths onto the
+        /// graph control-type paths. Reads the old paths out of the preserved unknown-key set, applies each
+        /// to the setting now living at the renamed path (never clobbering a value already saved there),
+        /// then drops the old keys. Call AFTER <see cref="ModSettings.Initialize"/> (needs the path index
+        /// + the loaded file).</summary>
+        public static void MigrateLegacyElementKeys()
+        {
+            bool touched = false;
+            foreach (var rename in LegacyElementKeyRenames)
+            {
+                foreach (var oldPath in ModSettings.UnknownPaths())
+                {
+                    if (!oldPath.StartsWith(rename.Old, StringComparison.Ordinal)) continue;
+                    touched = true;
+                    var newPath = rename.New + oldPath.Substring(rename.Old.Length);
+                    var target = ModSettings.GetSetting<Setting>(newPath);
+                    // Apply only where the renamed setting exists and holds no persisted value yet
+                    // (BoxedValue == null → nothing saved: a NullableBool override still inheriting).
+                    if (target != null && target.BoxedValue == null
+                        && ModSettings.TryGetUnknown(oldPath, out var token))
+                    {
+                        try { target.LoadValue(token); }
+                        catch (Exception e)
+                        {
+                            Main.Log?.Error("[ann] migrate " + oldPath + " -> " + newPath + " failed: " + e.Message);
+                        }
+                    }
+                }
+                ModSettings.RemoveUnknownWhere(k => k.StartsWith(rename.Old, StringComparison.Ordinal));
+            }
+            if (touched)
+            {
+                Main.Log?.Log("[ann] migrated legacy element-key overrides (selection_item/choice_option -> radio_button, settings_tab -> tab)");
+                ModSettings.MarkDirty(); // persist the moved values + the dropped old keys
+            }
+        }
+
+        /// <summary>Is an announcement part enabled for a control type — the graph announcer's
+        /// PartFilter resolver: per-type override → global per-kind toggle → true. Kindless (custom)
+        /// parts always speak.</summary>
+        public static bool PartEnabled(string typeKey, string kind)
+        {
+            if (kind == null) return true;
+            if (typeKey != null)
+            {
+                var ov = ModSettings.GetSetting<NullableBoolSetting>(
+                    "ui." + typeKey + ".announcements." + kind + ".enabled");
+                if (ov != null && ov.IsOverridden) return ov.LocalValue.Value;
+            }
+            var global = ModSettings.GetSetting<BoolSetting>("announcements." + kind + ".enabled");
+            return global == null || global.Get();
         }
 
         private static void RegisterGlobal(Type annType)

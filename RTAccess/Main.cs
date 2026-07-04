@@ -85,7 +85,24 @@ public static class Main {
                 audioCat.Add(new Settings.BoolSetting("itd", "Interaural time delay (stereo depth)", true, "audio.itd"));
             if (audioCat.GetByKey("front_back_filter") == null)
                 audioCat.Add(new Settings.BoolSetting("front_back_filter", "Front/back muffling", true, "audio.front_back_filter"));
+            // UI = per-announcement settings (global toggles) + per-element-type overrides discovered by
+            // reflection + the graph control-type registry (ControlTypes.All). Creates the "announcements"
+            // + "ui" categories under the settings Root — declared BEFORE Initialize like everything else.
+            UI.Announcements.AnnouncementRegistry.RegisterDefaults();
+            // The graph announcer consults the same announcement settings (per control type + per kind).
+            UI.Graph.GraphAnnouncer.PartFilter = (type, part) =>
+                UI.Announcements.AnnouncementRegistry.PartEnabled(type?.Key, part.Kind);
+            // Group headers speak their expanded/collapsed state (localized; same words the legacy tree used).
+            UI.Graph.GraphAnnouncer.ExpandedStateText = expanded =>
+                Loc.T(expanded ? "role.expanded" : "role.collapsed");
+            UI.Graph.GraphAnnouncer.PositionText = (index, count) =>
+                Loc.T("nav.position", new { index, count });
             Settings.ModSettings.Initialize(System.IO.Path.Combine(Application.persistentDataPath, "RTAccess"));
+            // One-time schema migration: [ElementSettingsKey] moved three shipped proxies' override paths
+            // (selection_item/choice_option → radio_button, settings_tab → tab); carry saved user overrides
+            // from the old paths so they don't silently become inert unknown keys. AFTER Initialize (needs
+            // the path index + the loaded file).
+            UI.Announcements.AnnouncementRegistry.MigrateLegacyElementKeys();
             // Parallel accessible-UI framework (Phase 2): register input actions + the screens whose
             // ScreenManager resolves over RootUiContext each frame (MainMenu first).
             Input.InputBindings.RegisterDefaults();

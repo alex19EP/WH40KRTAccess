@@ -20,6 +20,9 @@
   "element.key_binding": "Key binding",
   "element.loot_slot": "Loot slot",
   "element.text_field": "Text field",
+  "element.item": "Item",
+  "element.group": "Group",
+  "element.text": "Text",
 
   "announcement.label": "Label",
   "announcement.role": "Role",
