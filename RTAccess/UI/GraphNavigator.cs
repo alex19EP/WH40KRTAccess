@@ -387,7 +387,7 @@ namespace RTAccess.UI
                     if (node.Vtable.OnTooltip != null) { _graph.Tooltip(); return true; }
                     var el = Current;
                     if (el != null) { OpenTooltipOrLinks(el); return true; }
-                    Speak(Loc.T("nav.no_tooltip"));
+                    Speak(Loc.T("nav.no_tooltip"), interrupt: true);
                     return true;
                 }
                 default:
@@ -808,7 +808,7 @@ namespace RTAccess.UI
         // VALUE cell reads the row's detail.
         private void OpenTooltipOrLinks(UIElement el)
         {
-            if (el == null) { Speak(Loc.T("nav.no_tooltip")); return; }
+            if (el == null) { Speak(Loc.T("nav.no_tooltip"), interrupt: true); return; }
 
             var body = el.GetTooltipText();
             if (string.IsNullOrWhiteSpace(body))
@@ -827,7 +827,7 @@ namespace RTAccess.UI
             if (links.Count == 0)
             {
                 // No terms → the single-tooltip case: open the body directly, or say there's none.
-                if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip")); return; }
+                if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip"), interrupt: true); return; }
                 RTAccess.Screens.TooltipScreen.Open(el.GetLabelText(), body);
                 return;
             }

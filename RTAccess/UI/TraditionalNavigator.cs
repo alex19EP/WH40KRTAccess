@@ -340,7 +340,7 @@ namespace RTAccess.UI
         // focus and announces once (no separate chooser screen).
         private void OpenTooltipOrLinks(UIElement el)
         {
-            if (el == null) { Speak(Loc.T("nav.no_tooltip")); return; }
+            if (el == null) { Speak(Loc.T("nav.no_tooltip"), interrupt: true); return; }
 
             // The element's own tooltip: plain description text, or — for icon-only in-game elements
             // (action-bar slots, inventory/equipment items) whose name + stats live in a rich brick TEMPLATE
@@ -363,7 +363,7 @@ namespace RTAccess.UI
             if (links.Count == 0 && !hasSections)
             {
                 // Nothing extra → the single-tooltip case (unchanged): open the body directly, or say none.
-                if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip")); return; }
+                if (string.IsNullOrWhiteSpace(body)) { Speak(Loc.T("nav.no_tooltip"), interrupt: true); return; }
                 RTAccess.Screens.TooltipScreen.Open(el.GetLabelText(), body);
                 return;
             }
