@@ -9,7 +9,20 @@ namespace RTAccess.UI
     /// </summary>
     public static class Navigation
     {
-        public static Navigator Active = new TraditionalNavigator();
+        public static Navigator Active = new GraphNavigator();
+
+        /// <summary>Swap the active navigator implementation at runtime (the debug A/B toggle). The old
+        /// navigator is blurred (detached), then the current screen tree is re-attached so focus
+        /// re-establishes sanely via the new navigator's EnsureFocus; per-screen nav state may reset on
+        /// swap — acceptable for a debug tool.</summary>
+        public static void SetNavigator(Navigator navigator)
+        {
+            if (navigator == null || ReferenceEquals(navigator, Active)) return;
+            Active?.Blur();
+            Active = navigator;
+            var cur = ScreenManager.Current;
+            if (cur != null) navigator.Attach(cur);
+        }
 
         public static void Attach(Screen screen) => Active?.Attach(screen);
 
