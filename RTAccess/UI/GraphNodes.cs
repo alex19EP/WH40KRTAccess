@@ -64,8 +64,13 @@ namespace RTAccess.UI
         /// advertises no action and no sound — Enter consumes silently, the ProxyActionButton convention
         /// (it didn't advertise the action either). Sounds ride the vtable slots the navigator plays at
         /// its chokepoints: a themed hover/click sound-type where the card carries one (the main-menu
-        /// sidebar's Analog), else the generic blueprint ButtonClick — UIElement's default pair.</summary>
+        /// sidebar's Analog), else the generic blueprint ButtonClick — UIElement's default pair.
+        /// <paramref name="tooltip"/> is a template FACTORY resolved live on each Space press (the
+        /// tooltips-live-not-cached rule) for buttons that carry one (a travel destination's quest
+        /// objectives) — rendered through <see cref="RTAccess.Accessibility.TooltipReader"/>, exactly
+        /// the ProxyActionButton tooltip path; ungated by enabled (a grayed card still reads).</summary>
         public static NodeVtable Button(Func<string> label, Action activate, Func<bool> enabled = null,
+            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> tooltip = null,
             Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? hoverSound = null,
             Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? clickSound = null)
         {
@@ -80,6 +85,13 @@ namespace RTAccess.UI
                 },
                 SearchText = label,
                 OnActivate = isEnabled ? activate : null,
+                OnTooltip = tooltip == null ? (Action)null : () =>
+                {
+                    var tpl = tooltip();
+                    var body = tpl != null ? RTAccess.Accessibility.TooltipReader.GetFull(tpl) : null;
+                    if (string.IsNullOrWhiteSpace(body)) { Tts.Speak(Loc.T("nav.no_tooltip"), interrupt: true); return; }
+                    RTAccess.Screens.TooltipScreen.Open(label(), body);
+                },
                 HoverSound = hoverSound,
                 ClickSound = isEnabled ? clickSound : null,
                 ActivateSound = isEnabled && clickSound == null

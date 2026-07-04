@@ -3,7 +3,7 @@ using System.Linq;
 using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.Transition; // TransitionVM, TransitionEntryVM
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
@@ -21,11 +21,12 @@ namespace RTAccess.Screens
     /// keyboard a11y and no service-window announce (Transition isn't a <c>ServiceWindowsType</c>), so on open a
     /// blind player otherwise hears only the book-open sound.
     ///
-    /// We mirror the reachable rooms into <see cref="ProxyActionButton"/>s: activating one runs
-    /// <see cref="TransitionEntryVM.Enter"/> — the game's real <c>GameCommandQueue.AreaTransition</c>, which also
-    /// closes the map. Structurally a twin of <see cref="VariativeInteractionScreen"/>: an Exclusive modal
-    /// (owns the keyboard while open) at layer 24, built in OnPush and rebuilt only if the game swaps the VM.
-    /// Escape / Back closes through the VM's own <see cref="TransitionVM.Close"/>.
+    /// Graph-native: the reachable rooms declared fresh from the live VM every render, each a button whose
+    /// Enter runs <see cref="TransitionEntryVM.Enter"/> — the game's real <c>GameCommandQueue.AreaTransition</c>,
+    /// which also closes the map. Node keys carry the VM's identity, so a window swapped under us drops the
+    /// old keys and focus re-homes with a fresh readout — no rebuild bookkeeping. An Exclusive modal (owns the
+    /// keyboard while open) at layer 24; Escape / Back closes through the VM's own
+    /// <see cref="TransitionVM.Close"/>.
     /// </summary>
     public sealed class TransitionScreen : Screen
     {
@@ -57,12 +58,6 @@ namespace RTAccess.Screens
                 ?? ctx?.SpaceVM?.StaticPartVM?.TransitionVM?.Value;
         }
 
-        private TransitionVM _builtVm;
-
-        public override void OnPush() { _builtVm = null; Rebuild(); }
-        public override void OnPop() { Clear(); _builtVm = null; }
-        public override void OnUpdate() { Rebuild(); }
-
         // Rooms worth listing: every reachable destination + your current location (for orientation). Undiscovered
         // rooms (IsVisible == false and not interactable) are hidden on the visual map too, so we omit them.
         private static IEnumerable<TransitionEntryVM> Listed(TransitionVM vm)
@@ -72,30 +67,31 @@ namespace RTAccess.Screens
         private static int Travelable(TransitionVM vm)
             => vm.EntryVms.Count(e => e != null && e.IsInteractable.Value);
 
-        private void Rebuild()
+        public override bool BuildsGraph => true;
+
+        public override void Build(GraphBuilder b)
         {
             var vm = Vm();
-            if (vm == null || vm == _builtVm) return;
-            _builtVm = vm;
-            Clear();
+            if (vm == null) return;
+            string k = "trans:" + vm.GetHashCode() + ":"; // re-keys on a VM swap → focus re-homes, fresh readout
 
-            var list = new ListContainer();
             bool any = false;
+            int i = 0;
             foreach (var entry in Listed(vm))
             {
                 var e = entry; // capture per iteration
-                list.Add(new ProxyActionButton(
+                b.AddItem(ControlId.Referenced(e, k + i), GraphNodes.Button(
                     () => EntryLabel(e),
-                    () => e.IsInteractable.Value,
                     () => e.Enter(),
-                    actionVerb: "travel",
+                    () => e.IsInteractable.Value,
                     tooltip: () => e.GetTooltipTemplate())); // quest objectives here, on the details key
                 any = true;
+                i++;
             }
             // Defensive: a map with nothing discovered/reachable still needs a focus target so Escape can close.
             if (!any)
-                list.Add(new ProxyActionButton(Loc.T("transition.none"), () => false, () => { }));
-            Add(list);
+                b.AddItem(ControlId.Structural(k + "none"), GraphNodes.Button(
+                    () => Loc.T("transition.none"), () => { }, () => false));
         }
 
         // "<room name>[, you are here | , unavailable][, quest objective]". The literal current spot is
