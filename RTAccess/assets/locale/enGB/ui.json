@@ -938,7 +938,6 @@
   "tutorial.prev_page": "Previous page",
   "tutorial.next_page": "Next page",
   "tutorial.dismiss": "Dismiss",
-  "tutorial.dont_show": "Don't show this tutorial again",
   "tutorial.page_of": "Page {index} of {count}.",
   "hud.action_bar": "Action bar",
   "dialog.answers": "Answers",

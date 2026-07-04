@@ -1,8 +1,9 @@
 using Kingmaker;
+using Kingmaker.Blueprints.Root.Strings; // UIStrings
 using Kingmaker.Tutorial;
 using Kingmaker.UI.MVVM.VM.Tutorial;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 using UnityEngine;
 
 namespace RTAccess.Screens
@@ -21,13 +22,15 @@ namespace RTAccess.Screens
     /// RT has no <c>ShowWindow</c> flag (unlike WotR's TutorialWindowVM): a window is "shown" while its
     /// reactive slot (<c>BigWindowVM</c>/<c>SmallWindowVM</c>) holds a VM with Data, and closing means
     /// <see cref="TutorialWindowVM.Hide"/> — whose callback disposes the slot, so our poll goes inactive and
-    /// the screen pops. Everything reads through the live <see cref="Vm"/>, so a page step or a VM swap needs
-    /// no rebuild (labels/enabled/text are all live delegates).
+    /// the screen pops.
+    ///
+    /// Graph-native: node keys carry the VM identity AND the page, so a new tutorial or a page flip drops
+    /// the old keys — focus re-homes onto the text and the differ reads it (replacing the old
+    /// rebuild+AnnounceCurrent dance). The focus-mode-OFF fallback delivery stays (the differ only speaks
+    /// under Focus Mode), tracked by the spoken-VM/page markers in <see cref="OnUpdate"/>.
     /// </summary>
     public sealed class TutorialScreen : Screen
     {
-        public TutorialScreen() { Wrap = true; } // Tab cycles text ↔ controls
-
         public override string Key => "overlay.tutorial";
         // Modal popup: above windows/dialogue/settings, below the generic confirm modal (30).
         public override int Layer => 28;
@@ -38,8 +41,9 @@ namespace RTAccess.Screens
         // non-exclusive and exploration keeps working beneath it. Polled live by InputManager.RebuildLive.
         public override bool Exclusive => Vm() is TutorialModalWindowVM;
 
-        private TutorialWindowVM _builtVm;
         private bool _banOnClose;
+        private TutorialWindowVM _spokenVm;    // focus-mode-OFF fallback delivery markers
+        private TutorialData.Page _spokenPage;
 
         private static TutorialWindowVM Vm()
         {
@@ -54,54 +58,62 @@ namespace RTAccess.Screens
 
         public override bool IsActive() => Vm() != null;
 
-        public override void OnPush() { _banOnClose = false; Build(); }
-        public override void OnPop() { Clear(); _builtVm = null; _banOnClose = false; }
+        public override void OnPush() { _banOnClose = false; }
+        public override void OnPop() { _banOnClose = false; _spokenVm = null; _spokenPage = null; }
 
         public override void OnFocus()
         {
             base.OnFocus();
-            // With Focus Mode on, ScreenManager lands focus and reads the text element for us; cover the
-            // off case so a blocking tutorial is never silent.
+            // With Focus Mode on, the differ reads the landing for us; cover the off case so a blocking
+            // tutorial is never silent.
             if (!FocusMode.Active) SpeakText();
         }
 
         public override void OnUpdate()
         {
+            // A new tutorial replacing the current one (Show fires back-to-back) resets the checkbox; the
+            // focus-mode-off fallback speaks new content (under Focus Mode the key change re-homes focus
+            // and the differ announces it).
             var vm = Vm();
-            if (vm == null || vm == _builtVm) return;
-            // A new tutorial replaced the current one without the screen popping (Show fires back-to-back) —
-            // rebuild and re-home focus.
-            _banOnClose = false;
-            Build();
-            Navigation.Attach(this);
-            if (FocusMode.Active) Navigation.AnnounceCurrent();
-            else SpeakText();
+            if (vm == null) return;
+            if (vm != _spokenVm) _banOnClose = false;
+            if (!FocusMode.Active && (vm != _spokenVm || CurrentPageOf(vm) != _spokenPage)) SpeakText();
+            _spokenVm = vm;
+            _spokenPage = CurrentPageOf(vm);
         }
 
-        private void Build()
-        {
-            Clear();
-            var vm = Vm();
-            _builtVm = vm;
-            if (vm == null) return;
+        public override bool BuildsGraph => true;
 
-            var list = new ListContainer(Loc.T("tutorial.title"));
-            list.Add(new TextElement(() => PageText(Vm()))); // live current-page text — focus to re-read
-            if (vm is TutorialModalWindowVM modal && modal.MultiplePages)
+        public override void Build(GraphBuilder b)
+        {
+            var vm = Vm();
+            if (vm == null) return;
+            var modal = vm as TutorialModalWindowVM;
+            int page = modal != null ? modal.CurrentPageIndex.Value : 0;
+            string k = "tutorial:" + vm.GetHashCode() + ":" + page + ":";
+
+            // The same labeled level the old ListContainer provided ("Tutorial, list").
+            b.PushContext(Loc.T("tutorial.title"), Loc.T("role.list"));
+            b.AddItem(ControlId.Structural(k + "text"), GraphNodes.Text(() => PageText(Vm())));
+            if (modal != null && modal.MultiplePages)
             {
-                list.Add(new ProxyActionButton(() => Loc.T("tutorial.prev_page"), CanPrev, () => StepPage(-1)));
-                list.Add(new ProxyActionButton(() => Loc.T("tutorial.next_page"), CanNext, () => StepPage(1)));
+                b.AddItem(ControlId.Structural(k + "prev"),
+                    GraphNodes.Button(() => Loc.T("tutorial.prev_page"), () => StepPage(-1), CanPrev));
+                b.AddItem(ControlId.Structural(k + "next"),
+                    GraphNodes.Button(() => Loc.T("tutorial.next_page"), () => StepPage(1), CanNext));
             }
             if (vm.CanBeBanned)
                 // The game silences this "don't show again" checkbox's hover (TutorialWindowBaseView NoSound)
                 // and plays BanTutorialType on its click (TutorialWindowPCView) — our local flip bypasses both,
-                // so replay them: NoSound hover + the ban sting on toggle.
-                list.Add(new ProxyBoolToggle(Loc.T("tutorial.dont_show"),
+                // so replay them through the vtable sound slots.
+                b.AddItem(ControlId.Structural(k + "ban"), GraphNodes.Toggle(
+                    () => DontShowLabel(Vm()),
                     () => _banOnClose, () => _banOnClose = !_banOnClose,
-                    hoverSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
-                    activateSound: () => Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Tutorial?.BanTutorialType));
-            list.Add(new ProxyActionButton(Loc.T("tutorial.dismiss"), null, Dismiss));
-            Add(list);
+                    hoverSound: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
+                    activateSound: Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Tutorial?.BanTutorialType));
+            b.AddItem(ControlId.Structural(k + "dismiss"),
+                GraphNodes.Button(() => Loc.T("tutorial.dismiss"), Dismiss));
+            b.PopContext();
         }
 
         private static void SpeakText()
@@ -111,15 +123,34 @@ namespace RTAccess.Screens
             if (vm != null) Tts.Speak(Loc.T("tutorial.prefix", new { text = PageText(vm) }), interrupt: true);
         }
 
+        private static TutorialData.Page CurrentPageOf(TutorialWindowVM vm)
+        {
+            if (vm is TutorialModalWindowVM m) return m.CurrentPage.Value;
+            var pages = vm?.Pages;
+            return pages != null && pages.Count > 0 ? pages[0] : null;
+        }
+
+        // The checkbox label the game's card shows: DontShowThisTutorial when the trigger bans the
+        // tutorial itself, else the tag variant formatted with the tag's name (TutorialWindowBaseView).
+        private static string DontShowLabel(TutorialWindowVM vm)
+        {
+            var t = UIStrings.Instance?.Tutorial;
+            if (vm == null || t == null) return "";
+            if (vm.BanTutorInsteadOfTag) return t.DontShowThisTutorial.Text;
+            var tag = vm.TutorialTag;
+            return string.Format(t.DontShowTutorialTag.Text,
+                tag.HasValue ? t.TagNames.GetTagName(tag.Value)?.Text : null);
+        }
+
         private static bool CanPrev() => Vm() is TutorialModalWindowVM m && m.CurrentPageIndex.Value > 0;
         private static bool CanNext() => Vm() is TutorialModalWindowVM m && m.CurrentPageIndex.Value < m.PageCount - 1;
 
         private static void StepPage(int dir)
         {
             if (!(Vm() is TutorialModalWindowVM m)) return;
+            // The page index is part of every node key: this flip re-keys the graph, focus re-homes onto
+            // the text node and the differ reads the new page — no manual speech.
             m.CurrentPageIndex.Value = Mathf.Clamp(m.CurrentPageIndex.Value + dir, 0, m.PageCount - 1);
-            // Keypress-driven page change → interrupt and read the new page (focus stays on the step button).
-            Tts.Speak(PageText(m), interrupt: true);
         }
 
         private void Dismiss()

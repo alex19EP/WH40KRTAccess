@@ -88,6 +88,45 @@ namespace RTAccess.UI
             };
         }
 
+        /// <summary>A checkbox over an arbitrary boolean ("label, toggle, on/off[, disabled]") — the
+        /// ProxyBoolToggle conventions. Activation flips it and re-announces the new value synchronously
+        /// (<see cref="NodeVtable.StateText"/> — the ReannounceOnActivate equivalent); for toggles whose
+        /// effect settles ASYNCHRONOUSLY in the game, pass <paramref name="announceOnActivate"/> false and
+        /// let the LIVE value part speak the settled truth (safe alongside StateText — VtableActivate
+        /// rebaselines the live watch after speaking). Sounds ride the vtable slots: default = the generic
+        /// click (UIElement's pair, the settings-toggle convention); pass a themed hover/click sound-type
+        /// or a one-off blueprint <paramref name="activateSound"/> where the game's card differs (the
+        /// tutorial ban toggle's NoSound hover + BanTutorialType sting).</summary>
+        public static NodeVtable Toggle(Func<string> label, Func<bool> isChecked, Action onToggle,
+            Func<bool> enabled = null, bool announceOnActivate = true,
+            Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? hoverSound = null,
+            Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? clickSound = null,
+            Kingmaker.UI.Sound.BlueprintUISound.UISound activateSound = null)
+        {
+            bool isEnabled = enabled == null || enabled();
+            Func<string> value = () => Loc.T(isChecked != null && isChecked() ? "value.on" : "value.off");
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Toggle,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    LabelPart(label),
+                    // Always LIVE: a game-driven flip under focus announces itself.
+                    new NodeAnnouncement(value, live: true, kind: AnnouncementKinds.Value),
+                    DisabledPart(enabled),
+                },
+                SearchText = label,
+                StateText = announceOnActivate && isEnabled ? value : null,
+                OnActivate = isEnabled ? onToggle : null,
+                HoverSound = hoverSound,
+                ClickSound = isEnabled ? clickSound : null,
+                ActivateSound = !isEnabled ? null
+                    : activateSound != null ? activateSound
+                    : clickSound == null ? Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick
+                    : null,
+            };
+        }
+
         /// <summary>A game context-menu entry (<see cref="ContextMenuEntityVM"/> — the main-menu sidebar):
         /// label + live enabled + Execute. Enabled reads the LIVE entity (<c>m_Entity.IsEnabled</c>
         /// re-invokes the entry's Condition each call) rather than the VM's cached <c>IsEnabled</c>
