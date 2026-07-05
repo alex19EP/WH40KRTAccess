@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 using Kingmaker.Code.UI.MVVM.VM.Dialog.Dialog; // AnswerVM
 using Kingmaker.Code.Utility;                   // UIConstsExtensions
 using RTAccess.UI.Graph;                        // NodeVtable
@@ -40,6 +41,13 @@ namespace RTAccess.UI
                 tooltip: () => vm?.AnswerTooltip?.Value);
         }
 
+        // Book events draw their answer number through UIDialog.AnswerDialogueBeFormat — a decorative
+        // "-// 1 ---" prefix that TTS reads as literal punctuation ("dash slash slash…"). Normalize it to
+        // the plain "1. " numbering regular dialogue answers speak; the capture keeps whatever the game
+        // put in the number slot (digit or keybinding text).
+        private static readonly Regex BookNumberDecoration =
+            new Regex(@"^\s*-//\s*(.*?)\s*---\s*", RegexOptions.Compiled);
+
         /// <summary>The game's own TMP rich-text answer label ((<c>&lt;link&gt;</c>)-wrapped DC tags; Tts
         /// strips them at speak time). System/continue answers carry no DisplayText — a plain "Continue",
         /// UNNUMBERED. Also voiced as confirmation by the number-key quick-select in DialogueScreen.</summary>
@@ -49,7 +57,11 @@ namespace RTAccess.UI
             if (bp == null) return "";
             if (string.IsNullOrEmpty(bp.DisplayText))
                 return Message.Localized("ui", "label.continue").Resolve();
-            try { return UIConstsExtensions.GetAnswerFormattedString(bp, "DialogChoice" + vm.Index, vm.Index); }
+            try
+            {
+                var s = UIConstsExtensions.GetAnswerFormattedString(bp, "DialogChoice" + vm.Index, vm.Index);
+                return BookNumberDecoration.Replace(s, "$1. ");
+            }
             catch { return vm.Index + ". " + bp.DisplayText; }
         }
     }
