@@ -4,11 +4,14 @@ using Kingmaker;
 using Kingmaker.Blueprints.Root;                   // LocalizedTexts
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.Inventory;
+using Kingmaker.Code.UI.MVVM.View.Slots;           // ItemsFilterSearchBaseView (the game's search TMP field)
 using Kingmaker.GameCommands;
 using Kingmaker.UI.Common;                         // ItemsFilterType, ItemsSorterType
 using Owlcat.Runtime.UI.Tooltips;                  // TooltipBaseTemplate
+using RTAccess.Accessibility;                       // ViewedCharacter (switch announce + header + pet swap)
 using RTAccess.UI;
 using RTAccess.UI.Graph;
+using TMPro;                                        // TMP_InputField
 
 namespace RTAccess.Screens
 {
@@ -39,7 +42,17 @@ namespace RTAccess.Screens
         public override string ScreenName => null; // ServiceWindowAnnounce speaks "Inventory" on open
         public override int Layer => 10;
 
+        // Type-ahead OFF here: letters pass to the game so its own Shift+A/Shift+D switch-character (and its
+        // search hotkey) work, and stash search is the game's OWN field (BuildSearch), not our type-ahead.
+        public override bool AllowsTypeahead => false;
+
         public override bool IsActive() => Vm() != null;
+
+        // Re-baseline the switch guard on open, then announce each Shift+A/D character switch (the game
+        // switches SelectedUnitInUI but never speaks it; our doll/defenses re-key, but only ViewedCharacter
+        // voices WHO). OnUpdate runs each frame on the focused screen (ScreenManager dispatches it).
+        public override void OnPush() => ViewedCharacter.Reset();
+        public override void OnUpdate() => ViewedCharacter.Tick(Vm()?.Unit?.Value);
 
         // Back (Escape) closes the whole service-window stack — the same call the window's own close uses.
         public override IEnumerable<ElementAction> GetActions()
@@ -74,11 +87,87 @@ namespace RTAccess.Screens
             var unit = vm.Unit?.Value;
             string uk = k + "u:" + (unit?.UniqueId ?? "") + ":";  // per-character keys re-home on a unit switch
 
+            BuildCharacter(b, k, uk, vm);
             BuildEquipment(b, k, uk, vm.DollVM);
             BuildDefenses(b, k, uk, vm);
             BuildSummary(b, k, vm.StashVM);
+            BuildSearch(b, k, vm.StashVM);
             BuildStashControls(b, k, vm.StashVM);
             BuildStash(b, k, vm.StashVM);
+        }
+
+        // The header a sighted player reads beside the portrait: who's shown (name / level / wounds) and the
+        // pet/master swap (the game's m_PetButton). Switching the party member itself is the game's NATIVE
+        // Shift+A / Shift+D (announced by ViewedCharacter.Tick) — we don't rebuild a switcher. Keyed per-unit
+        // (uk) so a switch re-homes and the differ re-reads the readout under focus.
+        private static void BuildCharacter(GraphBuilder b, string k, string uk, InventoryVM vm)
+        {
+            var unit = vm.Unit?.Value;
+            if (unit == null) return;
+            b.SetRegion(k + "character");
+            b.PushContext(Loc.T("inv.character"), Loc.T("role.list"));
+            b.AddItem(ControlId.Structural(uk + "char:readout"),
+                GraphNodes.Text(() => ViewedCharacter.HeaderLine(vm.Unit?.Value)));
+            if (ViewedCharacter.HasPetAxis(unit))
+                b.AddItem(ControlId.Structural(uk + "char:pet"), GraphNodes.Button(
+                    () => ViewedCharacter.PetLabel(vm.Unit?.Value), () => ViewedCharacter.SwapPet(vm.Unit?.Value)));
+            b.PopContext();
+        }
+
+        // The game's OWN item search over the (up-to-120-slot) stash — the accessible replacement for our
+        // type-ahead (off here). Activating hands the live search TMP field to TextEntry: Unity/TMP own the
+        // caret and typing, each keystroke is echoed, and the game's own onValueChanged → SetSearchString
+        // drives SlotsGroupVM.SearchString → UpdateVisibleCollection, so the next immediate-mode BuildStash
+        // render reflects the filtered list. The label carries the active query (read on re-focus after an
+        // edit); a "Clear" button appears only while a query is set. Keyed party-wide (search is shared).
+        private static void BuildSearch(GraphBuilder b, string k, InventoryStashVM stash)
+        {
+            if (stash?.ItemSlotsGroup == null) return;
+            b.SetRegion(k + "search");
+            b.PushContext(Loc.T("inv.search"), Loc.T("role.list"));
+            b.AddItem(ControlId.Structural(k + "search:edit"), GraphNodes.Button(
+                () =>
+                {
+                    var q = stash.ItemSlotsGroup.SearchString?.Value;
+                    return string.IsNullOrEmpty(q) ? Loc.T("inv.search") : Loc.T("inv.search_active", new { query = q });
+                },
+                BeginSearch));
+            if (!string.IsNullOrEmpty(stash.ItemSlotsGroup.SearchString?.Value))
+                b.AddItem(ControlId.Structural(k + "search:clear"), GraphNodes.Button(
+                    () => Loc.T("inv.search_clear"), () => ClearSearch(stash)));
+            b.PopContext();
+        }
+
+        // Focus the game's live search field and let TextEntry own the keyboard; the game's binding filters.
+        private static void BeginSearch()
+        {
+            var field = SearchField();
+            if (field != null) TextEntry.Begin(field, Loc.T("inv.search"));
+            else Tts.Speak(Loc.T("text.unavailable"), interrupt: true);
+        }
+
+        // Clear via the game's own field (its observer sets SearchString=""), falling back to the reactive.
+        private static void ClearSearch(InventoryStashVM stash)
+        {
+            var field = SearchField();
+            if (field != null) field.text = "";
+            else if (stash?.ItemSlotsGroup?.SearchString != null && !string.IsNullOrEmpty(stash.ItemSlotsGroup.SearchString.Value))
+                stash.ItemSlotsGroup.SearchString.Value = "";
+            Tts.Speak(Loc.T("search.cleared"), interrupt: true);
+        }
+
+        // The live inventory search field: the game's own TMP input in the filter bar (publicized field on
+        // ItemsFilterSearchBaseView). Pick the active, interactable one — the PC view in our forced mouse mode.
+        private static TMP_InputField SearchField()
+        {
+            var views = UnityEngine.Object.FindObjectsByType<ItemsFilterSearchBaseView>(UnityEngine.FindObjectsSortMode.None);
+            foreach (var v in views)
+            {
+                if (v == null || !v.isActiveAndEnabled) continue;
+                var f = v.m_InputField;
+                if (f != null && f.isActiveAndEnabled && f.IsInteractable()) return f;
+            }
+            return null;
         }
 
         // The equipment doll: the weapon sets, then the worn gear and quick slots, as a flat "Slot: item" list.
