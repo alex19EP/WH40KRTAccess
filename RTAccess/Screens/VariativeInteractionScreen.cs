@@ -19,8 +19,8 @@ namespace RTAccess.Screens
     /// <c>UIUtility.GetInteractionVariantActorText</c>). We mirror that live collection into
     /// <see cref="ProxyActionButton"/>s; activating one runs <see cref="InteractionVariantVM.Interact"/> — which
     /// dispatches through the game's own <c>ClickMapObjectHandler.TryInteract</c> and then closes the VM. The
-    /// win/fail OUTCOME is still voiced separately by <see cref="RTAccess.Accessibility.InteractionEvents"/>
-    /// (<c>IPickLockHandler</c>).
+    /// win/fail OUTCOME is voiced by the game's own combat log (PickLockLogThread / InteractionRestrictionLogThread)
+    /// via <see cref="RTAccess.Accessibility.LogTap"/>.
     ///
     /// We only reach this screen because <see cref="RTAccess.Exploration.ProxyMapObject.Interact"/> raises the
     /// request event when <see cref="VariativeInteractionVM.HasVariativeInteraction"/> is true — the static

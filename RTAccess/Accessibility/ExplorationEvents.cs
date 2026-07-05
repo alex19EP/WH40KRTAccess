@@ -9,7 +9,7 @@ namespace RTAccess.Accessibility;
 
 /// <summary>
 /// Long-lived <see cref="Kingmaker.PubSubSystem.Core.EventBus"/> subscriber that voices world-exploration state:
-/// the currently chosen nearby interactable (as the game cycles it) and area/loading transitions. Subscribed
+/// the currently chosen nearby interactable (as the game cycles it) and area-activation transitions. Subscribed
 /// once at mod load and unsubscribed at unload (see <see cref="Main"/>) — no per-area churn.
 ///
 /// The game raises <see cref="ISurroundingInteractableObjectsCountHandler"/> per interactable whenever the set
@@ -20,9 +20,7 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal sealed class ExplorationEvents :
     ISurroundingInteractableObjectsCountHandler,
-    IAreaActivationHandler,
-    IOpenLoadingScreenHandler,
-    ICloseLoadingScreenHandler
+    IAreaActivationHandler
 {
     internal static readonly ExplorationEvents Instance = new ExplorationEvents();
 
@@ -86,7 +84,7 @@ internal sealed class ExplorationEvents :
         Speaker.Speak(string.IsNullOrWhiteSpace(text) ? Loc.T("explore.interactable") : text, interrupt: interrupt);
     }
 
-    // Area / loading transitions.
+    // Area transition (voices the entered area).
     public void OnAreaActivated()
     {
         try
@@ -102,8 +100,4 @@ internal sealed class ExplorationEvents :
         }
         catch (Exception e) { Main.Log?.Log("area announce failed: " + e.Message); }
     }
-
-    public void HandleOpenLoadingScreen() => Speaker.Speak(Loc.T("explore.loading"), interrupt: false);
-
-    public void HandleCloseLoadingScreen() { /* OnAreaActivated announces the entered area; nothing to add here. */ }
 }

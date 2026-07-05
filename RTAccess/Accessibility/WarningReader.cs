@@ -15,10 +15,12 @@ namespace RTAccess.Accessibility;
 ///
 /// The game raises two forms: a localized <c>string</c> (already the reason text — e.g. an ability target
 /// restriction's message) which we speak directly, and a <see cref="WarningNotificationType"/> enum which we
-/// resolve through the same localized table the on-screen warnings use. The routine save/load notifications
-/// (manual/quick/auto save succeeded, game loaded) are pure spam for a blind player, so they're filtered;
-/// genuine save FAILURES still read (they're a refusal). Speech is queued (interrupt:false), like the rest of
-/// the combat/event feedback (see [[rt-interrupt-speech-rule]]).
+/// resolve through the same localized table the on-screen warnings use. We voice EVERY warning toast the game
+/// displays — this is the only reader of that on-screen toast, and it is the complete set (many warnings,
+/// e.g. the <c>addToLog:false</c> refusals, are shown on screen but never written to the combat log, so
+/// <see cref="LogTap"/> cannot see them). The matching <c>WarningNotificationLogThread</c> stays owned here
+/// (suppressed in <see cref="LogTap"/>) so the <c>addToLog:true</c> ones are not read twice (toast + log).
+/// Speech is queued (interrupt:false), like the rest of the combat/event feedback (see [[rt-interrupt-speech-rule]]).
 /// </summary>
 internal sealed class WarningReader : IWarningNotificationUIHandler
 {
@@ -34,7 +36,6 @@ internal sealed class WarningReader : IWarningNotificationUIHandler
         WarningNotificationFormat warningFormat = WarningNotificationFormat.Common, bool withSound = true)
     {
         Count++;
-        if (IsSaveLoadNoise(warningType)) return;
         Speak(Localize(warningType));
     }
 
@@ -44,23 +45,6 @@ internal sealed class WarningReader : IWarningNotificationUIHandler
     {
         Count++;
         Speak(text);
-    }
-
-    // Routine save/load notifications are constant background spam (autosave especially). Genuine save
-    // failures / "saving impossible" are refusals and still read.
-    private static bool IsSaveLoadNoise(WarningNotificationType t)
-    {
-        switch (t)
-        {
-            case WarningNotificationType.GameLoaded:
-            case WarningNotificationType.GameSaved:
-            case WarningNotificationType.GameSavedQuick:
-            case WarningNotificationType.GameSavedAuto:
-            case WarningNotificationType.GameSavedInProgress:
-                return true;
-            default:
-                return false;
-        }
     }
 
     private static string Localize(WarningNotificationType t)

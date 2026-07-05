@@ -17,8 +17,8 @@ namespace RTAccess.Accessibility;
 /// CAPTURED and VOICED are decoupled. The game itself retains the full history
 /// (<c>LogThreadService</c>, uncapped, session-scoped), so the review screen reads THAT store directly —
 /// this tap only decides what to SPEAK live. It voices every thread EXCEPT the ones a dedicated announcer
-/// already owns (<see cref="OwnedElsewhere"/> — barks, warnings, dialogue cue/answer text, buff
-/// application), plus separators — everything a sighted player reads in the log window is spoken.
+/// already owns (<see cref="OwnedElsewhere"/> — barks, warnings, dialogue cue/answer text), plus
+/// separators — everything a sighted player reads in the log window is spoken.
 /// Conviction (soul-mark) shifts are the ONE notification the game never logs, so they come from
 /// <see cref="ConvictionEvents"/> instead.
 ///
@@ -39,10 +39,11 @@ public static class LogTap
         "WarningNotificationLogThread",            // WarningReader (instant refusal toasts)
         "DialogLogThread",                         // DialogueScreen voices the current cue
         "DialogHistoryLogThread",                  // DialogueScreen owns the transcript
-        "RulebookCanApplyBuffLogThread",           // CombatEvents' reconciler (also announces expiry)
-        "MergeRuleCalculateCanApplyBuffLogThread",
-        "RulePerformMomentumChangeLogThread",      // momentum fires every kill/turn; HUD gauge (K) instead
     };
+    // NOTE: the buff-application threads (Rulebook/MergeRuleCalculateCanApplyBuff) are intentionally NOT owned.
+    // The game groups a multi-target application into one "group gains X" line and honours every hidden/own-self
+    // filter, so we let it voice buff GAINS directly rather than re-deriving them per-unit. Buff removal/expiry
+    // has no log thread and is no longer announced (sighted parity — the log never shows expiry either).
 
     // Same-frame exact-duplicate guard: the engine occasionally raises AddMessage twice for one event in a
     // single frame. This drops that echo WITHOUT touching legitimate cross-frame repeats (e.g. a burst of

@@ -115,14 +115,11 @@ public static class Main {
             // Voice barks — overhead speech bubbles + subtitles (see BarkEvents / [[rt-bark-system]]). Also a
             // persistent session subscriber; unsubscribed in OnUnload.
             EventBus.Subscribe(BarkEvents.Instance);
-            // Voice combat events (damage / heal / death / buffs) + refusal toasts ("not enough action points").
-            // Passive event streams → queued speech, flushed once per frame by CombatEvents.Tick (see CombatEvents
-            // / WarningReader). Persistent session subscribers; unsubscribed in OnUnload.
-            EventBus.Subscribe(CombatEvents.Instance);
+            // Voice action-refusal toasts ("not enough action points"). Passive event stream → queued speech.
+            // Persistent session subscriber; unsubscribed in OnUnload. (Combat events — damage / heal / death /
+            // buffs — come from the game log via LogTap into CombatEvents' queue; CombatEvents itself is pumped
+            // by CombatEvents.Tick from OnUpdate and is no longer an EventBus subscriber.)
             EventBus.Subscribe(WarningReader.Instance);
-            // Voice interaction outcomes the player can't see — currently lock-pick success/fail (an interaction runs
-            // a skill check with no audible result of its own). Persistent session subscriber; unsubscribed below.
-            EventBus.Subscribe(InteractionEvents.Instance);
             // Voice conviction (soul-mark) shifts — the one dialogue notification the game never logs, so it
             // can't ride LogTap like the rest; everything else in the message log is voiced by LogTap (the
             // universal AddMessage tap) into CombatEvents' queue. Persistent subscriber; unsubscribed below.
@@ -183,13 +180,13 @@ public static class Main {
         // Pick up a mid-session game-language change so our framework strings follow it.
         Localization.LocalizationManager.Tick();
 
-        // Reconcile this frame's buff churn, then flush queued combat-event lines in arrival order (passive →
+        // Flush queued combat-event lines (log taps + lifecycle/threshold cues) in arrival order (passive →
         // never interrupt). WarningReader is reactive (no tick).
         CombatEvents.Instance.Tick();
 
-        // Announce the post-load "press any key to continue" prompt (a silent barrier for blind players on
-        // every area transition). Edge-detected; any key dismisses it.
-        LoadingScreenAnnounce.Update();
+        // Loading screen: announce the tip/description on show (via a view postfix) and the post-load
+        // "press any key to continue" prompt (a silent barrier for blind players). Edge-detected; any key dismisses it.
+        LoadingScreenReader.Update();
 
         // System-map proximity cues (the game's three HUD interference icons, edge-detected). No-op off the map.
         SpaceEvents.Instance.Tick();
@@ -301,9 +298,7 @@ public static class Main {
     private static bool OnUnload(UnityModManager.ModEntry modEntry) {
         EventBus.Unsubscribe(ExplorationEvents.Instance);
         EventBus.Unsubscribe(BarkEvents.Instance);
-        EventBus.Unsubscribe(CombatEvents.Instance);
         EventBus.Unsubscribe(WarningReader.Instance);
-        EventBus.Unsubscribe(InteractionEvents.Instance);
         EventBus.Unsubscribe(ConvictionEvents.Instance);
         EventBus.Unsubscribe(SpaceEvents.Instance);
         Speaker.Stop();

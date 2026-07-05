@@ -269,7 +269,8 @@ internal sealed class ProxyMapObject : ScanItem
         // auto-run the first available actor and skip that choice — the choice branch lives only in the mouse
         // OnClick / overtip paths, not the static entry the mod calls. So raise the request ourselves: the game
         // builds SurfaceDynamicPartVM.VariativeInteractionVM.Value and our VariativeInteractionScreen mirrors it
-        // into accessible buttons (mirrors WrathAccess's lockpick guard). Outcome is voiced by InteractionEvents.
+        // into accessible buttons (mirrors WrathAccess's lockpick guard). Outcome is voiced by the game's own
+        // combat log (PickLockLogThread etc.) via LogTap.
         if (VariativeInteractionVM.HasVariativeInteraction(view))
         {
             EventBus.RaiseEvent<IVariativeInteractionUIHandler>(h => h.HandleInteractionRequest(view));

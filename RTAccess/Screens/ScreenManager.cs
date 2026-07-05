@@ -198,7 +198,7 @@ namespace RTAccess.Screens
             // Variative-interaction chooser (SurfaceDynamicPartVM.VariativeInteractionVM) — layer 24, an Exclusive
             // modal raised when interacting with a locked/variative object, so a blind player picks the actor
             // (skill / Tech-Use / Key / Destroy, each with its chance) instead of the game auto-running the first.
-            // Raised by RTAccess.Exploration.ProxyMapObject.Interact; outcome voiced by InteractionEvents.
+            // Raised by RTAccess.Exploration.ProxyMapObject.Interact; outcome voiced by the game log via LogTap.
             Register(new VariativeInteractionScreen());
             // Area-transition / ship-deck fast-travel map (SurfaceStaticPartVM.TransitionVM, a BlueprintMultiEntrance)
             // — layer 24, Exclusive. The window the map key opens inside a ship (Local Map is unbound there) and
