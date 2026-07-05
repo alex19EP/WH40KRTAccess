@@ -1,8 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Kingmaker;
 using Kingmaker.Blueprints.Root;                                                      // LocalizedTexts (stat names)
+using Kingmaker.Blueprints.Root.Strings;                                              // UIStrings
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;                                    // TooltipTemplateAbility/Feature/Item/Simple
+using Kingmaker.Controllers;                                                          // ReputationHelper
+using Kingmaker.Enums;                                                                // FactionType
+using Kingmaker.Items;                                                                // PartUnitBody (augments)
+using Kingmaker.UI.Common;                                                            // UIUtilityUnit, UIUtility
+using Kingmaker.UI.MVVM.VM.Tooltip.Templates;                                         // TooltipTemplateSoulMarkHeader, SoulMarkTooltipExtensions
+using Kingmaker.UnitLogic.Alignments;                                                 // SoulMark*
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;                                       // ServiceWindowsVM, ServiceWindowsType
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.LevelClassScores.AbilityScores; // CharInfoAbilityScoresBlockVM.AbilitiesOrdered
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.SkillsAndWeapons.Skills;        // CharInfoSkillsBlockVM.SkillsOrdered
@@ -12,6 +21,7 @@ using Kingmaker.EntitySystem.Stats.Base;                                        
 using Kingmaker.PubSubSystem;                                                         // INewServiceWindowUIHandler
 using Kingmaker.PubSubSystem.Core;                                                    // EventBus
 using Kingmaker.Code.UI.MVVM.View.ServiceWindows.CharacterInfo;                       // CharInfoPageType
+using RTAccess.Accessibility;                                                         // ViewedCharacter
 using RTAccess.UI;
 using RTAccess.UI.Graph;
 
@@ -20,17 +30,24 @@ namespace RTAccess.Screens
     /// <summary>
     /// The in-game character sheet (CharacterInfo service window), graph-native. A mod-owned, navigable
     /// read of the selected character built LIVE off the sheet's <see cref="BaseUnitEntity"/> — not the
-    /// game's CharInfo* block VMs (which are partly Pathfinder leftovers in 40K). Four Tab-stops,
+    /// game's CharInfo* block VMs (which are partly Pathfinder leftovers in 40K). Seven Tab-stops,
     /// mirroring the verified adapter topology:
-    ///   • Character — name, level, careers (Progression.AllCareerPaths), and the "Level Up" button
+    ///   • Character — name, level, careers (Progression.AllCareerPaths), the "Level Up" button
     ///     while a rank is pending (it opens the game's own Level Progression page — the
-    ///     <see cref="LevelUpScreen"/> entry).
+    ///     <see cref="LevelUpScreen"/> entry), and the pet/master swap while the unit has a pet axis.
     ///   • Characteristics — one drill-in group per stat (CharInfoAbilityScoresBlockVM.AbilitiesOrdered);
     ///     the header reads "{name} {ModifiedValue}" live and expands to the per-source modifier
     ///     breakdown (ModifiableValue.GetDisplayModifiers()) — the "why is my Ballistic Skill 55" drill.
     ///   • Wounds and defenses — the wounds readout (mirrors InGameScreen.AppendWounds) plus a drill-in
     ///     group per defensive StatType.
     ///   • Skills — one drill-in group per skill (CharInfoSkillsBlockVM.SkillsOrdered).
+    ///   • Abilities — the "powers" page: Active / Passive / Augmentations subgroups; Space drills into
+    ///     the same tooltip templates the game's page builds (read via the UIUtilityUnit collectors, not
+    ///     the component VMs, which spin up action-bar + EventBus machinery we don't want).
+    ///   • Factions and reputation — PARTY-WIDE (identical on every unit's sheet; keys carry no unit so
+    ///     a character switch keeps focus here); rows mirror the card, plus the profit factor.
+    ///   • Biography — unit-typed exactly as the game splits it (soul-mark standing for everyone, then
+    ///     the MC's shift history or a companion's unlocked stories).
     /// The displayed unit is the one the window binds to (SelectionCharacter.SelectedUnitInUI), NOT the
     /// field selection. Immediate mode: everything reads live per render (a buff / level-up / damage
     /// updates in place — the old unit+signature rebuild machinery is deleted); keys carry the unit, so
@@ -45,6 +62,15 @@ namespace RTAccess.Screens
         public override string Key => "service.character";
         public override string ScreenName => null; // ServiceWindowAnnounce already speaks "Character"
         public override int Layer => 10;
+
+        // Type-ahead OFF: letters pass to the game so its own Shift+A/Shift+D switch-character works here
+        // (the sheet re-keys to the new unit); arrows walk the stat/skill trees instead.
+        public override bool AllowsTypeahead => false;
+
+        // The game switches SelectedUnitInUI on Shift+A/D but never speaks it — ViewedCharacter voices WHO
+        // (the sheet itself re-keys silently). OnUpdate runs each frame on the focused screen.
+        public override void OnPush() => ViewedCharacter.Reset();
+        public override void OnUpdate() => ViewedCharacter.Tick(SheetUnit());
 
         public override bool IsActive()
         {
@@ -110,6 +136,9 @@ namespace RTAccess.Screens
                 DefenseStats, withWounds: true);
             BuildStatSection(b, "skills", k + "skill:", Loc.T("charinfo.skills"), unit,
                 CharInfoSkillsBlockVM.SkillsOrdered, withWounds: false);
+            BuildAbilities(b, k, unit);
+            BuildFactions(b);
+            BuildBiography(b, k, unit);
         }
 
         // Header — flat readout (one arrow-through list, a single Tab-stop): name, level, careers, and
@@ -136,7 +165,245 @@ namespace RTAccess.Screens
                     () => Loc.T("levelup.button"),
                     () => EventBus.RaiseEvent<INewServiceWindowUIHandler>(
                         h => h.HandleOpenCharacterInfoPage(CharInfoPageType.LevelProgression, unit))));
+            // Pet/master swap (the game's m_PetButton) — a pet is off the Shift+A/D roster, so it needs
+            // its own control; only shown when this unit has a pet or is one.
+            if (ViewedCharacter.HasPetAxis(unit))
+                b.AddItem(ControlId.Structural(k + "petswap"), GraphNodes.Button(
+                    () => ViewedCharacter.PetLabel(unit),
+                    () => ViewedCharacter.SwapPet(unit)));
             b.PopContext();
+        }
+
+        // ---- Abilities ("powers"): Active (usable abilities incl. psyker powers), Passive (talents /
+        // features), and cybernetic Augmentations. Rows mirror the game's Abilities page; Space drills
+        // into the SAME tooltip template CharInfoFeatureVM.CreateTooltip builds. Read via the
+        // UIUtilityUnit collectors, not the component VMs (which spin up action-bar + EventBus machinery
+        // we don't want). Rows key by blueprint guid, disambiguated — MakeNode throws on duplicates. ----
+
+        private static void BuildAbilities(GraphBuilder b, string k, BaseUnitEntity unit)
+        {
+            var active = UIUtilityUnit.CollectAbilities(unit).ToList();
+            var passive = UIUtilityUnit.CollectFeatures(unit).ToList();
+            var augs = unit.GetOptional<PartUnitBody>()?.Augments;
+            bool anyAug = augs != null
+                && (augs.OverdriveAbility != null || augs.Slots.Values.Any(s => s.HasItem));
+            if (active.Count == 0 && passive.Count == 0 && !anyAug) return;
+
+            string kp = k + "pow:";
+            b.BeginStop("abilities").PushContext(Loc.T("charinfo.abilities"));
+
+            if (active.Count > 0)
+            {
+                b.BeginGroup(ControlId.Structural(kp + "active"),
+                    GraphNodes.Group(() => Loc.T("charinfo.abilities_active")));
+                var seen = new HashSet<string>();
+                foreach (var a in active)
+                {
+                    var ab = a; // capture for the label/tooltip factories
+                    b.AddItem(ControlId.Structural(UniqueKey(seen, kp + "a:" + (ab.Blueprint?.AssetGuid ?? ab.Name))),
+                        TextWithTooltip(() => ab.Name, () => new TooltipTemplateAbility(ab.Data)));
+                }
+                b.EndGroup();
+            }
+
+            if (passive.Count > 0)
+            {
+                b.BeginGroup(ControlId.Structural(kp + "passive"),
+                    GraphNodes.Group(() => Loc.T("charinfo.abilities_passive")));
+                var seen = new HashSet<string>();
+                foreach (var f in passive)
+                {
+                    var feat = f;
+                    b.AddItem(ControlId.Structural(UniqueKey(seen, kp + "p:" + (feat.Blueprint?.AssetGuid ?? feat.Name))),
+                        TextWithTooltip(
+                            () => feat.Rank > 1
+                                ? Loc.T("charinfo.feature_ranked", new { name = feat.Name, rank = feat.Rank })
+                                : feat.Name,
+                            () => new TooltipTemplateFeature(feat)));
+                }
+                b.EndGroup();
+            }
+
+            if (anyAug)
+            {
+                b.BeginGroup(ControlId.Structural(kp + "aug"),
+                    GraphNodes.Group(() => Loc.T("charinfo.abilities_augmentations")));
+                if (augs.OverdriveAbility != null)
+                {
+                    var od = augs.OverdriveAbility;
+                    b.AddItem(ControlId.Structural(kp + "aug:od"),
+                        TextWithTooltip(() => od.Name, () => new TooltipTemplateAbility(od.Data)));
+                }
+                foreach (var kv in augs.Slots)
+                {
+                    if (!kv.Value.HasItem) continue;
+                    var item = kv.Value.Item;
+                    b.AddItem(ControlId.Structural(kp + "aug:" + kv.Key),
+                        TextWithTooltip(() => item.Name, () => new TooltipTemplateItem(item)));
+                }
+                b.EndGroup();
+            }
+
+            b.PopContext();
+        }
+
+        // ---- Factions and reputation — PARTY-WIDE (reads Game.Instance.Player, identical on every
+        // unit's sheet), so it takes no unit and its keys carry none: a character switch keeps focus
+        // here. Row label mirrors the card (name + level + "cur / next" or Max); Space drills into the
+        // faction description. Read ReputationHelper / Player directly — the game's item VMs
+        // EventBus-subscribe in their ctor and would leak if instantiated per render. ----
+
+        private static void BuildFactions(GraphBuilder b)
+        {
+            var player = Game.Instance?.Player;
+            if (player == null) return;
+            const string kp = "chinfo:fact:";
+            b.BeginStop("factions").PushContext(UIStrings.Instance.CharacterSheet.FactionsReputation.Text);
+            foreach (var f in ReputationHelper.Factions)
+            {
+                if (f == FactionType.None) continue;
+                var fac = f; // capture
+                var name = UIStrings.Instance.CharacterSheet.GetFactionLabel(fac);
+                if (string.IsNullOrEmpty(name)) continue; // skip enum members without a label (defensive)
+                var desc = UIStrings.Instance.CharacterSheet.GetFactionDescription(fac);
+                var vt = string.IsNullOrEmpty(desc)
+                    ? GraphNodes.Text(() => FactionRow(fac))
+                    : TextWithTooltip(() => FactionRow(fac), () => new TooltipTemplateSimple(name, desc));
+                b.AddItem(ControlId.Structural(kp + fac), vt);
+            }
+            var pf = player.ProfitFactor;
+            if (pf != null)
+                b.AddItem(ControlId.Structural(kp + "profit"), TextWithTooltip(
+                    () => Loc.T("char.profit_factor", new
+                    {
+                        title = UIStrings.Instance.ProfitFactorTexts.Title.Text,
+                        value = pf.Total.ToString()
+                    }),
+                    () => new TooltipTemplateSimple(
+                        UIStrings.Instance.ProfitFactorTexts.Title.Text,
+                        UIStrings.Instance.ProfitFactorTexts.Description.Text)));
+            b.PopContext();
+        }
+
+        // Label mirroring the faction card: name + level + "cur / next" points (or the Max string).
+        private static string FactionRow(FactionType f)
+        {
+            var name = UIStrings.Instance.CharacterSheet.GetFactionLabel(f);
+            int level = ReputationHelper.GetCurrentReputationLevel(f);
+            string progress = ReputationHelper.IsMaxReputation(f)
+                ? UIStrings.Instance.CharacterSheet.MaxReputationLevel.Text
+                : ReputationHelper.GetCurrentReputationPoints(f) + " / " + ReputationHelper.GetNextLevelReputationPoints(f);
+            return Loc.T("char.faction_row", new { name, level, progress });
+        }
+
+        // The three soul-mark axes (the game's "AlignmentWheel" — a Pathfinder-named class holding pure
+        // 40K soul-marks; there is no good/evil alignment). Order/labels come from the game's own strings.
+        private static readonly SoulMarkDirection[] SoulMarks =
+            { SoulMarkDirection.Faith, SoulMarkDirection.Corruption, SoulMarkDirection.Hope };
+
+        // ---- Biography — unit-typed exactly as the game splits it (CharInfoPagesPC): soul-mark STANDING
+        // for everyone, then the main character's soul-mark SHIFT HISTORY, or a companion/pet's unlocked
+        // STORIES. Legitimately empty for a companion with no unlocked stories / an MC with no shifts
+        // (the game's PageCanHaveNoEntities is true only here) — mirrored with the game's own empty
+        // strings. ----
+
+        private static void BuildBiography(GraphBuilder b, string k, BaseUnitEntity unit)
+        {
+            string kp = k + "bio:";
+            b.BeginStop("biography").PushContext(Loc.T("charinfo.biography"));
+
+            // Soul-mark standing (all units); Space drills into the game's own soul-mark card.
+            foreach (var dir in SoulMarks)
+            {
+                var bp = SoulMarkShiftExtension.GetBaseSoulMarkFor(dir);
+                if (bp == null) continue;
+                var d = dir; // capture for the label/tooltip factories
+                b.AddItem(ControlId.Structural(kp + "sm:" + d), TextWithTooltip(
+                    () =>
+                    {
+                        SoulMarkTooltipExtensions.GetSoulMarkInfo(bp, unit, out _, out _, out _, out var tier);
+                        var name = UIUtility.GetSoulMarkDirectionText(d).Text;
+                        var rankText = UIUtility.GetSoulMarkRankText(tier).Text;
+                        var rank = string.IsNullOrEmpty(rankText) ? Loc.T("charinfo.soulmark_none") : rankText;
+                        return Loc.T("charinfo.soulmark_standing", new { name, rank });
+                    },
+                    () => new TooltipTemplateSoulMarkHeader(unit, d)));
+            }
+
+            if (unit.IsMainCharacter)
+            {
+                // Soul-mark shift history (main character only — AppliedShifts always reads the MC).
+                var shifts = SoulMarkShiftExtension.AppliedShifts();
+                if (shifts.Count == 0)
+                    b.AddItem(ControlId.Structural(kp + "noshifts"),
+                        GraphNodes.Text(() => UIStrings.Instance.CharacterSheet.EmptySoulMarkShiftsDesc.Text));
+                else
+                {
+                    int si = 0;
+                    foreach (var s in shifts)
+                    {
+                        var sh = s; // capture
+                        b.AddItem(ControlId.Structural(kp + "shift:" + si++),
+                            GraphNodes.Text(() => Loc.T("charinfo.soulmark_shift", new
+                            {
+                                name = UIUtility.GetSoulMarkDirectionText(sh.Direction).Text,
+                                value = sh.Value,
+                                text = sh.Description != null ? sh.Description.Text : ""
+                            })));
+                    }
+                }
+            }
+            else
+            {
+                // Companion / pet stories (only those unlocked — proper sighted parity).
+                var stories = Game.Instance.Player.CompanionStories.Get(unit).ToList();
+                if (stories.Count == 0)
+                    b.AddItem(ControlId.Structural(kp + "nostories"),
+                        GraphNodes.Text(() => UIStrings.Instance.CharacterSheet.EmptyBiographyDesc.Text));
+                else if (stories.Count == 1)
+                {
+                    var st0 = stories[0];
+                    b.AddItem(ControlId.Structural(kp + "story:0"),
+                        GraphNodes.Text(() => st0.Description.Text)); // mirrors the card (shows story 0)
+                }
+                else
+                {
+                    int bi = 0;
+                    foreach (var st in stories)
+                    {
+                        var story = st; // capture
+                        string skey = kp + "story:" + bi++;
+                        b.BeginGroup(ControlId.Structural(skey),
+                            GraphNodes.Group(() => story.Title.Text));
+                        b.AddItem(ControlId.Structural(skey + ":body"),
+                            GraphNodes.Text(() => story.Description.Text));
+                        b.EndGroup();
+                    }
+                }
+            }
+
+            b.PopContext();
+        }
+
+        // A read-only row that carries a Space drill-in (the game's own tooltip template, opened through
+        // the shared chooser — the Button factory's OnTooltip wiring, on a plain text node).
+        private static NodeVtable TextWithTooltip(Func<string> label,
+            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> template)
+        {
+            var vt = GraphNodes.Text(label);
+            vt.SearchText = label;
+            vt.OnTooltip = () => TooltipChooser.OpenTemplate(label(), template());
+            return vt;
+        }
+
+        // Disambiguate repeated blueprints (a fact granted twice) — MakeNode throws on duplicate keys,
+        // and the first occurrence keeps the unsuffixed key so focus stays position-stable.
+        private static string UniqueKey(HashSet<string> seen, string baseKey)
+        {
+            if (seen.Add(baseKey)) return baseKey;
+            int i = 2;
+            while (!seen.Add(baseKey + "#" + i)) i++;
+            return baseKey + "#" + i;
         }
 
         // One sheet section as its own Tab-stop: the section label is a context level (the old top-level
