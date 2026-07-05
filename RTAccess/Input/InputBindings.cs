@@ -162,13 +162,9 @@ namespace RTAccess.Input
             // their real world objects in the Objects/Exits browse, and the marker-only pins live in the
             // "Points of interest" category. Both are reached via the Ctrl+PageUp/Down category browse; I on a
             // landmark walks the party toward it. V and B are therefore free.)
-            // Z = cycle live area effects (hazards + buff zones) nearest the cursor — the AoE-awareness cycle for
-            // turn-based combat (stepping one tile into a cloud is a real cost). Z is a free letter key (see the
-            // PartyHotkeys keymap notes); Shift reverses like the other review cycles.
-            InputManager.Register("scan.review_zones", "Scanner: cycle area effects", InputCategory.Exploration,
-                () => Ex.Scanner.ReviewZones(false)).AddBinding(KeyCode.Z).Grouped("scanner");
-            InputManager.Register("scan.review_zones_back", "Scanner: cycle area effects (reverse)", InputCategory.Exploration,
-                () => Ex.Scanner.ReviewZones(true)).AddBinding(KeyCode.Z, shift: true).Grouped("scanner");
+            // (Live area effects — hazards + buff zones — are no longer a dedicated Z cycle: they browse as the
+            // "Hazards" / "Buff zones" categories in the Ctrl+PageUp/Down list, and the tile explorer names the
+            // hazard standing on the cursor tile. Z is therefore free.)
             // V / Shift+V — cycle the CURRENT room's exits (doorway openings to neighbouring rooms; see RoomMap),
             // the same keys WrathAccess uses (muscle-memory parity). Speaks "Exit to Room N, class" + bearing/distance
             // and plants the shared cursor on the opening so Backspace walks the party there. Bare V was freed for this

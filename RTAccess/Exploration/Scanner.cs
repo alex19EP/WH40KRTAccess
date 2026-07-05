@@ -34,9 +34,10 @@ namespace RTAccess.Exploration;
 /// I on one WALKS the party toward it (the only thing a landmark supports).
 ///
 /// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Comma/Period/N/M = cycle
-/// nearest party/enemy/neutral/object of interest (Shift reverses); Z = cycle live area effects (hazards + buff
-/// zones, Shift reverses); I = interact with selection (an object; a landmark → walk to it; otherwise the object at
-/// the cursor); O = re-announce the current
+/// nearest party/enemy/neutral/object of interest (Shift reverses). Live area effects (hazards + buff zones) have no
+/// dedicated cycle key — they browse as the Hazards / Buff zones categories in the Ctrl+PageUp/Down list, and the
+/// tile explorer names the hazard on the cursor tile. I = interact with selection (an object; a landmark → walk to
+/// it; otherwise the object at the cursor); O = re-announce the current
 /// selection; Home/Slash = plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y
 /// inspect the cursor / the selection (see <see cref="Inspect"/>).
 /// </summary>
@@ -66,10 +67,11 @@ internal static class Scanner
         ("taxonomy.buffzones",      false, it => it.HasNode(ScanTaxonomy.BuffZones)),
     };
 
-    // Party/Enemies/Neutrals/Objects/Zones come from the WorldModel snapshot (units + reachable interactables +
-    // live area effects). Zones covers ALL area effects (hazards + buff zones) so one cycle answers "what AoEs are
-    // near me" — the Detail says which. (Landmarks are NOT a review group — they live only in the category browse.)
-    private enum Group { Party, Enemies, Neutrals, Objects, Zones }
+    // Party/Enemies/Neutrals/Objects come from the WorldModel snapshot (units + reachable interactables). Area
+    // effects (hazards + buff zones) are NOT a review group — they browse as the Hazards / Buff zones categories in
+    // the Ctrl+PageUp/Down list, and the tile explorer names the hazard on the cursor tile. (Landmarks likewise live
+    // only in the category browse.)
+    private enum Group { Party, Enemies, Neutrals, Objects }
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
@@ -98,8 +100,6 @@ internal static class Scanner
     internal static void ReviewEnemies(bool back) => Safe(() => Review(Group.Enemies, back ? -1 : 1));
     internal static void ReviewNeutrals(bool back) => Safe(() => Review(Group.Neutrals, back ? -1 : 1));
     internal static void ReviewObjects(bool back) => Safe(() => Review(Group.Objects, back ? -1 : 1));
-    // Cycle the live area effects (hazards + buff zones) nearest the cursor — the AoE-awareness cycle for combat.
-    internal static void ReviewZones(bool back) => Safe(() => Review(Group.Zones, back ? -1 : 1));
     internal static void ExitNext() => Safe(() => CycleExit(1));
     internal static void ExitPrev() => Safe(() => CycleExit(-1));
     internal static void InteractSelected() => Safe(() =>
@@ -529,7 +529,6 @@ internal static class Scanner
             case Group.Party: return it.Primary == ScanTaxonomy.UnitsParty;
             case Group.Enemies: return it.Primary == ScanTaxonomy.UnitsEnemies;
             case Group.Neutrals: return it.Primary == ScanTaxonomy.UnitsNeutrals;
-            case Group.Zones: return it.HasNode(ScanTaxonomy.Hazards) || it.HasNode(ScanTaxonomy.BuffZones);
             default:
                 // Objects (M): EVERY interactable map object, so any object is reachable by cycle + I — not just
                 // containers/doors/exits/search points. Mechanisms (levers/consoles/buttons) and traps (disarm)
@@ -691,7 +690,6 @@ internal static class Scanner
             case Group.Party: return Loc.T("taxonomy.units.party");
             case Group.Enemies: return Loc.T("taxonomy.units.enemies");
             case Group.Neutrals: return Loc.T("taxonomy.units.neutrals");
-            case Group.Zones: return Loc.T("taxonomy.zones");
             default: return Loc.T("review.others");
         }
     }

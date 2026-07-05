@@ -116,6 +116,12 @@ internal static class InteractableDescriber
             else sb.Append(node.Walkable ? "clear" : "wall");
         }
 
+        // 1b. Ground hazard / buff zone standing ON this tile — fire, gas, a psychic cloud: the thing a sighted player
+        //     sees burning on the floor, and in turn-based combat the real cost of stepping one tile into it. Read it
+        //     like a live creature (only on a currently-visible tile, hidden in fog) from the same placed-zone proxies
+        //     the area scanner lists, so the wording matches and on-unit auras stay excluded.
+        if (seen && !hideUnits) AppendZones(sb, node);
+
         // 2. Combat tactical overlay, mirroring the game's own cover meshes (CoverVisualizer). The mesh shows a
         //    tile's per-edge cover whenever it is the player's turn (or the deployment phase) and the tile is
         //    WALKABLE — crucially NOT only on the reachable set: holding Ctrl reveals cover on every nearby walkable
@@ -233,6 +239,27 @@ internal static class InteractableDescriber
         if (o?.View == null) return false;
         if (ClickMapObjectHandler.HasAvailableInteractions(o.View.gameObject)) return true;
         return o.GetOptional<AreaTransitionPart>() != null;
+    }
+
+    /// <summary>Append every active ground hazard / buff zone (fire, gas, a psychic cloud) whose real runtime shape
+    /// covers this tile, worded exactly as the area scanner reads them (name + "hazard"/"buff zone"). Sources the same
+    /// placed-zone proxies from <see cref="RTAccess.Exploration.WorldModel"/>, so on-unit auras are already excluded
+    /// and each zone's own fog visibility (<see cref="RTAccess.Exploration.ScanItem.IsVisible"/>) still gates it.</summary>
+    private static void AppendZones(StringBuilder sb, CustomGridNodeBase node)
+    {
+        try
+        {
+            var pos = node.Vector3Position;
+            foreach (var item in RTAccess.Exploration.WorldModel.Items)
+            {
+                if (!(item is RTAccess.Exploration.ProxyAreaEffect zone) || !zone.IsVisible || !zone.Contains(pos))
+                    continue;
+                var label = zone.Name;
+                if (!string.IsNullOrWhiteSpace(zone.Detail)) label += ", " + zone.Detail;
+                Append(sb, label);
+            }
+        }
+        catch (Exception e) { Main.Log?.Error("DescribeTile hazard read failed: " + e); }
     }
 
     /// <summary>Append "half/full cover &lt;dir&gt;" (or "blocked &lt;dir&gt;" for sight-blocking) for one edge, read
