@@ -17,7 +17,7 @@ using UnityEngine;
 namespace RTAccess.Accessibility;
 
 /// <summary>
-/// Builds the spoken description of a focused world interactable — e.g. "Door, approach, 6 metres, ahead" —
+/// Builds the spoken description of a focused world interactable — e.g. "Door, approach, 4 tiles, ahead" —
 /// for the exploration navigator (<see cref="ExplorationEvents"/>) and the area scanner.
 ///
 /// There is no single display-name property on a map object and no localized verb strings, so this replicates
@@ -56,7 +56,7 @@ internal static class InteractableDescriber
         return sb.ToString();
     }
 
-    /// <summary>Spoken line for a local-map landmark from the player position, e.g. "Cargo hold, exit, 20 metres, north".</summary>
+    /// <summary>Spoken line for a local-map landmark from the player position, e.g. "Cargo hold, exit, 15 tiles, north".</summary>
     public static string DescribeMarker(ILocalMapMarker marker, Vector3 self)
     {
         if (marker == null) return string.Empty;
@@ -317,7 +317,7 @@ internal static class InteractableDescriber
             return tips?.Trap?.Text ?? "Trap";
 
         // Last resort: the GameObject name (minus the Unity "(Clone)" suffix). Never return empty — an
-        // unnamed interactable should still announce something rather than just "N metres, <dir>".
+        // unnamed interactable should still announce something rather than just "N tiles, <dir>".
         var fallback = Clean(entity.GameObjectName)?.Replace("(Clone)", "").Trim();
         return string.IsNullOrWhiteSpace(fallback) ? "Object" : fallback;
     }
@@ -338,16 +338,17 @@ internal static class InteractableDescriber
         }
     }
 
-    /// <summary>Distance + map-relative compass between two world points, e.g. "8 metres, north-east". Public so
-    /// the exploration scanner speaks the same compass as the other navigators.</summary>
+    /// <summary>Distance + map-relative compass between two world points, e.g. "6 tiles, north-east". Distance is
+    /// reported in grid tiles (the game's own unit), not metres, so it matches the combat cell readouts and the tile
+    /// explorer's offsets. Public so the exploration scanner speaks the same compass as the other navigators.</summary>
     public static string DirectionAndDistance(Vector3 from, Vector3 to)
     {
         float dx = to.x - from.x; // east(+) / west(-)
         float dz = to.z - from.z; // north(+) / south(-)
         float dist = Mathf.Sqrt(dx * dx + dz * dz);
-        int metres = Mathf.RoundToInt(dist);
+        int tiles = Mathf.RoundToInt(dist / GraphParamsMechanicsCache.GridCellSize); // world metres -> 1.35 m grid cells
         var sb = new StringBuilder();
-        sb.Append(metres == 1 ? "1 metre" : metres + " metres");
+        sb.Append(tiles == 1 ? "1 tile" : tiles + " tiles");
         if (dist > 0.5f)
         {
             float angle = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // 0 = north, +90 = east

@@ -35,7 +35,7 @@ internal sealed class ProxyUnit : ScanItem
     public override BaseUnitEntity TargetUnit => _unit;
 
     // Real footprint radius (metres) — a large creature reads distance/bearing to its nearest edge, not its centre,
-    // and sorts by that edge, so an adjacent ogryn reads "here"/"1 metre" rather than its centre's 2 m.
+    // and sorts by that edge, so an adjacent ogryn reads "here"/"1 tile" rather than its centre's ~2 tiles.
     public override float Footprint => _unit.Corpulence;
 
     // The player's OWN party is always known (the game always shows your party on the map), even though the engine's
