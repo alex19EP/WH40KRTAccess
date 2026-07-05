@@ -105,68 +105,12 @@ internal static class AoEPreview
             else
                 sb.Append(". ").Append(tiles == 1 ? Loc.T("aim.tile_one") : Loc.T("aim.tiles", new { count = tiles }));
 
-            // Per-unit hit odds (#4): the SAME AbilityTargetUIData the sighted overtip (OvertipHitChanceBlockVM) binds —
-            // HitWithAvoidanceChance is the hit% it shows and MaxDamage drives its kill flag. Gathered once for the whole
-            // pattern (as the reticle does) and looked up per caught unit below; wrapped so an odds failure never sinks
-            // the base area readout.
-            var targetData = new List<AbilityTargetUIData>();
-            try { ability.GatherAffectedTargetsData(pattern, casterPos, tw, in targetData); }
-            catch (Exception e) { Main.Log?.Log("AoEPreview odds gather failed: " + e.Message); }
-
-            // Caught units, fog-gated (never reveal what a sighted player couldn't see).
-            int enemies = 0, allies = 0;
-            var allyNames = new List<string>();
-            var odds = new List<string>();
-            var state = Game.Instance?.State;
-            if (state != null)
-                foreach (var o in (System.Collections.IEnumerable)state.AllBaseAwakeUnits)
-                {
-                    if (!(o is BaseUnitEntity u) || u == caster) continue;
-                    if (u.LifeState.IsDead || !u.IsInCombat || !u.IsVisibleForPlayer) continue;
-                    if (!AoEPatternHelper.WouldTargetEntity(pattern, u)) continue;
-                    if (caster.IsEnemy(u)) enemies++;
-                    else if (caster.IsAlly(u)) { allies++; allyNames.Add(u.CharacterName); }
-                    var line = OddsLine(u, targetData);   // per-unit hit%/lethal, same gate as the counts above
-                    if (line != null) odds.Add(line);
-                }
-
-            if (enemies == 0 && allies == 0) { sb.Append(", ").Append(Loc.T("aim.no_targets")); return sb.ToString(); }
-            sb.Append(", ").Append(enemies == 1 ? Loc.T("aim.catches_enemy_one") : Loc.T("aim.catches_enemies", new { count = enemies }));
-            if (allies > 0)
-            {
-                sb.Append(", ").Append(allies == 1 ? Loc.T("aim.and_ally_one") : Loc.T("aim.and_allies", new { count = allies }));
-                sb.Append(". ").Append(Loc.T("aim.ff_warning", new { names = string.Join(", ", allyNames) }));
-            }
-            // Terse per-target odds after the aggregate counts — the speech equivalent of the sighted per-unit overtips.
-            if (odds.Count > 0) sb.Append(". ").Append(Loc.T("aim.odds_prefix")).Append(": ").Append(string.Join(", ", odds));
+            // The caught units, per-target odds, and friendly-fire warning now come from the game's OWN affected-target
+            // list (AimRead reading AimReadTap), appended after this geometry by TileExplorer — not re-derived here.
+            // This block keeps ONLY the pattern geometry (shape / facing / offset / range / tile count).
             return sb.ToString();
         }
         catch (Exception e) { Main.Log?.Error("AoEPreview.CursorTail failed: " + e); return null; }
-    }
-
-    /// <summary>Terse per-unit odds line for one caught unit (#4): "name hit%", reading the same
-    /// <see cref="AbilityTargetUIData"/> the sighted overtip (<c>OvertipHitChanceBlockVM</c>) binds. Returns null when the
-    /// gather produced no entry for the unit. A guaranteed-hit AoE reads "sure hit"; a lethal blow appends "lethal" ONLY
-    /// when the target's HP is not concealed by the game's HideRealHealthInUI mask (fog-independent — the "???" units).</summary>
-    private static string OddsLine(BaseUnitEntity u, List<AbilityTargetUIData> data)
-    {
-        AbilityTargetUIData found = default;
-        bool has = false;
-        for (int i = 0; i < data.Count; i++)
-            if (data[i].Target == u) { found = data[i]; has = true; break; }
-        if (!has) return null;
-        // HitWithAvoidanceChance is the overtip's shown hit%; HitAlways is its guaranteed-hit flag.
-        string chance = found.HitAlways
-            ? Loc.T("aim.odds_sure")
-            : Loc.T("aim.odds_pct", new { chance = Mathf.RoundToInt(Mathf.Clamp(found.HitWithAvoidanceChance, 0f, 100f)) });
-        // Lethal mirrors the overtip's CanDie (MaxDamage >= remaining HP + temp HP) — gated on the HP not being concealed.
-        var health = u.Health;
-        bool lethal = health != null
-            && !u.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
-            && found.MaxDamage >= health.HitPointsLeft + health.TemporaryHitPoints;
-        return lethal
-            ? Loc.T("aim.odds_lethal", new { name = u.CharacterName, chance })
-            : Loc.T("aim.odds_entry", new { name = u.CharacterName, chance });
     }
 
     /// <summary>The shape + size word. Branches on <see cref="AoEPattern.Type"/> FIRST and reads Radius/Angle only for

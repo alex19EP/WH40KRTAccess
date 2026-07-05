@@ -80,9 +80,16 @@ internal static class Targeting
         bool aiming = Aiming;
         if (aiming && !_wasAiming)
         {
+            // Start reading the game's own affected-target broadcast for this aim; AimPointerDriver's Tick postfix
+            // is already driving the pointer to our cursor so the list is computed at our aim point.
+            RTAccess.Combat.AimReadTap.Instance.Begin();
             if (RTAccess.UI.Navigation.HasFocus) RTAccess.UI.Navigation.Blur();
             var opening = ArmAnnounce();
             if (opening != null) Speaker.Speak(opening, interrupt: true);
+        }
+        else if (!aiming && _wasAiming)
+        {
+            RTAccess.Combat.AimReadTap.Instance.End();
         }
         _wasAiming = aiming;
     }

@@ -290,12 +290,16 @@ internal static class TileExplorer
             var tail = RTAccess.Exploration.DeploymentMode.CursorTail(MapCursor.Node);
             if (!string.IsNullOrWhiteSpace(tail)) line += ". " + tail;
         }
-        // While AIMING an AoE / point ability, follow it with the holographic area preview (shape / range / caught
-        // units). Null for single-target aim, so the v1 unit-target loop is untouched. Mutually exclusive with deploy.
+        // While AIMING, follow the tile readout with: (1) the AoE geometry preview (shape / range / tile count; null
+        // for single-target), then (2) the affected-target readout — the aimed unit's hit%/damage + overpenetration
+        // chain, or the AoE's caught enemies + friendly-fire warning — read from the game's OWN aim result at our
+        // cursor (piloted-aiming: AimRead reading AimReadTap, driven by AimPointerDriver). Mutually exclusive w/ deploy.
         else if (RTAccess.Exploration.Targeting.Aiming)
         {
             var tail = RTAccess.Exploration.AoEPreview.CursorTail(MapCursor.Node);
             if (!string.IsNullOrWhiteSpace(tail)) line += ". " + tail;
+            var targets = RTAccess.Combat.AimRead.CursorReadout(verbose: false);
+            if (!string.IsNullOrWhiteSpace(targets)) line += ". " + targets;
         }
         return line;
     }

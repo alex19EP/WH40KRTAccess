@@ -22,6 +22,16 @@ public static class DevApi
     /// <summary>Speak a probe line through the real speech path (also lands in /speech).</summary>
     public static void Say(string text) => Speaker.Speak(text, true);
 
+    /// <summary>Step-1 aim probe: the current snapshot of the game's affected-target list read by
+    /// <see cref="RTAccess.Combat.AimReadTap"/> while aiming — verifies the pointer-drive + read tap track the
+    /// keyboard cursor. Empty/"(no targets)" when not aiming or nothing is caught.</summary>
+    public static string AimDump() => RTAccess.Combat.AimReadTap.Instance.DumpLast();
+
+    /// <summary>Parity probe: during a live aim, dump each captured target with the located overtip VM's gate vs the
+    /// static-gate fallback (must agree), the Shown() verdict, and the projected numbers — so we can confirm in-combat
+    /// that our voiced set/values match the on-screen overtips (no more, no less).</summary>
+    public static string AimGate() => RTAccess.Combat.AimParity.DumpGate();
+
     /// <summary>Dump the scanner's live registry with the per-surface visibility gates, returning the summary +
     /// the list of "phantom" items (IsVisible but not CurrentlySeen — in the category browse yet missing from the
     /// M object-cycle / tile exploration) and writing a JSON report to the mod dir. The /eval-callable twin of the
