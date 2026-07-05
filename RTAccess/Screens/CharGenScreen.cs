@@ -1,105 +1,121 @@
-using System.Collections.Generic;
 using System.Linq;
 using Kingmaker;
 using Kingmaker.UI.MVVM.VM.CharGen;
 using Kingmaker.UI.MVVM.VM.CharGen.Phases;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
     /// <summary>
-    /// Character generation (CharGenVM) on the shared <see cref="WizardScreen"/> shell. Reached from the
-    /// main menu (new game) — and, later, in-game for level-up/respec (same VM, different host). Next
+    /// Character generation (CharGenVM), graph-native: the roadmap strip (one live entry per phase, each a
+    /// jump target) as the first Tab-stop, the current phase's content under the phase name as context —
+    /// content keys carry the phase, so advancing re-keys the whole page — then Back/Next stops. Reached
+    /// from the main menu (new game); the same VM later hosts in-game custom-companion creation. Next
     /// advances the phase (or Complete on the last), Back retreats (or Close on the first); Next is gated
-    /// by the current phase's completion. A roadmap strip above the content lists every phase (name,
-    /// state, live summary) and is a jump target. The phase set is dynamic (picking a custom character
-    /// adds Homeworld/Occupation/Career/… phases), so the strip is polled and rebuilt in place. Per-phase
-    /// content is produced by <see cref="CharGenPhaseContent"/>.
+    /// by the current phase's completion. The phase SET is dynamic (picking custom adds Homeworld/
+    /// Occupation/Career/… phases) — immediate mode just renders the live collection, so the old
+    /// set-polling/rebuild machinery is gone. Per-phase content comes from
+    /// <see cref="CharGenPhaseContent"/>; a phase change plays the game's page-turn and lands focus on the
+    /// new page's content, while <see cref="RTAccess.Accessibility.CharGenAnnounce"/> (the Harmony postfix
+    /// on the game view's phase change) speaks the orientation line.
     /// </summary>
-    public sealed class CharGenScreen : WizardScreen
+    public sealed class CharGenScreen : Screen
     {
+        public CharGenScreen() { Wrap = true; }
+
         public override string Key => "ctx.chargen";
         public override int Layer => 15; // full-screen flow: above the menu/in-game contexts + service windows
-        // No ScreenName — the content panel is labeled with the current phase's name.
+        // No ScreenName — the content context is labeled with the current phase's name.
+
+        public override bool IsActive() => Vm() != null;
+
+        // Opening (and every phase change) lands on the page content, not the roadmap header — the
+        // roadmap stays first in Tab order.
+        public override object InitialFocusStop => "content";
 
         private static CharGenVM Vm()
         {
-            // Same VM whether reached from the main menu (new game) or, later, in-game (level-up).
+            // Same VM whether reached from the main menu (new game) or, later, in-game (custom companion).
             return Game.Instance?.RootUiContext?.MainMenuVM?.CharGenContextVM?.CharGenVM?.Value;
         }
 
-        protected override object WizardVm() => Vm();
-        protected override object CurrentPhase() => Vm()?.CurrentPhaseVM.Value;
-        protected override string PhaseLabel() => Vm()?.CurrentPhaseVM.Value?.PhaseName.Value;
+        private object _lastVm;
+        private object _lastPhase;
 
-        // The current phase's content builder.
-        private CharGenPhaseContent _phaseContent;
+        public override void OnPop() { _lastVm = null; _lastPhase = null; }
 
-        protected override void BuildContent(Container content)
+        public override void OnUpdate()
         {
-            _phaseContent = CharGenPhaseContent.For(Vm()?.CurrentPhaseVM.Value);
-            if (_phaseContent != null)
-                _phaseContent.Build(content);
-            else
-                content.Add(new TextElement(() => Loc.T("chargen.phase_unavailable")));
-        }
+            var vm = Vm();
+            if (vm == null) return;
+            var phase = vm.CurrentPhaseVM.Value;
+            if (ReferenceEquals(vm, _lastVm) && ReferenceEquals(phase, _lastPhase)) return;
 
-        // The roadmap strip (top of screen): one entry per phase, name + state + live summary, each a
-        // jump target. Built first (above the phase content) via the WizardScreen header hook.
-        private Panel _roadmapPanel;
-        private List<CharGenPhaseBaseVM> _roadmapPhases;
-
-        protected override void BuildHeader(Container root)
-        {
-            _roadmapPanel = new Panel();
-            root.Add(_roadmapPanel);
-            FillRoadmap();
-        }
-
-        private void FillRoadmap()
-        {
-            if (_roadmapPanel == null) return;
-            _roadmapPanel.Clear();
-            var phases = Vm()?.PhasesCollection;
-            _roadmapPhases = phases != null ? phases.ToList() : new List<CharGenPhaseBaseVM>();
-            if (_roadmapPhases.Count == 0) return;
-
-            var list = new ListContainer(Loc.T("chargen.steps"));
-            foreach (var p in _roadmapPhases)
+            // A phase change WITHIN this wizard (Next/Back/roadmap jump) — not the initial build or a
+            // VM swap. The game plays a page-turn on phase advance; our VM-level SelectNext/Prev
+            // bypasses it, so play it here, and land focus on the new page (its keys changed).
+            bool phaseChange = ReferenceEquals(vm, _lastVm) && _lastPhase != null;
+            _lastVm = vm;
+            _lastPhase = phase;
+            if (phaseChange)
             {
-                if (p == null) continue;
-                list.Add(new ProxyRoadmapEntry(p));
+                UiSound.PageTurn();
+                Navigation.Active?.FocusStop("content");
             }
-            _roadmapPanel.Add(list);
         }
 
-        // The phase set changes from many events (picking custom adds phases, a homeworld adds a child
-        // phase, …) without the current phase changing, so poll the set each tick and rebuild the strip in
-        // place when it differs. Focus isn't disturbed: those changes originate in the content, where
-        // focus lives.
-        protected override void OnPhaseTick()
-        {
-            _phaseContent?.Tick();
-            if (PhaseSetChanged()) FillRoadmap();
-        }
+        public override bool BuildsGraph => true;
 
-        private bool PhaseSetChanged()
+        public override void Build(GraphBuilder b)
         {
-            var phases = Vm()?.PhasesCollection;
-            int n = phases?.Count ?? 0;
-            if (_roadmapPhases == null || _roadmapPhases.Count != n) return true;
+            var vm = Vm();
+            if (vm == null) return;
+
+            // The roadmap strip: one entry per phase, read LIVE from PhasesCollection each render — the
+            // set changing (picking custom adds phases, a homeworld adds a child phase) just shows up.
+            b.BeginStop("roadmap").PushContext(Loc.T("chargen.steps"), Loc.T("role.list"));
             int i = 0;
-            if (phases != null)
-                foreach (var p in phases)
-                {
-                    if (!ReferenceEquals(p, _roadmapPhases[i])) return true;
-                    i++;
-                }
-            return false;
+            foreach (var p in vm.PhasesCollection)
+            {
+                if (p == null) { i++; continue; }
+                b.AddItem(ControlId.Referenced(p, "cg:step:" + i), CharGenNodes.RoadmapEntry(p));
+                i++;
+            }
+            b.PopContext();
+
+            // The current phase's content, keyed by VM + phase so advancing re-keys the whole page.
+            var phase = vm.CurrentPhaseVM.Value;
+            string k = "wiz:" + vm.GetHashCode() + ":" + (phase != null ? phase.GetHashCode() : 0) + ":";
+            b.BeginStop("content").PushContext(PhaseLabel(phase));
+
+            // Make sure the phase the player is WORKING IN is in detailed view. The game's phase VMs gate
+            // their mechanic sync on IsInDetailedView (background phases only bind the level-up manager —
+            // and so only materialize their items and commit selections — inside OnBeginDetailedView), and
+            // the flag only flips true when the game's OWN detailed view binds, which can lag (or never
+            // happen) under a parallel UI. BeginDetailedView is exactly what the real view's bind calls;
+            // gated so it runs only while the game hasn't already done it.
+            if (phase != null && !phase.IsInDetailedView.Value) phase.BeginDetailedView();
+
+            var content = CharGenPhaseContent.For(phase);
+            if (content != null) content.Build(b, k);
+            else CharGenPhaseContent.EmitUnavailable(b, k);
+            b.PopContext();
+
+            // Footer: Back then Next (label + availability track the current phase live). The game gives
+            // these Plastick chrome sounds (CharGenPCView SetButtonsSounds), so they're intrinsic here.
+            var plastick = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound;
+            b.BeginStop("back").AddItem(ControlId.Structural("cg:back"),
+                GraphNodes.Button(() => Loc.T("wizard.back"), OnBack,
+                    hoverSound: plastick, clickSound: plastick));
+            b.BeginStop("next").AddItem(ControlId.Structural("cg:next"),
+                GraphNodes.Button(NextLabel, OnNext, NextEnabled,
+                    hoverSound: plastick, clickSound: plastick));
         }
 
-        protected override void OnBack()
+        private static string PhaseLabel(CharGenPhaseBaseVM phase) => phase?.PhaseName?.Value ?? "";
+
+        private static void OnBack()
         {
             var vm = Vm();
             if (vm == null) return;
@@ -109,14 +125,14 @@ namespace RTAccess.Screens
             else vm.PhasesSelectionGroupRadioVM.SelectPrevValidEntity();
         }
 
-        protected override void OnNext()
+        private static void OnNext()
         {
             var vm = Vm();
             if (vm == null) return;
             if (IsLastPhase(vm))
             {
-                // Drive Complete() from the VM; it plays its own completion sting (and we add ours so the
-                // feedback is consistent with the rest of our VM-driven activations).
+                // Drive Complete() from the VM; the game's view plays the completion sting itself, but the
+                // VM path bypasses it — replay it here (phase advances play the page-turn instead).
                 vm.Complete();
                 UiSound.ChargenComplete();
             }
@@ -124,10 +140,10 @@ namespace RTAccess.Screens
         }
 
         // "Complete" only on the last phase; otherwise "Next".
-        protected override string NextLabel() =>
+        private static string NextLabel() =>
             IsLastPhase(Vm()) ? Loc.T("chargen.complete") : Loc.T("wizard.next");
 
-        protected override bool NextEnabled() => Vm()?.CurrentPhaseIsCompleted.Value ?? false;
+        private static bool NextEnabled() => Vm()?.CurrentPhaseIsCompleted.Value ?? false;
 
         private static bool IsLastPhase(CharGenVM vm) =>
             vm != null && ReferenceEquals(vm.CurrentPhaseVM.Value, vm.PhasesCollection.LastOrDefault());

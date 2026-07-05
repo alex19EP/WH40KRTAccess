@@ -8,6 +8,7 @@ using Kingmaker.UI.MVVM.VM.CharGen.Phases.Stats;
 using Kingmaker.UI.MVVM.View.CharGen.Common;
 using Owlcat.Runtime.UI.Tooltips;
 using RTAccess.Speech;
+using RTAccess.UI;
 
 namespace RTAccess.Accessibility;
 
@@ -27,8 +28,8 @@ namespace RTAccess.Accessibility;
 ///    per adjust after the VM's own state update).
 /// 3. <b>Phase description source</b> — <see cref="GetActivePhaseDescription"/> exposes the active phase's
 ///    InfoVM tooltip (the description of options like Homeworld/Occupation whose selector items carry no
-///    tooltip of their own). The console "details" key that consumed it was removed with the console-nav path;
-///    kept as the hook for a parallel-tree details reader.
+///    tooltip of their own). Consumed by the graph-native phase contents (Selection/Career) as the Space
+///    fallback on the selected-description line.
 /// </summary>
 internal static class CharGenAnnounce
 {
@@ -72,7 +73,8 @@ internal static class CharGenAnnounce
             var name = string.IsNullOrWhiteSpace(item.DisplayName) ? statType.ToString() : item.DisplayName;
             int points = vm.AvailablePointsLeft.Value;
             // Button-driven: each advance/retreat cuts the previous readout so holding the key stays responsive.
-            Speaker.Speak($"{name} {item.StatValue.Value}. {points} points remaining.", interrupt: true);
+            Speaker.Speak(Loc.T("chargen.stat_readout",
+                new { name, value = item.StatValue.Value, points }), interrupt: true);
         }
         catch (Exception e)
         {
@@ -116,15 +118,15 @@ internal static class CharGenAnnounce
         }
 
         var sb = new StringBuilder();
-        if (reentry) sb.Append("Character creation. ");
+        if (reentry) sb.Append(Loc.T("chargen.intro")).Append(' ');
         sb.Append(name);
-        if (index >= 0) sb.Append($". {index + 1} of {count}");
+        if (index >= 0) sb.Append(". ").Append(Loc.T("nav.position", new { index = index + 1, count }));
         sb.Append('.');
         if (phase.IsCompletedAndAvailable != null && phase.IsCompletedAndAvailable.Value)
-            sb.Append(" Completed.");
+            sb.Append(' ').Append(Loc.T("chargen.phase_completed"));
         // The point-buy phase: announce the budget on entry so the player knows how much there is to spend.
         if (phase is CharGenAttributesPhaseVM attr && attr.AvailablePointsLeft.Value > 0)
-            sb.Append($" {attr.AvailablePointsLeft.Value} points to distribute.");
+            sb.Append(' ').Append(Loc.T("chargen.points_to_distribute", new { points = attr.AvailablePointsLeft.Value }));
         return sb.ToString();
     }
 }

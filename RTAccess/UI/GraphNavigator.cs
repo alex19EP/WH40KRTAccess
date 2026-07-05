@@ -111,6 +111,8 @@ namespace RTAccess.UI
 
         public override object FocusedStopKey => _graph?.CurrentNode?.StopKey;
 
+        public override object FocusedNodeReference => _graph?.CurrentNode?.Id.Reference;
+
         // Graph-native screens declare fresh from live game state on every render (immediate mode);
         // legacy screens' retained Container trees are compiled by the adapter until they migrate.
         private GraphRender BuildRender(Screens.Screen screen)

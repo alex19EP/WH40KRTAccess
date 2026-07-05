@@ -5,7 +5,7 @@ using Kingmaker.UI.MVVM.VM.CharGen.Phases.Career;
 using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.CareerPath;
 using Kingmaker.UnitLogic.Progression.Paths;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens.CharGen
 {
@@ -13,11 +13,12 @@ namespace RTAccess.Screens.CharGen
     /// The archetype (career) phase. Unlike the other background phases it isn't a
     /// CharGenBackgroundBasePhaseVM — it drives a <c>UnitProgressionVM</c> whose <c>AllCareerPaths</c> are
     /// <see cref="CareerPathVM"/> entries (themselves a selection group). We list the tier-one paths (the
-    /// starting archetypes); selecting one routes through the game's select-career command. The list binds
-    /// a frame after the phase opens, so the base rebuilds on count change.
+    /// starting archetypes); selecting one routes through the game's select-career command. Below the list
+    /// is a live description line of the SELECTED archetype (the committed selection); Space on an item
+    /// opens the game's own career tooltip.
     ///
     /// TODO (enrichment): the per-rank ability/talent picks a chosen archetype unlocks (rank entries) —
-    /// needed for a fully-built career, surfaced as a drill-in.
+    /// needed for a fully-built career, surfaced as a drill-in (LevelUpScreen has the richer treatment).
     /// </summary>
     public sealed class CareerPhaseContent : CharGenPhaseContent
     {
@@ -32,24 +33,41 @@ namespace RTAccess.Screens.CharGen
             return prog.AllCareerPaths.Where(c => c.CareerPath != null && c.CareerPath.Tier == CareerPathTier.One).ToList();
         }
 
-        protected override void OnBuild()
+        public override void Build(GraphBuilder b, string k)
         {
             var items = Archetypes();
-            if (items.Count == 0) { Content.Add(new TextElement(() => Loc.T("chargen.nothing_to_select"))); return; }
+            if (items.Count == 0)
+            {
+                b.AddItem(ControlId.Structural(k + "empty"),
+                    GraphNodes.Text(() => Loc.T("chargen.nothing_to_select")));
+                return;
+            }
 
-            var list = new ListContainer();
+            int i = 0;
             foreach (var c in items)
             {
                 var item = c; // capture
-                list.Add(new ProxySelectionItem(item, () => item.Name));
+                b.AddItem(ControlId.Referenced(item, k + "career:" + i++),
+                    CharGenNodes.SelectionItem(item, () => item.Name,
+                        tooltip: () => item.CareerTooltip));
             }
-            Content.Add(list);
 
-            // Live description of the selected archetype.
-            Content.Add(new TextElement(() => SelectedDescription(items)));
+            // Live description of the SELECTED archetype (the committed selection); self-hides while
+            // nothing is selected yet. Space reads the phase's info panel (the InfoVM fallback).
+            var phase = Phase;
+            if (!string.IsNullOrEmpty(SelectedDescription(items)))
+                b.AddItem(ControlId.Structural(k + "desc"), new NodeVtable
+                {
+                    ControlType = ControlTypes.Text,
+                    Announcements = new List<NodeAnnouncement>
+                    {
+                        GraphNodes.LabelPart(() => SelectedDescription(Archetypes())),
+                    },
+                    OnTooltip = () => TooltipChooser.Open(phase?.PhaseName?.Value,
+                        RTAccess.Accessibility.CharGenAnnounce.GetActivePhaseDescription(),
+                        sections: null, links: null),
+                });
         }
-
-        protected override int LiveCount() => Archetypes().Count;
 
         private static string SelectedDescription(List<CareerPathVM> items)
         {

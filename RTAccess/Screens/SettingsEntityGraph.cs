@@ -14,14 +14,18 @@ namespace RTAccess.Screens
     /// typed control node, a key-binding row its own sub-group holding the two binding slots, and the
     /// statistics opt-out row a sub-group holding the card's two buttons. Node identity: the entity VM
     /// (tier 1) + a structural key of prefix:index (tier 2), so focus follows a control across renders
-    /// and a rebuilt VM list still reconciles by position. The graph-path replacement for
-    /// <see cref="SettingsEntityBuilder"/>'s tree mode — the old builder remains for the not-yet-migrated
-    /// New Game difficulty phase.
+    /// and a rebuilt VM list still reconciles by position. Serves the Settings window (tree of
+    /// sections) and the New Game difficulty step (<c>flat</c> — see Emit).
     /// </summary>
     internal static class SettingsEntityGraph
     {
-        /// <summary>Emit the entities into the builder under <paramref name="keyPrefix"/>-scoped ids.</summary>
-        public static void Emit(GraphBuilder b, IEnumerable<VirtualListElementVMBase> entities, string keyPrefix)
+        /// <summary>Emit the entities into the builder under <paramref name="keyPrefix"/>-scoped ids.
+        /// <paramref name="flat"/> skips the headers entirely — the options become a plain vertical
+        /// list. For a short single-section page whose label already carries the header (the New Game
+        /// difficulty step): a group node you must expand — or a redundant header text row — is pure
+        /// friction there (the WA ear-pass lesson).</summary>
+        public static void Emit(GraphBuilder b, IEnumerable<VirtualListElementVMBase> entities, string keyPrefix,
+            bool flat = false)
         {
             if (entities == null) return;
             bool open = false;
@@ -30,6 +34,7 @@ namespace RTAccess.Screens
             {
                 if (e is SettingsEntityHeaderVM header)
                 {
+                    if (flat) { i++; continue; } // the page labels itself — no header/group node
                     if (open) b.EndGroup();
                     string title = header.Tittle?.Text; // (sic — the VM's field)
                     // Index in the key: two same-titled (or untitled) sections must not collide ControlIds

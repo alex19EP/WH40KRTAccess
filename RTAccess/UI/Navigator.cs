@@ -73,6 +73,12 @@ namespace RTAccess.UI
         /// where focus is — e.g. Escape drills back only from the page stop, closes from the tree).</summary>
         public virtual object FocusedStopKey => null;
 
+        /// <summary>The domain object the focused node was declared from (a game VM — the Reference
+        /// tier of its <see cref="Graph.ControlId"/>), or null. The graph-native analog of
+        /// <see cref="Current"/> for screens that follow focus onto game VMs (the New Game story page
+        /// driving the game's description panel to the focused campaign/DLC row).</summary>
+        public virtual object FocusedNodeReference => null;
+
         // ---- per-frame focus pump (RT extension over the WA contract: Main ticks it every frame
         //      and save-slot focus-selection rides it) ----
 

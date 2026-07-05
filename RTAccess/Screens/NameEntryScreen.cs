@@ -5,17 +5,18 @@ using Kingmaker.UI.MVVM.VM.CharGen;
 using Kingmaker.UI.MVVM.VM.CharGen.Phases.Ship;
 using Kingmaker.UI.MVVM.VM.CharGen.Phases.Summary;
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 using TMPro;
 
 namespace RTAccess.Screens
 {
     /// <summary>
     /// The character/ship name-entry modal (the chargen change-name <see cref="MessageBoxVM"/>, a TextField
-    /// box created by the Summary/Ship phases). Resolves whichever phase's box is currently open and lets
-    /// the player TYPE a custom name: "Edit" hands the game's own TMP input field to <see cref="TextEntry"/>
-    /// (so Unity/TMP own caret, Unicode and IME), Random rolls one, Apply confirms, Back cancels. Layer 32,
-    /// Exclusive — sits above the chargen flow and owns the keyboard while open.
+    /// box created by the Summary/Ship phases), graph-native. Resolves whichever phase's box is currently
+    /// open and lets the player TYPE a custom name: the name field is a <see cref="CharGenNodes.TextField"/>
+    /// node driving the game's own TMP input field through <see cref="TextEntry"/> (so Unity/TMP own caret,
+    /// Unicode and IME), Random rolls one (spoken), Apply confirms, Back cancels. Layer 32, Exclusive —
+    /// sits above the chargen flow and owns the keyboard while open.
     /// </summary>
     public sealed class NameEntryScreen : Screen
     {
@@ -36,50 +37,44 @@ namespace RTAccess.Screens
 
         public override bool IsActive() => Box() != null;
 
-        private MessageBoxVM _box;
-
-        public override void OnPush() { _box = Box(); Build(); }
-        public override void OnPop() { Clear(); _box = null; }
-
-        public override void OnUpdate()
-        {
-            var box = Box();
-            if (!ReferenceEquals(box, _box))
-            {
-                _box = box;
-                Build();
-                Navigation.Attach(this);
-            }
-        }
-
-        private void Build()
-        {
-            Clear();
-            var box = _box;
-            if (box == null) return;
-
-            // Edit — label is the live current name; activating hands the game's field to TextEntry to type.
-            Add(new ProxyActionButton(() => Loc.T("chargen.character_name", new { value = box.InputText.Value ?? "" }),
-                () => true, StartEditing, actionVerb: "edit"));
-            if (box is CharGenChangeNameMessageBoxVM cn)
-                Add(new ProxyActionButton(() => Loc.T("chargen.random_name"), () => true, () => cn.SetRandomName()));
-            Add(new ProxyActionButton(() => box.AcceptText, () => true, () => box.OnAcceptPressed()));
-        }
-
         // Back/Escape cancels the box (the game's Decline path).
         public override IEnumerable<ElementAction> GetActions()
         {
-            var box = _box;
+            var box = Box();
             if (box != null)
                 yield return new ElementAction(ActionIds.Back, Message.Localized("ui", "action.cancel"),
                     _ => box.OnDeclinePressed());
         }
 
-        private void StartEditing()
+        public override bool BuildsGraph => true;
+
+        public override void Build(GraphBuilder b)
         {
-            var field = FindInputField(_box);
-            if (field != null) TextEntry.Begin(field, Loc.T("modal.name"));
-            else Tts.Speak(Loc.T("text.unavailable"));
+            var box = Box();
+            if (box == null) return;
+            string k = "name:" + box.GetHashCode() + ":";
+
+            // The name field — Enter hands the game's live TMP field to TextEntry to type; the value
+            // reads back on focus (and after the edit commits via the field's game-wired onEndEdit).
+            b.AddItem(ControlId.Structural(k + "field"),
+                CharGenNodes.TextField(Loc.T("modal.name"),
+                    () => FindInputField(box),
+                    () => box.InputText.Value));
+
+            if (box is CharGenChangeNameMessageBoxVM cn)
+                b.AddItem(ControlId.Structural(k + "random"),
+                    GraphNodes.Button(() => Loc.T("chargen.random_name"), () =>
+                    {
+                        // SetRandomName writes InputText (bound to the visible field); speak the roll —
+                        // keypress-caused, so it interrupts. Game content passes through unlocalized.
+                        cn.SetRandomName();
+                        var name = cn.InputText.Value;
+                        if (!string.IsNullOrEmpty(name)) Tts.Speak(name, interrupt: true);
+                    }));
+
+            // Apply — the game's own accept label + path (commits InputText through the box callback).
+            b.AddItem(ControlId.Structural(k + "accept"),
+                GraphNodes.Button(() => box.AcceptText, () => box.OnAcceptPressed()));
         }
 
         // The game shows the modal with a real TMP_InputField bound to InputText; grab the active one (prefer

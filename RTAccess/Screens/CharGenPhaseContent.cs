@@ -1,29 +1,30 @@
 using Kingmaker.UI.MVVM.VM.CharGen.Phases;
 using RTAccess.Screens.CharGen;
 using RTAccess.UI;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
     /// <summary>
-    /// Builds the navigable content for one character-generation phase. The base is a placeholder; concrete
-    /// per-phase builders (selected by <see cref="For"/> on <see cref="CharGenPhaseBaseVM.PhaseType"/>)
-    /// render the real choices — pregen pick, homeworld/occupation/career selection, attribute point-buy,
-    /// appearance, ship, name, summary.
-    ///
-    /// Some phases load their entries a frame late (the pregen list and the background selections come from
-    /// async level-up/blueprint loads), so a builder can report a <see cref="LiveCount"/>; the base rebuilds
-    /// the content in place when that count changes (e.g. empty → populated). <see cref="Tick"/> is called
-    /// each frame while the phase is unchanged.
+    /// Emits the navigable content for one character-generation phase (graph-native, IMMEDIATE MODE):
+    /// a content object is created fresh per render by <see cref="For"/> (selected on
+    /// <see cref="CharGenPhaseBaseVM.PhaseType"/>) and declares the phase's controls from the LIVE
+    /// phase VM into the wizard's content stop. Contents hold NO view state — a phase whose game list
+    /// hasn't materialized yet just emits nothing and renders once it does, which retires the old
+    /// Tick()/LiveCount() rebuild machinery wholesale.
     /// </summary>
-    public class CharGenPhaseContent
+    public abstract class CharGenPhaseContent
     {
         protected readonly CharGenPhaseBaseVM Phase;
-        protected Container Content;
-        private int _builtCount;
 
         protected CharGenPhaseContent(CharGenPhaseBaseVM phase) { Phase = phase; }
 
-        /// <summary>Pick the content builder for a phase, by phase type.</summary>
+        /// <summary>Emit the phase's content. <paramref name="k"/> is the phase-scoped key prefix from
+        /// the wizard shell (carries the VM + phase, so a phase change re-keys the page).</summary>
+        public abstract void Build(GraphBuilder b, string k);
+
+        /// <summary>Pick the content builder for a phase, by phase type; null = no builder yet (the
+        /// screen emits the "phase unavailable" placeholder).</summary>
         public static CharGenPhaseContent For(CharGenPhaseBaseVM phase)
         {
             if (phase == null) return null;
@@ -57,30 +58,13 @@ namespace RTAccess.Screens
                 case CharGenPhaseType.Appearance:
                     return new AppearancePhaseContent(phase);
                 default:
-                    return new CharGenPhaseContent(phase);
+                    return null;
             }
         }
 
-        public void Build(Container content)
-        {
-            Content = content;
-            OnBuild();
-            _builtCount = LiveCount();
-        }
-
-        protected virtual void OnBuild()
-        {
-            Content.Add(new TextElement(() => Loc.T("chargen.phase_unavailable")));
-        }
-
-        public virtual void Tick()
-        {
-            int n = LiveCount();
-            if (n >= 0 && n != _builtCount) { Content.Clear(); OnBuild(); _builtCount = n; }
-        }
-
-        /// <summary>Count of dynamically-loaded entries, or -1 to disable the auto-rebuild. A builder whose
-        /// list populates a frame late overrides this so the base re-renders once the entries appear.</summary>
-        protected virtual int LiveCount() => -1;
+        /// <summary>The shared "phase not accessible" placeholder line.</summary>
+        internal static void EmitUnavailable(GraphBuilder b, string k)
+            => b.AddItem(ControlId.Structural(k + "unavailable"),
+                GraphNodes.Text(() => Loc.T("chargen.phase_unavailable")));
     }
 }
