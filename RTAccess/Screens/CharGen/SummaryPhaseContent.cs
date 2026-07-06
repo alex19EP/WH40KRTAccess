@@ -70,14 +70,23 @@ namespace RTAccess.Screens.CharGen
                         GraphNodes.Text(() => career.Name));
                 }
 
-                foreach (var stat in CharInfoAbilityScoresBlockVM.AbilitiesOrdered)
+                // Own level for the stat block: positions group by (parent, stop), so the level and
+                // career lines above must stay outside or they count into the stats' "n of m".
+                // try/finally, not just Pop — the enclosing catch swallows a mid-loop failure, which
+                // would otherwise leave this level on the parent stack.
+                b.PushContext(Loc.T("charinfo.characteristics"), Loc.T("role.list"));
+                try
                 {
-                    var st = stat; // capture
-                    var mv = unit.Stats.GetStat(st);
-                    if (mv != null)
-                        b.AddItem(ControlId.Structural(k + "review:stat:" + st),
-                            GraphNodes.Text(() => LocalizedTexts.Instance.Stats.GetText(st) + ": " + mv.ModifiedValue));
+                    foreach (var stat in CharInfoAbilityScoresBlockVM.AbilitiesOrdered)
+                    {
+                        var st = stat; // capture
+                        var mv = unit.Stats.GetStat(st);
+                        if (mv != null)
+                            b.AddItem(ControlId.Structural(k + "review:stat:" + st),
+                                GraphNodes.Text(() => LocalizedTexts.Instance.Stats.GetText(st) + ": " + mv.ModifiedValue));
+                    }
                 }
+                finally { b.PopContext(); }
             }
             catch { /* leave whatever was added; the name controls already shipped */ }
             b.PopContext();

@@ -35,6 +35,10 @@ namespace RTAccess.Screens.CharGen
                 return;
             }
 
+            // The choice list is its own presentation level: positions group by (parent, stop), so
+            // the description line below must stay outside or it counts into the items' "n of m".
+            // The phase-name label duplicates the outer context's — the announcer dedupes it on entry.
+            b.PushContext(Phase?.PhaseName?.Value ?? "", Loc.T("role.list"));
             int i = 0;
             foreach (var it in items)
             {
@@ -47,6 +51,7 @@ namespace RTAccess.Screens.CharGen
                                 isInfoWindow: true, isCharGen: true)
                             : null));
             }
+            b.PopContext();
 
             // Live description of whichever choice is currently SELECTED (updates as you arrow the
             // list — doctrine-3-safe: reads the committed selection, not a hover reactive). Skipped

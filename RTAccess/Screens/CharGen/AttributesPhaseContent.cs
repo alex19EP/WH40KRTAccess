@@ -27,9 +27,13 @@ namespace RTAccess.Screens.CharGen
             b.AddItem(ControlId.Structural(k + "points"),
                 GraphNodes.Text(() => Loc.T("chargen.points_remaining", new { value = vm.AvailablePointsLeft.Value })));
 
+            // Own level for the stat rows: positions group by (parent, stop), so the points header
+            // above must stay outside or it counts into the rows' "n of m".
+            b.PushContext(vm.PhaseName?.Value ?? "", Loc.T("role.list"));
             int i = 0;
             foreach (var it in vm.SelectionGroup.EntitiesCollection)
                 b.AddItem(ControlId.Referenced(it, k + "stat:" + i++), CharGenNodes.StatRow(it));
+            b.PopContext();
         }
     }
 }

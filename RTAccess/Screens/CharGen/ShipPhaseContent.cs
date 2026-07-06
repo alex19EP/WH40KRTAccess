@@ -28,6 +28,9 @@ namespace RTAccess.Screens.CharGen
             var vm = Vm;
             if (vm == null) { EmitUnavailable(b, k); return; }
 
+            // Own level for the ship choices: positions group by (parent, stop), so the description
+            // and name controls below must stay outside or they count into the list's "n of m".
+            b.PushContext(vm.PhaseName?.Value ?? "", Loc.T("role.list"));
             int i = 0;
             foreach (var e in vm.ShipSelectionGroup.EntitiesCollection)
             {
@@ -39,6 +42,7 @@ namespace RTAccess.Screens.CharGen
                             ? (TooltipBaseTemplate)new TooltipTemplatePlayerStarship(item.BlueprintStarship)
                             : null));
             }
+            b.PopContext();
 
             // The selected ship's description — WHAT the vessel is (its lore/role), so the choice is informed
             // and not just a name. A persistent info panel in the sighted UI, so it lives in the tab order;

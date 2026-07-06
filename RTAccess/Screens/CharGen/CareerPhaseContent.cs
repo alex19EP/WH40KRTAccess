@@ -43,6 +43,9 @@ namespace RTAccess.Screens.CharGen
                 return;
             }
 
+            // Own level for the choices: positions group by (parent, stop), so the description line
+            // below must stay outside or it counts into the items' "n of m".
+            b.PushContext(Phase?.PhaseName?.Value ?? "", Loc.T("role.list"));
             int i = 0;
             foreach (var c in items)
             {
@@ -51,6 +54,7 @@ namespace RTAccess.Screens.CharGen
                     CharGenNodes.SelectionItem(item, () => item.Name,
                         tooltip: () => item.CareerTooltip));
             }
+            b.PopContext();
 
             // Live description of the SELECTED archetype (the committed selection); self-hides while
             // nothing is selected yet. Space reads the phase's info panel (the InfoVM fallback).
