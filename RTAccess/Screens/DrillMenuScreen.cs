@@ -5,9 +5,11 @@ using RTAccess.UI.Graph;
 namespace RTAccess.Screens
 {
     /// <summary>
-    /// A drill-in chooser: when the focused element carries more than one thing to read — its own tooltip PLUS
-    /// inline glossary terms (see <see cref="RTAccess.Accessibility.GlossaryLinks"/>) — the tooltip key (Space)
-    /// opens this list instead of a single body. Arrow to an entry, Enter reads it in a nested
+    /// A drill-in chooser for the BODY-LESS tooltip case: when the focused element has no tooltip text of its
+    /// own but carries extras — rendered sections and/or inline glossary terms (see
+    /// <see cref="RTAccess.Accessibility.GlossaryLinks"/>) — the tooltip key (Space) opens this list of them.
+    /// (An element WITH a body opens <see cref="TooltipScreen"/> directly, extras nested inside it — see
+    /// <see cref="RTAccess.UI.TooltipChooser"/>.) Arrow to an entry, Enter reads it in a nested
     /// <see cref="TooltipScreen"/> (arrow line-by-line, Back returns here); Back again returns to where you were.
     /// Pushed as a CHILD of the current screen, so it owns the keyboard while open.
     ///

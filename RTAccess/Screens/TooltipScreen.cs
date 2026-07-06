@@ -1,36 +1,54 @@
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using RTAccess.UI;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
     /// <summary>
-    /// A lightweight reader for a control's tooltip/description text — opened with Space (ui.tooltip) on a
-    /// focused element that supplies <see cref="UIElement.GetTooltipText"/>. Pushed as a CHILD SCREEN of the
-    /// current screen, so it owns the keyboard while open and Back returns you to where you were. The body is
-    /// split into sentences so a long description can be read at your own pace, arrowing line by line. (The
-    /// rich brick / glossary-link tooltip reader is a separate later feature; this covers header+body text.)
+    /// The tooltip reader — opened with Space (ui.tooltip) on a focused control. Space reads the
+    /// tooltip immediately: the reader opens on the first body line (split into sentences, arrow
+    /// through at your own pace); keep arrowing (or End) to reach the References list — one entry
+    /// per rendered section and per inline glossary term (see
+    /// <see cref="RTAccess.Accessibility.GlossaryLinks"/>); Enter on a reference reads it in a
+    /// nested plain reader (a child of this one, so Back steps back here); Back again returns to
+    /// where you were. Pushed as a CHILD SCREEN of the current screen, so it owns the keyboard
+    /// while open.
+    ///
+    /// Graph-native: body lines and entries are immutable per instance (a fresh instance per Space
+    /// press, gone on Back), so declaring from the snapshot IS declaring from the state that opened
+    /// it. Body lines stay at the top level — the push announces ScreenName + the first line — and
+    /// the entries sit in their own References context, announced when focus walks in.
     /// </summary>
     public sealed class TooltipScreen : Screen
     {
         private readonly string _title;
-        private readonly string _body;
+        private readonly List<string> _lines;
+        private readonly List<(string label, string body)> _entries;
 
-        private TooltipScreen(string title, string body) { _title = title; _body = body; Wrap = true; }
+        private TooltipScreen(string title, string body, List<(string label, string body)> entries)
+        {
+            _title = title;
+            _lines = new List<string>(SplitLines(body));
+            _entries = entries ?? new List<(string label, string body)>();
+            Wrap = true;
+        }
 
-        /// <summary>Open a tooltip reader (pushed as a child of the current screen).</summary>
-        public static void Open(string title, string body)
+        /// <summary>Open a plain tooltip reader (pushed as a child of the current screen).</summary>
+        public static void Open(string title, string body) => Open(title, body, entries: null);
+
+        /// <summary>Open the reader with drill-in entries (rendered sections / glossary terms)
+        /// following the body lines. No-op for a blank body — <see cref="RTAccess.UI.TooltipChooser"/>
+        /// routes the body-less entries-only case to <see cref="DrillMenuScreen"/> instead.</summary>
+        internal static void Open(string title, string body, List<(string label, string body)> entries)
         {
             if (!string.IsNullOrWhiteSpace(body))
-                ScreenManager.Current?.PushChild(new TooltipScreen(title, body));
+                ScreenManager.Current?.PushChild(new TooltipScreen(title, body, entries));
         }
 
         public override string Key => "overlay.tooltip";
         public override string ScreenName => _title;
         public override bool IsActive() => false; // only ever a child
-
-        public override void OnPush() { Clear(); Build(); }
-        public override void OnPop() { Clear(); }
 
         public override IEnumerable<ElementAction> GetActions()
         {
@@ -38,12 +56,29 @@ namespace RTAccess.Screens
                 _ => ParentScreen?.RemoveChild(this));
         }
 
-        private void Build()
+        public override bool BuildsGraph => true;
+
+        public override void Build(GraphBuilder b)
         {
-            var list = new ListContainer();
-            foreach (var line in SplitLines(_body))
-                list.Add(new TextElement(line));
-            Add(list);
+            for (int i = 0; i < _lines.Count; i++)
+            {
+                var line = _lines[i];
+                b.AddItem(ControlId.Structural("line:" + i), GraphNodes.Text(() => line));
+            }
+
+            if (_entries.Count == 0) return;
+            // The references are their own presentation level: positions count within the list and
+            // walking in from the body announces "References, list" once. Same Tab-stop as the body,
+            // so plain arrowing (or End) flows straight in.
+            b.PushContext(Loc.T("nav.references"), Loc.T("role.list"));
+            for (int i = 0; i < _entries.Count; i++)
+            {
+                var (label, body) = _entries[i];
+                // Enter reads the entry in a nested reader (child of THIS one, so Back steps back here).
+                b.AddItem(ControlId.Structural("ref:" + i), GraphNodes.Button(
+                    () => label, () => Open(label, body)));
+            }
+            b.PopContext();
         }
 
         // Paragraphs (\n) then sentences (after sentence-ending punctuation + space) → one navigable line
