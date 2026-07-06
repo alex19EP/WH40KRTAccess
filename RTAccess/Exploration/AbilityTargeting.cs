@@ -8,7 +8,7 @@ namespace RTAccess.Exploration;
 
 /// <summary>
 /// The accessible commit/cancel half of action-bar ability targeting. The game's own action bar (our
-/// <see cref="RTAccess.UI.Proxies.ProxyActionBarSlot"/> → <c>ActionBarSlotVM.OnMainClick</c>) already ARMS a
+/// <see cref="RTAccess.UI.ActionBarNodes"/> slots → <c>ActionBarSlotVM.OnMainClick</c>) already ARMS a
 /// targeted ability — it calls <see cref="ClickWithSelectedAbilityHandler.SetAbility"/>, entering
 /// <c>PointerMode.Ability</c> — but then dead-ends, because a blind player has no mouse to click a target with.
 /// This supplies the missing commit: it routes a chosen target through the handler's <c>OnClick</c>, so ALL of the

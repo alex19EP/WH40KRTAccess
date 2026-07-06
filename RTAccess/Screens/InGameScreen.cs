@@ -21,25 +21,27 @@ using Kingmaker.UI.Models.SettingsUI;                // UISettingsRoot (keybind 
 using Kingmaker.Stores;                              // StoreManager (Augmentations DLC gate)
 using Kingmaker.Stores.DlcInterfaces;                // DlcNameEnum
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 using UnityEngine;                                   // Mathf
 
 namespace RTAccess.Screens
 {
     /// <summary>
-    /// The on-foot surface world (<c>RootUiContext.IsSurface</c>) as a navigable screen — the Layer-0 base
-    /// context the player lands in after character creation. It is UNFOCUSED by default: the arrows belong to
-    /// the exploration helpers (cursor/scan/landmarks) and <b>Tab enters the HUD</b>, then cycles its regions
-    /// (Tab off the end returns to exploration). Regions, in order: <b>Status</b> (selected character + wounds,
-    /// and in combat their AP/MP + whose turn), the <b>Party</b> roster (each member's wounds; Enter selects
-    /// them), the <b>Combat</b> panel (turn-based only: status + End turn + initiative order; empty/skipped out
-    /// of combat), and the <b>Windows</b> list (character sheet / inventory / journal / map / encyclopedia).
+    /// The on-foot surface world (<c>RootUiContext.IsSurface</c>) as a navigable screen, graph-native — the
+    /// Layer-0 base context the player lands in after character creation. It is UNFOCUSED by default: the
+    /// arrows belong to the exploration helpers (cursor/scan/landmarks) and <b>Tab enters the HUD</b>, then
+    /// cycles its stops (Tab off the end returns to exploration). Stops, in order: <b>Status</b> (selected
+    /// character + wounds, and in combat their AP/MP + whose turn), the <b>Action bar</b> (the selected
+    /// unit's usable slots), the <b>Party</b> roster (each member's wounds; Enter selects them), the
+    /// <b>Combat</b> panel (turn-based only: status + End turn + initiative order; nothing is emitted out of
+    /// combat, so Tab skips it), the <b>Windows</b> list, and the <b>Menu</b> controls.
     ///
-    /// Membership-bearing regions (Party, Combat) are rebuilt only when their signature changes (a member
-    /// joining/leaving, combat toggling, initiative order shifting); every label is a live <c>Func</c>, so
-    /// wounds/AP/MP and the active-turn marker read current without a rebuild. <see cref="ExplorationActive"/>
-    /// is the single gate the console-era exploration helpers now ride (mouse mode, while this screen is up and
-    /// the world is interactive) in place of their old gamepad-mode check.
+    /// Everything renders live per frame — a character swap, an item being consumed, or the initiative order
+    /// shifting just re-renders; action-bar focus rides the bar POSITION (the old restore-to-index behavior,
+    /// now by construction) while party/initiative focus follows the UNIT through the reconciler. The old
+    /// signature/rebuild/restore machinery is gone. <see cref="ExplorationActive"/> is the single gate the
+    /// console-era exploration helpers ride (mouse mode, while this screen is up and the world is
+    /// interactive) in place of their old gamepad-mode check.
     /// </summary>
     public sealed class InGameScreen : Screen
     {
@@ -96,58 +98,27 @@ namespace RTAccess.Screens
             && Game.Instance != null
             && Game.Instance.CurrentMode == GameModeType.Default;
 
-        private TextElement _status;     // selected char + wounds + (in combat) AP/MP + whose turn
-        private ListContainer _actions;  // the action bar (abilities/weapons/consumables); rebuilt on change
-        private ListContainer _party;    // roster; Enter selects
-        private ListContainer _combat;   // turn-based only; empty/skipped out of combat
-        private string _actionsSig;      // last action-bar content signature
-        private string _partySig;        // last party-membership signature
-        private string _combatSig;       // last combat/initiative signature
+        public override bool BuildsGraph => true;
 
-        public override void OnPush()
+        public override void Build(GraphBuilder b)
         {
-            Clear();
-            _status = new TextElement(StatusLine);
-            Add(_status);
-            _actions = new ListContainer(Loc.T("hud.actions"));
-            Add(_actions);
-            _party = new ListContainer(Loc.T("hud.party"));
-            Add(_party);
-            _combat = new ListContainer(Loc.T("hud.combat"));
-            Add(_combat);
-            BuildWindows();
-            BuildMenu();
-
-            RebuildActions();
-            RebuildParty();
-            RebuildCombat();
-            _actionsSig = ActionsSig();
-            _partySig = PartySig();
-            _combatSig = CombatSig();
+            BuildStatus(b);
+            BuildActions(b);
+            BuildParty(b);
+            BuildCombat(b);
+            BuildWindows(b);
+            BuildMenu(b);
         }
 
-        public override void OnPop()
+        // ---- Status stop ----
+
+        private static void BuildStatus(GraphBuilder b)
         {
-            Clear();
-            _status = null; _actions = null; _party = null; _combat = null;
-            _actionsSig = null; _partySig = null; _combatSig = null;
+            b.BeginStop("status").SetRegion("hud:status");
+            b.AddItem(ControlId.Structural("hud:status"), GraphNodes.Text(() => StatusLine()));
         }
 
-        public override void OnUpdate()
-        {
-            if (_party == null) { OnPush(); return; } // defensive: ensure the shell exists
-
-            var asig = ActionsSig();
-            if (asig != _actionsSig) { _actionsSig = asig; RebuildActions(); }
-
-            var ps = PartySig();
-            if (ps != _partySig) { _partySig = ps; RebuildParty(); }
-
-            var cs = CombatSig();
-            if (cs != _combatSig) { _combatSig = cs; RebuildCombat(); }
-        }
-
-        // ---- Windows region (static set; built once) ----
+        // ---- Windows stop (static set) ----
 
         private static readonly ServiceWindowsType[] WindowButtons =
         {
@@ -158,23 +129,25 @@ namespace RTAccess.Screens
             ServiceWindowsType.CargoManagement, ServiceWindowsType.Augmentations,
         };
 
-        private void BuildWindows()
+        private static void BuildWindows(GraphBuilder b)
         {
-            var windows = new ListContainer(Loc.T("hud.windows"));
+            b.BeginStop("windows").SetRegion("hud:windows");
+            b.PushContext(Loc.T("hud.windows"), Loc.T("role.list"));
             foreach (var t in WindowButtons)
             {
-                var type = t; // capture for the live closure
+                var type = t; // capture for the live closures
                 // The HUD service-window openers are Plastick in the game (IngameMenuNewPCView.SetClickAndHoverSound).
-                windows.Add(new ProxyActionButton(WindowLabel(type), () => WindowEnabled(type),
-                    () => ServiceWindows()?.HandleOpenWindowOfType(type), actionVerb: "open",
-                    hoverSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound,
-                    clickSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound));
+                b.AddItem(ControlId.Structural("hud:win:" + type), GraphNodes.Button(
+                    () => WindowLabel(type), () => ServiceWindows()?.HandleOpenWindowOfType(type),
+                    () => WindowEnabled(type),
+                    hoverSound: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound,
+                    clickSound: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound));
             }
             // The message-log review — our own overlay (not a game ServiceWindowsType), listed beside the game
             // windows for discoverability. Also on bare L (see InputBindings). See LogReviewScreen.
-            windows.Add(new ProxyActionButton(() => Loc.T("hud.log"), () => true,
-                LogReviewScreen.Open, actionVerb: "open"));
-            Add(windows);
+            b.AddItem(ControlId.Structural("hud:win:log"), GraphNodes.Button(
+                () => Loc.T("hud.log"), LogReviewScreen.Open));
+            b.PopContext();
         }
 
         // internal: SystemMapScreen offers the same openers on the space map (same labels/gates, Space VM).
@@ -259,63 +232,60 @@ namespace RTAccess.Screens
             => s != null && !s.IsFake.Value && !s.IsEmpty.Value
                && s.MechanicActionBarSlot != null && !s.MechanicActionBarSlot.IsBad();
 
-        // Rebuild the action list in place, restoring focus to the same row index if focus was inside (so a
-        // character swap / item use under you doesn't strand focus). Focus elsewhere is untouched.
-        private void RebuildActions()
+        // The bar as one stop, slots keyed by POSITION among the emitted rows: a character swap or an item
+        // being consumed re-renders and focus stays at the same bar index (the old restore-to-index
+        // behavior, now by construction) — the slot's LIVE label re-reads the new occupant under focus.
+        private static void BuildActions(GraphBuilder b)
         {
-            if (_actions == null) return;
-            var cur = Navigation.Active?.Current;
-            int focusedIndex = (cur != null && cur.Parent == _actions) ? _actions.IndexOf(cur) : -1;
-
-            _actions.Clear();
+            b.BeginStop("actions").SetRegion("hud:actions");
+            b.PushContext(Loc.T("hud.actions"), Loc.T("role.list"));
             // The augmentation-overdrive slot carries themed hover/click sounds in the game; tag it so the
-            // proxy replays them (every other slot uses the generic hover + its own click).
+            // factory replays them (every other slot uses the generic hover + its own click).
             var overdrive = ActionBar()?.Abilities?.OverdriveSlotVM;
-            foreach (var s in BarSlots()) if (Usable(s)) _actions.Add(new ProxyActionBarSlot(s, isOverdrive: ReferenceEquals(s, overdrive)));
-
-            if (focusedIndex < 0 || _actions.Children.Count == 0) return;
-            var target = _actions.Children[Math.Min(focusedIndex, _actions.Children.Count - 1)];
-            Navigation.Focus(target, announce: true);
-        }
-
-        // The bar's content fingerprint: the selected unit + the usable slots' titles. Changes when the unit is
-        // swapped, abilities/items appear, or an item is consumed — exactly when we must rebuild. Live per-slot
-        // state (AP/cooldown/charges) is read by the proxy, so it isn't in here.
-        private static string ActionsSig()
-        {
-            var sb = new StringBuilder();
-            sb.Append(SelectedUnit()?.UniqueId).Append('|');
+            int i = 0;
             foreach (var s in BarSlots())
-                if (Usable(s)) { try { sb.Append(s.MechanicActionBarSlot.GetTitle()); } catch { } sb.Append(','); }
-            return sb.ToString();
+            {
+                if (!Usable(s)) continue;
+                b.AddItem(ControlId.Referenced(s, "hud:act:" + i++),
+                    ActionBarNodes.Slot(s, isOverdrive: ReferenceEquals(s, overdrive)));
+            }
+            b.PopContext();
         }
 
-        // ---- Menu region (the compass-corner control cluster) ----
+        // ---- Menu stop (the compass-corner control cluster) ----
 
         // RT keeps no menu VM for these controls (in RT the IngameMenuVM is only window-openers) — each is a
-        // direct game API. One Tab-stop list, built once; toggles speak their new state on press and read their
-        // live state into the label on the next focus. (No five-foot step / delay-turn / surface Rest in RT; the
-        // turn-based and speed-up toggles are omitted — no clean stateful API.)
-        private void BuildMenu()
+        // direct game API. Toggles speak their new state on press and re-read their live state into the label
+        // per render. (No five-foot step / delay-turn / surface Rest in RT; the turn-based and speed-up
+        // toggles are omitted — no clean stateful API.)
+        private static void BuildMenu(GraphBuilder b)
         {
-            var menu = new ListContainer(GameText.Or(() => UIStrings.Instance.CommonTexts.Menu, "hud.menu"));
-            menu.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.CommonTexts.Pause, "hudmenu.pause") + ", " + OnOff(Game.Instance != null && Game.Instance.IsPaused),
-                () => true, TogglePause, actionVerb: "toggle"));
-            menu.Add(new ProxyActionButton(() => GameText.Or(() => UISettingsRoot.Instance.UIKeybindGeneralSettings.Hold.Description, "hudmenu.hold"),
-                () => true, () => SelectionManagerBase.Instance?.Hold()));
-            menu.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.ActionTexts.Stop, "hudmenu.stop"),
-                () => true, () => SelectionManagerBase.Instance?.Stop()));
-            menu.Add(new ProxyActionButton(() => GameText.Or(() => UISettingsRoot.Instance.UIKeybindSelectCharacterSettings.SelectAll.Description, "hudmenu.select_all"),
-                () => true, () => SelectionManagerBase.Instance?.SelectAll()));
-            menu.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.FormationTexts.FormationLabel, "hudmenu.formation") + (IngameMenu()?.IsFormationActive?.Value == true ? ", " + Loc.T("combat.active_marker") : ""),
-                () => true, () => IngameMenu()?.OpenFormation(), actionVerb: "open",
-                hoverSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound,     // Plastick in IngameMenuNewPCView
-                clickSoundType: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound));
-            menu.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.MainMenu.Inspect, "hudmenu.inspect") + ", " + OnOff(Game.Instance?.Player?.UISettings?.ShowInspect ?? false),
-                () => true, ToggleInspect, actionVerb: "toggle"));
-            menu.Add(new ProxyActionButton(() => GameText.Or(() => UISettingsRoot.Instance.UIKeybindGeneralSettings.CameraRotateToPointNorth.Description, "hudmenu.reset_camera"),
-                () => true, () => Kingmaker.View.CameraRig.Instance?.ResetCameraRotate()));
-            Add(menu);
+            b.BeginStop("menu").SetRegion("hud:menu");
+            b.PushContext(GameText.Or(() => UIStrings.Instance.CommonTexts.Menu, "hud.menu"), Loc.T("role.list"));
+            b.AddItem(ControlId.Structural("hud:menu:pause"), GraphNodes.Button(
+                () => GameText.Or(() => UIStrings.Instance.CommonTexts.Pause, "hudmenu.pause") + ", " + OnOff(Game.Instance != null && Game.Instance.IsPaused),
+                TogglePause));
+            b.AddItem(ControlId.Structural("hud:menu:hold"), GraphNodes.Button(
+                () => GameText.Or(() => UISettingsRoot.Instance.UIKeybindGeneralSettings.Hold.Description, "hudmenu.hold"),
+                () => SelectionManagerBase.Instance?.Hold()));
+            b.AddItem(ControlId.Structural("hud:menu:stop"), GraphNodes.Button(
+                () => GameText.Or(() => UIStrings.Instance.ActionTexts.Stop, "hudmenu.stop"),
+                () => SelectionManagerBase.Instance?.Stop()));
+            b.AddItem(ControlId.Structural("hud:menu:select_all"), GraphNodes.Button(
+                () => GameText.Or(() => UISettingsRoot.Instance.UIKeybindSelectCharacterSettings.SelectAll.Description, "hudmenu.select_all"),
+                () => SelectionManagerBase.Instance?.SelectAll()));
+            b.AddItem(ControlId.Structural("hud:menu:formation"), GraphNodes.Button(
+                () => GameText.Or(() => UIStrings.Instance.FormationTexts.FormationLabel, "hudmenu.formation") + (IngameMenu()?.IsFormationActive?.Value == true ? ", " + Loc.T("combat.active_marker") : ""),
+                () => IngameMenu()?.OpenFormation(),
+                hoverSound: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound,     // Plastick in IngameMenuNewPCView
+                clickSound: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.PlastickSound));
+            b.AddItem(ControlId.Structural("hud:menu:inspect"), GraphNodes.Button(
+                () => GameText.Or(() => UIStrings.Instance.MainMenu.Inspect, "hudmenu.inspect") + ", " + OnOff(Game.Instance?.Player?.UISettings?.ShowInspect ?? false),
+                ToggleInspect));
+            b.AddItem(ControlId.Structural("hud:menu:reset_camera"), GraphNodes.Button(
+                () => GameText.Or(() => UISettingsRoot.Instance.UIKeybindGeneralSettings.CameraRotateToPointNorth.Description, "hudmenu.reset_camera"),
+                () => Kingmaker.View.CameraRig.Instance?.ResetCameraRotate()));
+            b.PopContext();
         }
 
         private static string OnOff(bool on) => Loc.T(on ? "value.on" : "value.off");
@@ -340,25 +310,31 @@ namespace RTAccess.Screens
             Tts.Speak(Loc.T(on ? "hud.inspect_on" : "hud.inspect_off"), interrupt: true);
         }
 
-        // ---- Party region ----
+        // ---- Party stop ----
 
-        // Rebuild the roster in place, restoring focus to the same member's row if focus was inside (so a
-        // member joining/leaving under you doesn't strand focus). Focus elsewhere is untouched.
-        private void RebuildParty()
+        // One roster row per member, keyed by the UNIT so focus follows the member through joins/leaves
+        // (the reconciler's identity match — the old restore-to-member rebuild, now by construction). The
+        // live label re-reads name + wounds + selected marker each frame; Enter selects the member.
+        private static void BuildParty(GraphBuilder b)
         {
-            if (_party == null) return;
-            var cur = Navigation.Active?.Current;
-            var focusedUnit = (cur != null && cur.Parent == _party) ? (cur as PartyEntry)?.Unit : null;
-
-            _party.Clear();
-            foreach (var u in Controllable()) _party.Add(new PartyEntry(u));
-
-            if (focusedUnit == null) return;
-            UIElement target = null;
-            foreach (var c in _party.Children)
-                if (c is PartyEntry e && e.Unit == focusedUnit) { target = c; break; }
-            if (target != null) Navigation.Focus(target, announce: false); // same member: its live label already reads
-            else { var f = _party.FirstFocusable(); if (f != null) Navigation.Focus(f, announce: true); }
+            b.BeginStop("party").SetRegion("hud:party");
+            b.PushContext(Loc.T("hud.party"), Loc.T("role.list"));
+            foreach (var u in Controllable())
+            {
+                var unit = u; // loop-local copy for the closures
+                b.AddItem(ControlId.Referenced(unit, "hud:party:" + unit.UniqueId), new NodeVtable
+                {
+                    ControlType = ControlTypes.Text, // a readout row, not a button — no role word
+                    Announcements = new List<NodeAnnouncement> { GraphNodes.LabelPart(() => PartyLabel(unit)) },
+                    SearchText = () => unit.CharacterName,
+                    OnActivate = () => Select(unit),
+                    // Selecting flips the unit's IsSelected VM reactive, which the live PartyCharacterPCView
+                    // already answers with Character.CharacterSelect — so no generic click of ours on top
+                    // (the spoken feedback is SelectionAnnouncer.Announce(force: true) inside Select).
+                    ActivateSound = null,
+                });
+            }
+            b.PopContext();
         }
 
         /// <summary>The directly-controllable party members, in party order — the roster + selectable set
@@ -371,30 +347,6 @@ namespace RTAccess.Screens
             foreach (var u in party)
                 if (u != null && u.IsDirectlyControllable()) list.Add(u);
             return list;
-        }
-
-        private static string PartySig()
-        {
-            var sb = new StringBuilder();
-            foreach (var u in Controllable()) sb.Append(u.UniqueId).Append('|');
-            return sb.ToString();
-        }
-
-        // One roster row — live label (name + wounds + selected marker); Enter selects the member.
-        private sealed class PartyEntry : TextElement
-        {
-            public readonly BaseUnitEntity Unit;
-            public PartyEntry(BaseUnitEntity unit) : base(() => PartyLabel(unit)) { Unit = unit; }
-
-            // Selecting flips the unit's IsSelected VM reactive, which the live PartyCharacterPCView already
-            // answers with Character.CharacterSelect — so suppress our generic click to avoid doubling it.
-            public override Kingmaker.UI.Sound.BlueprintUISound.UISound ActivateSound => null;
-
-            public override IEnumerable<ElementAction> GetActions()
-            {
-                yield return new ElementAction(ActionIds.Activate,
-                    Message.Localized("ui", "action.select"), _ => Select(Unit));
-            }
         }
 
         private static string PartyLabel(BaseUnitEntity unit)
@@ -422,7 +374,7 @@ namespace RTAccess.Screens
             catch (Exception e) { Main.Log?.Error("InGameScreen.Select failed: " + e); }
         }
 
-        // ---- Status region ----
+        // ---- Status line ----
 
         // internal so the R hotkey (PartyHotkeys.CombatStatus) can speak the same line the HUD status element shows,
         // one-press, without a trip through HUD focus.
@@ -455,68 +407,62 @@ namespace RTAccess.Screens
             catch (Exception e) { Main.Log?.Error("InGameScreen.StatusLine: " + e); return ""; }
         }
 
-        // ---- Combat region ----
+        // ---- Combat stop (turn-based only) ----
 
-        // Rebuild the turn panel only when membership changes (combat toggling, units joining/leaving/dying).
-        // Status, button state and the active marker are all live, so the turn advancing needs no rebuild.
-        private void RebuildCombat()
+        // Out of turn-based mode nothing is emitted — the stop doesn't exist, so Tab skips it entirely (the
+        // old empty-container behavior). Initiative rows are keyed by the UNIT, so focus follows the unit
+        // as the order shifts; the divider re-positions with RoundIndex by construction (per-frame render).
+        private static void BuildCombat(GraphBuilder b)
         {
-            if (_combat == null) return;
-            var cur = Navigation.Active?.Current;
-            int focusedIndex = (cur != null && cur.Parent == _combat) ? _combat.IndexOf(cur) : -1;
-
-            _combat.Clear();
             var game = Game.Instance;
-            if (game != null && game.TurnController.TurnBasedModeActive)
+            if (game == null || !game.TurnController.TurnBasedModeActive) return;
+
+            b.BeginStop("combat").SetRegion("hud:combat");
+            b.PushContext(Loc.T("hud.combat"), Loc.T("role.list"));
+
+            // The combat-aware status line, focusable on its own.
+            b.AddItem(ControlId.Structural("hud:cstatus"), GraphNodes.Text(() => StatusLine()));
+
+            // TryEndPlayerTurnManually plays Combat.EndTurn itself (TurnController), so no ActivateSound —
+            // a generic ButtonClick would stack on top of the real end-turn sting.
+            Func<string> endTurnLabel = () => GameText.Or(() => UIStrings.Instance.HUDTexts.EndTurn, "turn.end");
+            b.AddItem(ControlId.Structural("hud:endturn"), new NodeVtable
             {
-                _combat.Add(new TextElement(StatusLine)); // the combat-aware status line, focusable on its own
-                // TryEndPlayerTurnManually plays Combat.EndTurn itself (TurnController), so suppress our
-                // generic click to avoid stacking a ButtonClick on top of the real end-turn sting.
-                _combat.Add(new ProxyActionButton(() => GameText.Or(() => UIStrings.Instance.HUDTexts.EndTurn, "turn.end"),
-                    () => game.TurnController.CanEndTurn,
-                    () => game.TurnController.TryEndPlayerTurnManually(), actionVerb: "activate",
-                    suppressActivateSound: true));
-
-                var tracker = SurfaceHUD()?.InitiativeTrackerVM?.Value;
-                if (tracker?.Units != null)
+                ControlType = ControlTypes.Button,
+                Announcements = new List<NodeAnnouncement>
                 {
-                    var units = tracker.Units;
-                    for (int i = 0; i < units.Count; i++)
-                    {
-                        var vm = units[i];
-                        if (vm == null) continue;
-                        // #10 Next-round divider. InitiativeTrackerVM sets RoundIndex to the index of the LAST
-                        // current-turn unit (InitiativeTrackerVM.UpdateUnits: RoundIndex = num after the current-turn
-                        // loop, before next-turn units get ++num), so units[0..RoundIndex] act this round and
-                        // units[RoundIndex+1..] act next round. The divider therefore belongs BEFORE the first
-                        // next-turn unit (i == RoundIndex+1), not before the last current one. Labelled with the
-                        // upcoming round number — or "surprise round" (round 0). Read live off the tracker so the
-                        // label tracks the round advancing without a rebuild.
-                        var tr = tracker;
-                        if (i == tracker.RoundIndex + 1) _combat.Add(new TextElement(() => RoundDividerLabel(tr)));
-                        _combat.Add(new TextElement(() => InitiativeLabel(vm)));
-                    }
-                }
-            }
+                    GraphNodes.LabelPart(endTurnLabel),
+                    GraphNodes.DisabledPart(() => game.TurnController.CanEndTurn),
+                },
+                SearchText = endTurnLabel,
+                OnActivate = () => { if (game.TurnController.CanEndTurn) game.TurnController.TryEndPlayerTurnManually(); },
+                ActivateSound = null,
+            });
 
-            if (focusedIndex < 0 || _combat.Children.Count == 0) return;
-            var target = _combat.Children[Math.Min(focusedIndex, _combat.Children.Count - 1)];
-            Navigation.Focus(target, announce: true);
-        }
-
-        private static string CombatSig()
-        {
-            var game = Game.Instance;
-            if (game == null || !game.TurnController.TurnBasedModeActive) return "off";
-            var sb = new StringBuilder("tb|");
             var tracker = SurfaceHUD()?.InitiativeTrackerVM?.Value;
             if (tracker?.Units != null)
-                foreach (var u in tracker.Units)
-                    if (u != null) sb.Append(u.Unit?.UniqueId).Append('|');
-            // Fold the round-boundary index in so the #10 divider re-positions when the round advances (membership
-            // can stay identical while RoundIndex shifts as units complete their turns).
-            sb.Append("r").Append(tracker?.RoundIndex ?? -1);
-            return sb.ToString();
+            {
+                var units = tracker.Units;
+                for (int i = 0; i < units.Count; i++)
+                {
+                    var vm = units[i];
+                    if (vm == null) continue;
+                    // #10 Next-round divider. InitiativeTrackerVM sets RoundIndex to the index of the LAST
+                    // current-turn unit (InitiativeTrackerVM.UpdateUnits: RoundIndex = num after the current-turn
+                    // loop, before next-turn units get ++num), so units[0..RoundIndex] act this round and
+                    // units[RoundIndex+1..] act next round. The divider therefore belongs BEFORE the first
+                    // next-turn unit (i == RoundIndex+1), not before the last current one. Labelled with the
+                    // upcoming round number — or "surprise round" (round 0). The label re-fetches the tracker
+                    // VM (it's swapped between rounds), so it never reads a stale capture under focus.
+                    if (i == tracker.RoundIndex + 1)
+                        b.AddItem(ControlId.Structural("hud:round"), GraphNodes.Text(
+                            () => RoundDividerLabel(SurfaceHUD()?.InitiativeTrackerVM?.Value)));
+                    var row = vm; // loop-local copy for the closure
+                    b.AddItem(ControlId.Referenced(row, "hud:init:" + (row.Unit?.UniqueId ?? "slot" + i)),
+                        GraphNodes.Text(() => InitiativeLabel(row)));
+                }
+            }
+            b.PopContext();
         }
 
         private static string InitiativeLabel(InitiativeTrackerUnitVM vm)

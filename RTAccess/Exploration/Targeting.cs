@@ -10,7 +10,7 @@ namespace RTAccess.Exploration;
 /// repurposed to commit/cancel through <see cref="AbilityTargeting"/>: <b>Enter</b> commits at the world cursor
 /// (the unit under it, else the point), <b>I</b> commits on the scanner's review selection, <b>Backspace</b>
 /// cancels. Those keys' normal jobs (interact / move-to) resume the instant aiming ends. The action bar does the
-/// arming (<c>ProxyActionBarSlot.OnMainClick</c> → <c>SetAbility</c>); this does the commit.
+/// arming (<c>ActionBarNodes.Slot</c> → <c>OnMainClick</c> → <c>SetAbility</c>); this does the commit.
 ///
 /// To add another aim-then-commit kind later (e.g. deployment placement), give it the same Active/CommitAt/Cancel
 /// shape and fan <see cref="Aiming"/> / the commit calls across both — the input guards stay put.

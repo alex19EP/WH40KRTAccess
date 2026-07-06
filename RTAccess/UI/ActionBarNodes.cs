@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Kingmaker;                                     // Game (VirtualPositionController, TurnController.VeilThicknessCounter)
@@ -9,107 +10,116 @@ using Kingmaker.UI.Common;                           // UIUtility.GetCurrentSele
 using Kingmaker.UnitLogic.Abilities;                 // AbilityData
 using Kingmaker.UnitLogic.Abilities.Blueprints;      // AbilityTargetAnchor
 using Kingmaker.UnitLogic.Abilities.Components;      // WarhammerEndTurn, CheckBuffForMPSpendTooltip
-using RTAccess.UI.Announcements;
-using UnityEngine;                                   // Vector3
+using RTAccess.UI.Graph;
+using UnityEngine;                                   // Vector3, Mathf
 
-namespace RTAccess.UI.Proxies
+namespace RTAccess.UI
 {
     /// <summary>
-    /// One action-bar slot — an ability / weapon attack / consumable / heroic act the selected character can
-    /// use — as a focusable, activatable button, read live off the game's <see cref="ActionBarSlotVM"/>:
-    ///   • label   = the mechanic slot's title (<c>MechanicActionBarSlot.GetTitle()</c>),
-    ///   • value   = AP cost, ammo, cooldown, and targeting/active state (the reactive mirrors on the VM),
-    ///   • enabled = whether it's usable right now (<c>IsPossibleActive</c> — AP/cooldown/turn gates),
+    /// Graph factory for action-bar slots — an ability / weapon attack / consumable / heroic act the
+    /// selected character can use — read live off the game's <see cref="ActionBarSlotVM"/>:
+    ///   • label   = the mechanic slot's title (<c>MechanicActionBarSlot.GetTitle()</c>) — LIVE, so the
+    ///     bar repopulating under focus (a character swap) re-reads the new occupant of the row;
+    ///   • value   = AP cost, range/target-kind/uses, ammo, cooldown, veil, "ends turn" — read on focus —
+    ///     plus a LIVE targeting/active part, so arming or the game's async settle announces under focus;
+    ///   • enabled = whether it's usable right now (<c>IsPossibleActive</c> — AP/cooldown/turn gates), LIVE;
     ///   • activate = the VM's own click (<see cref="ActionBarSlotVM.OnMainClick"/>, which fires the ability
-    ///     AND plays the game's slot-click sound — so we suppress our own ActivateSound to avoid doubling it).
-    /// Space reads the full ability/item description via the slot's rich brick tooltip
-    /// (<c>slot.Tooltip.Value</c>, surfaced through <see cref="GetTooltipTemplate"/>).
+    ///     AND plays the game's slot-click sound — so no ActivateSound of ours on top). Enter on a greyed
+    ///     slot speaks the game's own why-not instead of silence (the blocked-click fallback).
+    /// Space reads the full ability/item description via the slot's rich brick tooltip.
+    /// Carries the whole ProxyActionBarSlot contract (the retired adapter-era widget).
     /// </summary>
-    [AnnouncementOrder(typeof(LabelAnnouncement), typeof(RoleAnnouncement), typeof(ValueAnnouncement),
-        typeof(EnabledAnnouncement), typeof(PositionAnnouncement))]
-    public sealed class ProxyActionBarSlot : UIElement
+    internal static class ActionBarNodes
     {
-        private readonly ActionBarSlotVM _slot;
-        private readonly bool _isOverdrive;
-
-        public ProxyActionBarSlot(ActionBarSlotVM slot, bool isOverdrive = false)
+        /// <summary>One action-bar slot. <paramref name="isOverdrive"/> tags the augmentation-overdrive
+        /// slot, the only one with a themed hover/click in the game (SurfaceActionBarPartAbilitiesPCView
+        /// SetHoverSound/SetClickSound); its themed click LAYERS on OnMainClick's own mechanic sound,
+        /// matching the game.</summary>
+        public static NodeVtable Slot(ActionBarSlotVM vm, bool isOverdrive = false)
         {
-            _slot = slot;
-            _isOverdrive = isOverdrive;
+            Func<bool> enabled = () => vm?.IsPossibleActive?.Value ?? false;
+            Func<string> title = () => Title(vm);
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Button,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    new NodeAnnouncement(title, live: true, kind: AnnouncementKinds.Label),
+                    new NodeAnnouncement(() => Detail(vm), kind: AnnouncementKinds.Value),
+                    // Targeting / active state — LIVE, so arming an ability (or the game's async settle)
+                    // announces itself while the slot is focused. Silent when neither.
+                    new NodeAnnouncement(() => ToggleState(vm), live: true, kind: AnnouncementKinds.Value),
+                    GraphNodes.DisabledPart(enabled),
+                },
+                SearchText = title,
+                OnActivate = () =>
+                {
+                    if (enabled()) { vm?.OnMainClick(); return; }
+                    // The game only raises a warning for some refusals; give the greyed slot's own
+                    // reason (or a plain "disabled") so Enter always says something.
+                    var why = UnavailableReason(vm?.AbilityData);
+                    Tts.Speak(why != null
+                        ? Loc.T("slot.unavailable", new { reason = why })
+                        : Loc.T("state.disabled"), interrupt: true);
+                },
+                OnTooltip = () => TooltipChooser.OpenTemplate(Title(vm), vm?.Tooltip?.Value),
+                HoverSound = isOverdrive ? Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.AugmentationsOverdriveHover
+                    : (Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum?)null,
+                ClickSound = isOverdrive ? Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.AugmentationsOverdriveClick
+                    : (Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum?)null,
+                ActivateSound = null, // OnMainClick plays the slot's own click; the refusal path speaks
+            };
         }
 
-        // OnMainClick plays the action-bar click sound itself; don't double it.
-        public override Kingmaker.UI.Sound.BlueprintUISound.UISound ActivateSound => null;
-
-        // Only the augmentation-overdrive slot carries a themed hover/click in the game
-        // (SurfaceActionBarPartAbilitiesPCView SetHoverSound/SetClickSound); regular slots use the generic
-        // hover (null) and delegate their click to OnMainClick's own sound. For overdrive the themed click
-        // LAYERS on top of that mechanic sound, matching the game.
-        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? HoverSoundType
-            => _isOverdrive ? Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.AugmentationsOverdriveHover : (Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum?)null;
-        public override Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum? ClickSoundType
-            => _isOverdrive ? Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.AugmentationsOverdriveClick : (Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum?)null;
-
-        public override Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate GetTooltipTemplate()
-            => _slot?.Tooltip?.Value;
-
-        private bool Enabled => _slot?.IsPossibleActive?.Value ?? false;
-
-        public override IEnumerable<Announcement> GetFocusAnnouncements()
+        private static string Title(ActionBarSlotVM vm)
         {
-            yield return new LabelAnnouncement(Message.Raw(Title()));
-            yield return new RoleAnnouncement("action");
-            var state = State();
-            if (!string.IsNullOrEmpty(state)) yield return new ValueAnnouncement(Message.Raw(state));
-            yield return new EnabledAnnouncement(Enabled);
-        }
-
-        public override IEnumerable<ElementAction> GetActions()
-        {
-            // Even a not-currently-usable slot is worth activating (it surfaces the game's own "not enough
-            // action points" warning via WarningReader) — but match the other proxies and only offer it when
-            // usable, so a greyed slot reads "disabled" and Enter does nothing surprising.
-            if (Enabled)
-                yield return new ElementAction(ActionIds.Activate, Message.Localized("ui", "action.activate"),
-                    _ => _slot?.OnMainClick());
-        }
-
-        private string Title()
-        {
-            try { return _slot?.MechanicActionBarSlot?.GetTitle() ?? ""; }
+            try { return vm?.MechanicActionBarSlot?.GetTitle() ?? ""; }
             catch { return ""; }
         }
 
-        // AP cost + range/target-kind/uses + ammo + cooldown + targeting/active + why-disabled. The reactive
-        // mirrors are the VM's; the range/target-kind/uses/reason come off the AbilityData — the same decision
-        // info a sighted player reads off the slot icon and its greyed-out tooltip. Read on focus (user-driven),
-        // so the rule-triggering getters (RangeCells, GetUnavailableReason) are fine to call here.
-        private string State()
+        // The live targeting/active marker (the old State()'s only volatile piece, split out as the live
+        // part): "targeting" while the slot is armed awaiting a target, the active marker for a running
+        // toggle, null otherwise.
+        private static string ToggleState(ActionBarSlotVM vm)
         {
-            if (_slot == null) return null;
+            try
+            {
+                if (vm == null) return null;
+                if (vm.IsSelected.Value) return Loc.T("value.targeting");
+                var m = vm.MechanicActionBarSlot;
+                return m != null && m.IsActive() ? Loc.T("combat.active_marker") : null;
+            }
+            catch { return null; }
+        }
+
+        // AP cost + range/target-kind/uses + ammo + cooldown + veil + "ends turn" + why-disabled. The
+        // reactive mirrors are the VM's; the range/target-kind/uses/reason come off the AbilityData — the
+        // same decision info a sighted player reads off the slot icon and its greyed-out tooltip. Read on
+        // focus (user-driven), so the rule-triggering getters (RangeCells, GetUnavailableReason) are fine
+        // to call here. (Targeting/active state lives in the LIVE part above, not here.)
+        private static string Detail(ActionBarSlotVM vm)
+        {
+            if (vm == null) return null;
             var sb = new StringBuilder();
             try
             {
-                int ap = _slot.ActionPointCost.Value;
+                int ap = vm.ActionPointCost.Value;
                 if (ap > 0) Append(sb, Loc.T(ap == 1 ? "slot.action_point" : "slot.action_points", new { ap }));
 
-                var ab = _slot.AbilityData;
-                if (ab != null) AppendAbilityDetails(sb, ab);
+                var ab = vm.AbilityData;
+                if (ab != null) AppendAbilityDetails(sb, vm, ab);
 
-                if (_slot.IsReload.Value)
-                    Append(sb, Loc.T("slot.ammo", new { current = _slot.CurrentAmmo.Value, max = _slot.MaxAmmo.Value }));
-                // Ammo spent per activation (VM's AmmoCost — a separate badge from the current/max ammo, shown
-                // when the ability consumes more than one round per use, e.g. a burst).
-                if (_slot.AmmoCost.Value > 0)
-                    Append(sb, Loc.T("slot.ammo_cost", new { cost = _slot.AmmoCost.Value }));
-                if (_slot.IsOnCooldown.Value)
+                if (vm.IsReload.Value)
+                    Append(sb, Loc.T("slot.ammo", new { current = vm.CurrentAmmo.Value, max = vm.MaxAmmo.Value }));
+                // Ammo spent per activation (VM's AmmoCost — a separate badge from the current/max ammo,
+                // shown when the ability consumes more than one round per use, e.g. a burst).
+                if (vm.AmmoCost.Value > 0)
+                    Append(sb, Loc.T("slot.ammo_cost", new { cost = vm.AmmoCost.Value }));
+                if (vm.IsOnCooldown.Value)
                 {
-                    var cd = _slot.CooldownText.Value;
+                    var cd = vm.CooldownText.Value;
                     Append(sb, string.IsNullOrEmpty(cd) ? Loc.T("slot.on_cooldown") : Loc.T("slot.cooldown", new { turns = cd }));
                 }
-                if (_slot.IsSelected.Value) Append(sb, Loc.T("value.targeting"));
-                else if (_slot.MechanicActionBarSlot != null && _slot.MechanicActionBarSlot.IsActive())
-                    Append(sb, Loc.T("combat.active_marker"));
 
                 if (ab != null)
                 {
@@ -117,9 +127,9 @@ namespace RTAccess.UI.Proxies
                     AppendEndTurn(sb, ab);   // "ends turn" / "spends all movement" cue
                 }
 
-                // Why it's greyed out — the game's own reason (not enough AP, on cooldown, out of range, …), so a
-                // disabled slot says the cause instead of a bare "disabled".
-                if (ab != null && !Enabled)
+                // Why it's greyed out — the game's own reason (not enough AP, on cooldown, out of range, …),
+                // so a disabled slot says the cause instead of a bare "disabled".
+                if (ab != null && !(vm.IsPossibleActive?.Value ?? false))
                 {
                     var why = UnavailableReason(ab);
                     if (why != null) Append(sb, Loc.T("slot.unavailable", new { reason = why }));
@@ -130,7 +140,7 @@ namespace RTAccess.UI.Proxies
         }
 
         // Range (melee vs cells, + a minimum if the weapon has one), what it targets, and limited uses.
-        private void AppendAbilityDetails(StringBuilder sb, AbilityData ab)
+        private static void AppendAbilityDetails(StringBuilder sb, ActionBarSlotVM vm, AbilityData ab)
         {
             try
             {
@@ -165,9 +175,9 @@ namespace RTAccess.UI.Proxies
                     case AbilityTargetAnchor.Point: Append(sb, ab.IsAOE ? Loc.T("slot.area_effect") : Loc.T("slot.targets_point")); break;
                 }
 
-                // Limited uses (charges / per-day resource); -1 == at-will. Ammo weapons already read their ammo
-                // above, so don't also say "N uses left" for them.
-                if (!_slot.IsReload.Value)
+                // Limited uses (charges / per-day resource); -1 == at-will. Ammo weapons already read their
+                // ammo above, so don't also say "N uses left" for them.
+                if (!vm.IsReload.Value)
                 {
                     int uses = -1; try { uses = ab.GetAvailableForCastCount(); } catch { }
                     if (uses >= 0) Append(sb, Loc.T(uses == 1 ? "slot.use_left" : "slot.uses_left", new { uses }));
@@ -178,11 +188,11 @@ namespace RTAccess.UI.Proxies
 
         // The game's localized "why greyed out" text, evaluated from where the caster will act (its desired
         // position, matching the on-screen tooltip). Null when there's no reason or no caster.
-        private string UnavailableReason(AbilityData ab)
+        private static string UnavailableReason(AbilityData ab)
         {
             try
             {
-                var caster = ab.Caster;
+                var caster = ab?.Caster;
                 if (caster == null) return null;
                 Vector3 pos = caster.Position;
                 try { var vpc = Game.Instance?.VirtualPositionController; if (vpc != null) pos = vpc.GetDesiredPosition(caster); }
@@ -198,7 +208,7 @@ namespace RTAccess.UI.Proxies
         // are game-localized content (UIStrings.Tooltips.*), passed straight through. Honors CheckBuffForMPSpendTooltip:
         // that component overrides the plain text, showing the MP cue only when the selected caster holds its buff
         // (and suppressing it otherwise) — matching TooltipTemplateAbility.GetEndTurn exactly.
-        private void AppendEndTurn(StringBuilder sb, AbilityData ab)
+        private static void AppendEndTurn(StringBuilder sb, AbilityData ab)
         {
             try
             {
@@ -229,7 +239,7 @@ namespace RTAccess.UI.Proxies
         // (current global veil + AbilityData.GetVeilThicknessPointsToAdd(isPrediction:true)). Veil is a global
         // location value (AreaVailPart.Vail), not per-unit, so there's nothing to fog-gate. Flags when the cast
         // would reach the critical threshold the game uses to escalate perils (CriticalVeilOnAllLocation).
-        private void AppendVeil(StringBuilder sb, AbilityData ab)
+        private static void AppendVeil(StringBuilder sb, AbilityData ab)
         {
             try
             {
