@@ -2,13 +2,18 @@
 <#
 .SYNOPSIS
   RTAccess dev loop: close the game, rebuild (Debug deploys the mod + dev harness to the UMM folder),
-  relaunch via Steam, and verify the dev server is up.
+  relaunch the game exe directly, and verify the dev server is up.
 
 .DESCRIPTION
   The Debug build's Deploy target copies the mod into the game's UnityModManager folder, but the game
   must be CLOSED first (a running game locks RTAccess.dll). So the order is always kill -> build ->
   launch. The dev HTTP server (port 8772) is gated on the marker file this script keeps armed, so it
-  comes up automatically on the Steam relaunch (a Steam launch does not inherit env vars).
+  comes up automatically on relaunch regardless of how the game is started or whether it inherits env vars.
+
+  Launch runs the WH40KRT.exe directly (resolved from GamePath.props / Player.log / the default Steam
+  path, or $env:RTGameExe): the `steam://rungameid` URL silently no-ops when the Steam client is idle,
+  whereas the exe boots reliably. Steam must still be RUNNING (the game needs the Steam API); if the exe
+  can't be resolved we fall back to the steam:// URL, which also cold-starts Steam.
 
 .PARAMETER Action
   cycle   (default) kill -> build -> launch -> verify. The full "rebuild and rerun".
@@ -54,11 +59,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$AppId    = 2186680
+$AppId    = 2186680  # Steam appid — used only for the steam:// launch fallback.
 $ProcName = 'WH40KRT'
 $Root     = Split-Path $PSScriptRoot -Parent
 $Solution = Join-Path $Root 'RTAccess.slnx'
 $Marker   = Join-Path $env:USERPROFILE 'AppData\LocalLow\Owlcat Games\Warhammer 40000 Rogue Trader\RTAccess\devserver.enable'
+$PlayerLog = Join-Path $env:USERPROFILE 'AppData\LocalLow\Owlcat Games\Warhammer 40000 Rogue Trader\Player.log'
+$DefaultInstall = 'C:\Program Files (x86)\Steam\steamapps\common\Warhammer 40,000 Rogue Trader'
 $Base     = "127.0.0.1:$Port"
 
 function Step($m) { Write-Host "==> $m" -ForegroundColor Cyan }
@@ -103,10 +110,42 @@ function Arm-Marker {
     if (-not (Test-Path $Marker)) { New-Item -ItemType File -Path $Marker | Out-Null }
 }
 
+# Resolve WH40KRT.exe, preferring the same install-dir sources the build uses. Returns $null if none exist.
+function Resolve-GameExe {
+    $candidates = @()
+    if ($env:RTGameExe) { $candidates += $env:RTGameExe }
+    # GamePath.props (written by the build's GenerateCustomPropsFile target).
+    $props = Join-Path $Root 'GamePath.props'
+    if (Test-Path $props) {
+        $m = [regex]::Match((Get-Content $props -Raw), '<RogueTraderInstallDir>(.*?)</RogueTraderInstallDir>')
+        if ($m.Success -and $m.Groups[1].Value) { $candidates += (Join-Path $m.Groups[1].Value 'WH40KRT.exe') }
+    }
+    # The game's own Player.log "Mono path[0]" line — the same source the csproj derives the install dir from.
+    if (Test-Path $PlayerLog) {
+        try {
+            $m = [regex]::Match((Get-Content $PlayerLog -Raw), "Mono path\[0\] = '(.*?)/WH40KRT_Data/Managed'")
+            if ($m.Success) { $candidates += (Join-Path ($m.Groups[1].Value -replace '/', '\') 'WH40KRT.exe') }
+        } catch { }
+    }
+    $candidates += (Join-Path $DefaultInstall 'WH40KRT.exe')
+    foreach ($c in $candidates) { if ($c -and (Test-Path $c)) { return $c } }
+    return $null
+}
+
 function Launch-Game {
     Arm-Marker
-    Step "Launching via Steam (appid $AppId)"
-    Start-Process "steam://rungameid/$AppId"
+    $exe = Resolve-GameExe
+    if (-not $exe) {
+        Write-Warning "WH40KRT.exe not found (set `$env:RTGameExe); falling back to steam://rungameid/$AppId"
+        Step "Launching via Steam (appid $AppId)"
+        Start-Process "steam://rungameid/$AppId"
+        return
+    }
+    if (-not (Get-Process -Name steam -ErrorAction SilentlyContinue)) {
+        Write-Warning 'Steam is not running — the game needs the Steam API to boot. Start Steam first if launch fails.'
+    }
+    Step "Launching $exe"
+    Start-Process $exe
 }
 
 function Wait-Server {

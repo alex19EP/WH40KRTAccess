@@ -83,7 +83,10 @@ dotnet msbuild RTAccess.csproj -t:Compile -p:Configuration=Debug -p:SolutionDir=
   `GameCommandQueue`, runs over later frames — read results back via `/log`); never block on the Task.
 - **`scripts/dev-game.ps1`** (and the **`/dev-game` skill`**) wrap the close → build → launch →
   verify cycle: `cycle` (default), `build`, `run`, `restart`, `kill`, `status`; plus `cheat`/`dump`/`log`
-  (with `-Arg`) to hit the console surface. Launch is `steam://rungameid/2186680`.
+  (with `-Arg`) to hit the console surface. Launch runs **`WH40KRT.exe` directly** (resolved from
+  `GamePath.props` / `Player.log` / the default Steam path, or `$env:RTGameExe`) — Steam must be running
+  but the `steam://rungameid/2186680` URL silently no-ops when the client is idle, so the exe is primary
+  and the URL is only the fallback.
 - **Shared-harness rule**: do NOT drive the live game while another agent/session is driving it.
   Give the user manual test steps instead.
 
