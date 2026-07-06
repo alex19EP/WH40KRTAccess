@@ -42,15 +42,16 @@ namespace RTAccess.Screens
         public override string ScreenName => null; // ServiceWindowAnnounce speaks "Inventory" on open
         public override int Layer => 10;
 
-        // Type-ahead OFF here: letters pass to the game so its own Shift+A/Shift+D switch-character (and its
-        // search hotkey) work, and stash search is the game's OWN field (BuildSearch), not our type-ahead.
+        // Type-ahead OFF here: bare letters pass to the game (its search hotkey), and stash search is the
+        // game's OWN field (BuildSearch), not our type-ahead. Shift+A/D character switching is the mod's own
+        // party chords (PartyHotkeys window branch — the claim suppresses the game's binds here).
         public override bool AllowsTypeahead => false;
 
         public override bool IsActive() => Vm() != null;
 
-        // Re-baseline the switch guard on open, then announce each Shift+A/D character switch (the game
-        // switches SelectedUnitInUI but never speaks it; our doll/defenses re-key, but only ViewedCharacter
-        // voices WHO). OnUpdate runs each frame on the focused screen (ScreenManager dispatches it).
+        // Re-baseline the switch guard on open, then announce each character switch (Shift+A/D or the
+        // header's prev/next buttons: SelectedUnitInUI changes but nothing speaks it; our doll/defenses
+        // re-key, but only ViewedCharacter voices WHO). OnUpdate runs each frame on the focused screen.
         public override void OnPush() => ViewedCharacter.Reset();
         public override void OnUpdate() => ViewedCharacter.Tick(Vm()?.Unit?.Value);
 
@@ -96,10 +97,11 @@ namespace RTAccess.Screens
             BuildStash(b, k, vm.StashVM);
         }
 
-        // The header a sighted player reads beside the portrait: who's shown (name / level / wounds) and the
-        // pet/master swap (the game's m_PetButton). Switching the party member itself is the game's NATIVE
-        // Shift+A / Shift+D (announced by ViewedCharacter.Tick) — we don't rebuild a switcher. Keyed per-unit
-        // (uk) so a switch re-homes and the differ re-reads the readout under focus.
+        // The header a sighted player reads beside the portrait: who's shown (name / level / wounds), the
+        // prev/next member switch (the chrome's portrait arrows — also on Shift+A/D via PartyHotkeys), and
+        // the pet/master swap (the game's m_PetButton). The readout is keyed per-unit (uk) so a switch
+        // re-homes and the differ re-reads it under focus; the switch buttons are keyed to the WINDOW (k)
+        // so focus stays on the button across the switch while ViewedCharacter.Tick announces who's shown.
         private static void BuildCharacter(GraphBuilder b, string k, string uk, InventoryVM vm)
         {
             var unit = vm.Unit?.Value;
@@ -108,6 +110,10 @@ namespace RTAccess.Screens
             b.PushContext(Loc.T("inv.character"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural(uk + "char:readout"),
                 GraphNodes.Text(() => ViewedCharacter.HeaderLine(vm.Unit?.Value)));
+            b.AddItem(ControlId.Structural(k + "char:prev"), GraphNodes.Button(
+                () => Loc.T("char.prev_member"), () => ViewedCharacter.SwitchMember(next: false)));
+            b.AddItem(ControlId.Structural(k + "char:next"), GraphNodes.Button(
+                () => Loc.T("char.next_member"), () => ViewedCharacter.SwitchMember(next: true)));
             if (ViewedCharacter.HasPetAxis(unit))
                 b.AddItem(ControlId.Structural(uk + "char:pet"), GraphNodes.Button(
                     () => ViewedCharacter.PetLabel(vm.Unit?.Value), () => ViewedCharacter.SwapPet(vm.Unit?.Value)));

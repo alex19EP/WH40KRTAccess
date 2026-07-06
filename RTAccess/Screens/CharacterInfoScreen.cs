@@ -63,12 +63,13 @@ namespace RTAccess.Screens
         public override string ScreenName => null; // ServiceWindowAnnounce already speaks "Character"
         public override int Layer => 10;
 
-        // Type-ahead OFF: letters pass to the game so its own Shift+A/Shift+D switch-character works here
-        // (the sheet re-keys to the new unit); arrows walk the stat/skill trees instead.
+        // Type-ahead OFF: bare letters pass to the game; arrows walk the stat/skill trees instead.
+        // Shift+A/D character switching is the mod's own party chords (PartyHotkeys window branch).
         public override bool AllowsTypeahead => false;
 
-        // The game switches SelectedUnitInUI on Shift+A/D but never speaks it — ViewedCharacter voices WHO
-        // (the sheet itself re-keys silently). OnUpdate runs each frame on the focused screen.
+        // A switch (Shift+A/D or the header's prev/next buttons) changes SelectedUnitInUI but nothing
+        // speaks it — ViewedCharacter voices WHO (the sheet itself re-keys silently). OnUpdate runs each
+        // frame on the focused screen.
         public override void OnPush() => ViewedCharacter.Reset();
         public override void OnUpdate() => ViewedCharacter.Tick(SheetUnit());
 
@@ -165,6 +166,13 @@ namespace RTAccess.Screens
                     () => Loc.T("levelup.button"),
                     () => EventBus.RaiseEvent<INewServiceWindowUIHandler>(
                         h => h.HandleOpenCharacterInfoPage(CharInfoPageType.LevelProgression, unit))));
+            // Prev/next member switch (the sheet's portrait arrows — also on Shift+A/D via PartyHotkeys).
+            // Keyed OUTSIDE k: a switch re-keys the whole per-unit sheet, and focus must stay on the
+            // button across it while ViewedCharacter.Tick announces who's now shown.
+            b.AddItem(ControlId.Structural("chinfo:switch:prev"), GraphNodes.Button(
+                () => Loc.T("char.prev_member"), () => ViewedCharacter.SwitchMember(next: false)));
+            b.AddItem(ControlId.Structural("chinfo:switch:next"), GraphNodes.Button(
+                () => Loc.T("char.next_member"), () => ViewedCharacter.SwitchMember(next: true)));
             // Pet/master swap (the game's m_PetButton) — a pet is off the Shift+A/D roster, so it needs
             // its own control; only shown when this unit has a pet or is one.
             if (ViewedCharacter.HasPetAxis(unit))

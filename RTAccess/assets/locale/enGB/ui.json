@@ -771,6 +771,8 @@
   "char.wounds_short": "{cur} of {max} wounds",
   "char.swap_pet": "Switch to pet",
   "char.swap_master": "Switch to master",
+  "char.prev_member": "Previous character",
+  "char.next_member": "Next character",
   "charinfo.abilities": "Abilities",
   "charinfo.abilities_active": "Active",
   "charinfo.abilities_passive": "Passive",

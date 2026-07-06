@@ -29,14 +29,33 @@ internal static class PartyHotkeys
     // The radial itself stays gamepad-only (per the user's decision), but the keyboard player gets the same
     // outcome — pick the active character and hear their name.
 
-    /// <summary>Shift+D — select the next directly-controllable party member.</summary>
-    public static void MemberNext() { if (RTAccess.Screens.InGameScreen.ExplorationActive) Step(next: true); }
+    // The same chords also serve the service windows: Inventory / Character Info sit non-Exclusive over
+    // InGameScreen, so these Exploration bindings stay live there (and CLAIMED — the game's own
+    // Prev/NextCharacter binds are suppressed); the window branch drives the game's own viewed-unit
+    // switch instead, and ViewedCharacter.Tick speaks the result.
 
-    /// <summary>Shift+A — select the previous directly-controllable party member.</summary>
-    public static void MemberPrev() { if (RTAccess.Screens.InGameScreen.ExplorationActive) Step(next: false); }
+    /// <summary>Shift+D — the next party member: the world selection out in exploration, the VIEWED
+    /// character inside a service window.</summary>
+    public static void MemberNext()
+    {
+        if (RTAccess.Screens.InGameScreen.ExplorationActive) Step(next: true);
+        else if (ViewedCharacter.WindowActive) ViewedCharacter.SwitchMember(next: true);
+    }
 
-    /// <summary>Alt+1..6 — select that party slot directly (index is 0-based).</summary>
-    public static void SelectMember(int index) { if (RTAccess.Screens.InGameScreen.ExplorationActive) SelectIndex(index); }
+    /// <summary>Shift+A — the previous party member (see <see cref="MemberNext"/>).</summary>
+    public static void MemberPrev()
+    {
+        if (RTAccess.Screens.InGameScreen.ExplorationActive) Step(next: false);
+        else if (ViewedCharacter.WindowActive) ViewedCharacter.SwitchMember(next: false);
+    }
+
+    /// <summary>Alt+1..6 — select that party slot directly (index is 0-based); in a service window,
+    /// shows that roster slot instead.</summary>
+    public static void SelectMember(int index)
+    {
+        if (RTAccess.Screens.InGameScreen.ExplorationActive) SelectIndex(index);
+        else if (ViewedCharacter.WindowActive) ViewedCharacter.SwitchTo(index);
+    }
 
     /// <summary>The directly-controllable party members, in party order — the selectable set.</summary>
     private static List<BaseUnitEntity> Controllable()
