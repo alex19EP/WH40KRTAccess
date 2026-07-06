@@ -4,14 +4,19 @@
 #   dotnet tool install --global ilspycmd
 #
 # The whole `decompiled/` tree is .gitignored (regenerable from the game install),
-# so this justfile is the source of truth for how to rebuild it.
+# so this justfile is the source of truth for how to rebuild it. Each assembly lands
+# in its own subfolder: `decompiled/<AssemblyName>/`.
 #
 # Usage:
 #   just                       # list recipes
-#   just support               # decompile the libs the mod needs (the common case)
-#   just all                   # support + the big main assemblies
-#   just decompile <Name>      # decompile a single assembly, e.g. just decompile Code
-#   just managed='D:/path/...' support   # override the game's Managed dir
+#   just support               # decompile the libs the mod needs most (the common case, fast)
+#   just all                   # decompile EVERY assembly the solution references (slow)
+#   just decompile <Name>      # a single assembly, e.g. just decompile Code
+#   just decompile-glob 'Kingmaker*.dll'   # every assembly matching a glob
+#   just managed='D:/path/...' all         # override the game's Managed dir
+#
+# `all` mirrors the <Reference> set in RTAccess/RTAccess.csproj (minus the Unity engine
+# modules, which are native stubs) — keep the two in sync when references are added/removed.
 
 set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 
@@ -28,9 +33,18 @@ default:
 # Decompile a single assembly by name (no .dll suffix) into {{out}}/<Name>/.
 decompile name:
     @echo "Decompiling {{name}}"
-    ilspycmd "{{managed}}/{{name}}.dll" -o "{{out}}" -p
+    ilspycmd "{{managed}}/{{name}}.dll" -o "{{out}}/{{name}}" -p
 
-# Decompile the support libs the mod needs (UI focus system, reactive bindings, mod loader).
+# Decompile every assembly matching a filename glob, e.g. just decompile-glob 'Kingmaker*.dll'.
+# Each match lands in its own {{out}}/<Name>/ subfolder; `all` fans out over the csproj wildcards this way.
+decompile-glob pattern:
+    @Get-ChildItem -Path "{{managed}}" -Filter "{{pattern}}" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "Decompiling $($_.BaseName)"; ilspycmd $_.FullName -o "{{out}}/$($_.BaseName)" -p }
+
+# Decompile UnityModManager.dll, which lives in the UMM folder under LocalLow, not the Managed dir.
+umm:
+    @$dll = Join-Path $env:LOCALAPPDATA "..\LocalLow\Owlcat Games\Warhammer 40000 Rogue Trader\UnityModManager\UnityModManager.dll"; if (Test-Path $dll) { Write-Host "Decompiling UnityModManager"; ilspycmd (Resolve-Path $dll).Path -o "{{out}}/UnityModManager" -p } else { Write-Host "SKIP UnityModManager (not found: $dll)" }
+
+# Decompile the support libs the mod needs most (fast common case; a subset of `all`).
 #   Owlcat.Runtime.UI     - ViewBase<T> + the console focus/navigation system (the screen-reader hook)
 #   Owlcat.Runtime.Core   - reactive properties driving the MVVM bindings, base utils, input plumbing
 #   Owlcat.Runtime.UniRx  - the reactive primitives behind those bindings
@@ -39,11 +53,9 @@ decompile name:
 #   RogueTrader.ModInitializer - how the OwlcatModification mod loader boots
 support: (decompile "Owlcat.Runtime.UI") (decompile "Owlcat.Runtime.Core") (decompile "Owlcat.Runtime.UniRx") (decompile "Owlcat.Runtime.Visual") (decompile "RogueTrader.SharedTypes") (decompile "RogueTrader.ModInitializer")
 
-# The large main assemblies (slow). Code.dll is the 13 MB game core.
-core: (decompile "Code") (decompile "RogueTrader.GameCore")
-
-# Everything used as reference material.
-all: support core
+# Mirrors RTAccess.csproj <Reference> globs, minus the Unity* engine modules (native stubs).
+# Decompile EVERY game/dependency assembly the solution references (slow; includes Code.dll + GameCore).
+all: (decompile-glob "Kingmaker*.dll") (decompile-glob "Utility*.dll") (decompile-glob "Core*.dll") (decompile-glob "Owlcat*.dll") (decompile-glob "RogueTrader*.dll") (decompile-glob "Code.dll") (decompile-glob "LocalizationShared.dll") (decompile-glob "UniRx.dll") (decompile-glob "Rewired_Core.dll") (decompile-glob "ContextData.dll") (decompile-glob "StateHasher.dll") (decompile-glob "CountingGuard.dll") (decompile-glob "AstarPathfindingProject.dll") (decompile-glob "Newtonsoft.Json.dll") (decompile-glob "0Harmony.dll") umm
 
 # List the assemblies available in the game's Managed folder.
 list:

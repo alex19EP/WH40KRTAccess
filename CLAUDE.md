@@ -43,8 +43,11 @@ keyboard layer + (deferred) spatial-audio soundscape. Sibling project to **Wrath
   so the `justfile` is the source of truth for how to rebuild it.
   - `just support` — the libs the mod actually needs (UI/focus, reactive core, UniRx, Visual
     for the fog mask, SharedTypes, ModInitializer). The common case.
-  - `just all` — support + the big `Code.dll` / `RogueTrader.GameCore.dll` (slow).
-  - `just decompile <Name>` — a single assembly; `just list` / `just check` for the Managed dir.
+  - `just all` — **every game/dependency assembly the solution references** (mirrors the
+    `RTAccess.csproj` `<Reference>` globs, minus the native-stub Unity engine modules); includes
+    `Code.dll` / `RogueTrader.GameCore.dll`, so it's slow but makes all referenceable code available.
+  - `just decompile <Name>` — a single assembly (into `decompiled/<Name>/`); `just decompile-glob
+    '<pattern>'` for a wildcard; `just list` / `just check` for the Managed dir.
   - Requires `ilspycmd` (`dotnet tool install --global ilspycmd`) and `just` on PATH.
 
 ## Build & deploy
@@ -194,9 +197,9 @@ Load-bearing knowledge about how the game world works (all verified in-harness):
   was settled with an adversarial review; full memo in `docs/input-system-architecture-review.md`.
 
 ## Prior art & reference
-- Sibling mod **WrathAccess** (Pathfinder: Wrath of the Righteous, ~30k LOC) at
-  `E:\Games\modding\not-my\wotr-access` is the authoritative prior art for nearly every subsystem — but it uses
-  the **native Owlcat mod system**, not UMM, so the loader / deploy / entry differ. Ported steal-reports live at
-  `docs/wotr-access-steal-report.md` and `docs/scanner-vs-wrathaccess-parity.md`.
+- Sibling mod **WrathAccess** (Pathfinder: Wrath of the Righteous, ~30k LOC) is the authoritative prior art
+  for nearly every subsystem — but it uses the **native Owlcat mod system**, not UMM, so the loader / deploy /
+  entry differ. It's cloned locally and can be consulted (ask for the path if needed). Ported steal-reports
+  live at `docs/wotr-access-steal-report.md` and `docs/scanner-vs-wrathaccess-parity.md`.
 - **`HOOKMAP.md`** (repo root) is the cross-checked map of the game's hook targets (10 subsystems, exact
   signatures). Osmodium's **SpeechMod** (MIT) is the authoritative RT TTS prior art it was built from.
