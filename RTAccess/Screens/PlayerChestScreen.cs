@@ -89,7 +89,7 @@ namespace RTAccess.Screens
                 {
                     if (slot == null || !slot.HasItem) continue;
                     var ent = slot.Item.Value;
-                    b.AddItem(ControlId.Structural(k + ":" + ent.GetHashCode()),
+                    b.AddItem(ControlId.Structural(k + ":" + ent.UniqueId),
                         ItemNodes.StashItem(slot, fromChest));
                     any = true;
                 }

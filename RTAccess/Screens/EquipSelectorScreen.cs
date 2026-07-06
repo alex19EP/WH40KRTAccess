@@ -73,7 +73,7 @@ namespace RTAccess.Screens
                     // the list) re-homes focus by identity; structural index is the fallback for a null item.
                     var ent = cand.Item;
                     var id = ent != null
-                        ? ControlId.Referenced(ent, k + "cand:" + ent.GetHashCode())
+                        ? ControlId.Referenced(ent, k + "cand:" + ent.UniqueId)
                         : ControlId.Structural(k + "cand:" + i);
                     b.AddItem(id, ItemNodes.EquipCandidate(cand, sel));
                     i++;

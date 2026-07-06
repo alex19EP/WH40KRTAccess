@@ -92,7 +92,7 @@ namespace RTAccess.Screens
                 {
                     if (s == null || !s.HasItem || !s.CanInsert.Value) continue;
                     var ent = s.Item.Value;
-                    b.AddItem(ControlId.Referenced(ent, k + "cand:" + ent.GetHashCode()),
+                    b.AddItem(ControlId.Referenced(ent, k + "cand:" + ent.UniqueId),
                         ItemNodes.InsertItem(s, slot));
                     any = true;
                 }

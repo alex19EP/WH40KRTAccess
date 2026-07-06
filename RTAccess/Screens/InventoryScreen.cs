@@ -389,7 +389,7 @@ namespace RTAccess.Screens
                     if (slot == null || !slot.HasItem) continue;
                     var ent = slot.Item.Value;
                     if (ent == null) continue;
-                    b.AddItem(ControlId.Referenced(ent, k + "stash:" + ent.GetHashCode()), ItemNodes.InventoryItem(slot));
+                    b.AddItem(ControlId.Referenced(ent, k + "stash:" + ent.UniqueId), ItemNodes.InventoryItem(slot));
                     any = true;
                 }
             if (!any) b.AddItem(ControlId.Structural(k + "stash:empty"), GraphNodes.Text(() => Loc.T("inv.no_items")));

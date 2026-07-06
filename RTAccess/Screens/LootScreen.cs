@@ -141,7 +141,7 @@ namespace RTAccess.Screens
                 {
                     if (slot == null || !slot.HasItem) continue;
                     var ent = slot.Item.Value;
-                    b.AddItem(ControlId.Referenced(ent, k + "src:" + src + ":item:" + ent.GetHashCode()),
+                    b.AddItem(ControlId.Referenced(ent, k + "src:" + src + ":item:" + ent.UniqueId),
                         ItemNodes.LootItem(slot));
                 }
                 b.PopContext();
