@@ -73,6 +73,12 @@ internal static class TooltipViewScraper
             if (vm == null) continue;
 
             MonoBehaviour view = null;
+            // Clean path buffers per BRICK: a brick's TMP fragments are the cells of one visual row (a
+            // stat brick binds name/value/bonus as sibling TMPs), so they join with ", " to stay on one
+            // spoken reader line — TooltipScreen splits lines only after [.!?] + space, so only the ". "
+            // between BRICKS makes a line break. A prose fragment that already ends a sentence gets a
+            // bare " " join instead, so we never emit "., " runs inside a brick.
+            var brickSb = raw ? null : new StringBuilder();
             try
             {
                 view = TooltipEngine.GetBrickView(cfg, vm);
@@ -94,12 +100,18 @@ internal static class TooltipViewScraper
                     // Drop prefab design-time placeholders left in active-but-unbound fields ("+++", "-//---",
                     // bare separators): a real tooltip value always carries at least one letter or digit.
                     if (t == null || !HasAlnum(t)) continue;
-                    if (sb.Length > 0) sb.Append(". ");
-                    sb.Append(t);
+                    if (brickSb.Length > 0) brickSb.Append(EndsSentence(brickSb) ? " " : ", ");
+                    brickSb.Append(t);
                 }
             }
             catch { }
             finally { if (view != null) TooltipEngine.DestroyBrickView(view); }
+            // Flush outside the try so a mid-scrape fault still keeps the fragments already harvested.
+            if (brickSb != null && brickSb.Length > 0)
+            {
+                if (sb.Length > 0) sb.Append(". ");
+                sb.Append(brickSb);
+            }
         }
     }
 
@@ -115,5 +127,13 @@ internal static class TooltipViewScraper
         foreach (var c in s)
             if (char.IsLetterOrDigit(c)) return true;
         return false;
+    }
+
+    /// <summary>True when the buffered brick text already ends a sentence, so the next fragment must not
+    /// be glued on with ", " (that would read "., ").</summary>
+    private static bool EndsSentence(StringBuilder sb)
+    {
+        var c = sb[sb.Length - 1];
+        return c == '.' || c == '!' || c == '?' || c == '…';
     }
 }
