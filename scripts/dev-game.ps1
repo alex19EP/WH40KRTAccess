@@ -16,11 +16,18 @@
   run     launch -> verify. No build (run whatever is currently deployed).
   restart kill -> launch -> verify. Relaunch the current build without rebuilding.
   kill    just close the game.
-  status  report: process, dev-server /health, active screen.
+  status  report: process, dev-server /health, active screen, cheat-DB command count.
+  cheat   run a game cheat command line (-Arg "checks_success"); result lands in the Console log.
+  dump    dump live state by dotted path (-Arg "Game.Instance.Player") via StateCrawler.
+  log     drain + print the game's Console log channel (cheat output/errors).
+
+  cheat/dump/log wrap the in-process game-console surface (RTAccess/Dev/GameConsole.cs); they need the
+  dev server up but NOT the game's own cheats enabled.
 
 .PARAMETER Config   Build configuration. Default Debug (the only one with the dev harness).
 .PARAMETER Port     Dev server port. Default 8772.
 .PARAMETER WaitSeconds  How long to wait for the dev server after launch. Default 120.
+.PARAMETER Arg      Payload for the cheat/dump actions (a command line, or a dotted state path).
 
 .EXAMPLE
   pwsh scripts/dev-game.ps1                 # rebuild + rerun (the usual)
@@ -30,14 +37,19 @@
   pwsh scripts/dev-game.ps1 build           # compile + deploy, don't launch
 .EXAMPLE
   pwsh scripts/dev-game.ps1 status          # is it up?
+.EXAMPLE
+  pwsh scripts/dev-game.ps1 cheat -Arg "get_time"    # run a cheat, then: dev-game.ps1 log
+.EXAMPLE
+  pwsh scripts/dev-game.ps1 dump  -Arg "Game.Instance.Player"   # StateCrawler JSON tree
 #>
 param(
-    [ValidateSet('cycle', 'build', 'run', 'restart', 'kill', 'status')]
+    [ValidateSet('cycle', 'build', 'run', 'restart', 'kill', 'status', 'cheat', 'dump', 'log')]
     [string]$Action = 'cycle',
     [ValidateSet('Debug', 'Release')]
     [string]$Config = 'Debug',
     [int]$Port = 8772,
-    [int]$WaitSeconds = 120
+    [int]$WaitSeconds = 120,
+    [string]$Arg = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,6 +73,12 @@ function Probe([string]$path, [int]$timeout = 4) {
 
 function Eval([string]$code, [int]$timeout = 30) {
     try { return (curl.exe -s --max-time $timeout --data $code "$Base/eval" 2>$null) } catch { return $null }
+}
+
+# In-process game-console surface (RTAccess/Dev/GameConsole.cs). --data-raw so payloads with @/&/spaces
+# reach the body verbatim (a leading @ would otherwise make curl read a file).
+function Post([string]$path, [string]$payload, [int]$timeout = 15) {
+    try { return (curl.exe -s --max-time $timeout --data-raw $payload "$Base$path" 2>$null) } catch { return $null }
 }
 
 function Close-Game {
@@ -112,6 +130,16 @@ function Show-Status {
     # Confirmed members only (Phase 0): main menu vs. the loaded area name.
     $where = Eval 'Kingmaker.Code.UI.MVVM.VM.MainMenu.MainMenuUI.IsActive ? "MainMenu" : (Kingmaker.Game.Instance?.CurrentlyLoadedArea?.name ?? "(no area)")'
     if ($where) { Info ("where:       " + (($where -replace '^=>\s*', '').Trim())) }
+    # Game-console surface: count the cheat DB (Methods[]) as a liveness signal for GameConsole.
+    $known = Probe '/known'
+    if ($known) {
+        $n = ([regex]::Matches($known, '"Name"')).Count
+        Info ("cheat DB:    reachable (~$n known entries via /known)")
+    }
+}
+
+function Require-Arg($what) {
+    if ([string]::IsNullOrWhiteSpace($Arg)) { throw "action '$Action' needs -Arg <$what>" }
 }
 
 switch ($Action) {
@@ -121,6 +149,9 @@ switch ($Action) {
     'restart' { Close-Game; Launch-Game; [void](Wait-Server) }
     'kill'    { Close-Game }
     'status'  { Show-Status }
+    'cheat'   { Require-Arg 'command line'; Step "cheat: $Arg"; (Post '/cheat' $Arg) | Write-Host }
+    'dump'    { Require-Arg 'dotted state path'; Step "dump: $Arg"; (Post '/dumpstate' $Arg) | Write-Host }
+    'log'     { Step 'Console log'; (Probe '/log') | Write-Host }
 }
 
 Step 'Done'

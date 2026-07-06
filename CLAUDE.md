@@ -72,9 +72,18 @@ dotnet msbuild RTAccess.csproj -t:Compile -p:Configuration=Debug -p:SolutionDir=
   `<GameData>\RTAccess\devserver.enable` (survives Steam relaunches; an env var would not).
 - Endpoints: `POST /eval` (Mono.CSharp C# REPL on the main thread), `GET /speech?since=`,
   `GET /screenshot`, `POST /loadsave`, `GET /health`. `/gui` + `/input` land in Phase 2.
+- **Game console/cheat surface** (`RTAccess/Dev/GameConsole.cs`) mirrors the game's own retail-gated
+  cheat REST plugins in-process (no `CheatsEnabled`/`startup.json` needed — the game builds
+  `CheatsManagerHolder.System` + registers `ConsoleLogSink` unconditionally at boot): `POST /cheat`
+  (raw command line via the game's parser — `@cursor`/`@mouseover`/`@selectedUnits` preprocessing),
+  `POST /command`·`/external`·`/getvariable`·`/setvariable`·`/autocomplete`, `GET /known` (the ~314-command
+  DB = a palette), `GET /bindings`·`/status`, `GET|POST /log` (drains the game's Console channel).
+  `POST /dumpstate` takes a dotted path (`Game.Instance.Player`) or `{RootObjectPath,ExpandedChildren}`
+  and returns a `StateCrawler` JSON object-graph tree. **Cheat exec is fire-and-forget** (enqueues on
+  `GameCommandQueue`, runs over later frames — read results back via `/log`); never block on the Task.
 - **`scripts/dev-game.ps1`** (and the **`/dev-game` skill`**) wrap the close → build → launch →
-  verify cycle: `cycle` (default), `build`, `run`, `restart`, `kill`, `status`. Launch is
-  `steam://rungameid/2186680`.
+  verify cycle: `cycle` (default), `build`, `run`, `restart`, `kill`, `status`; plus `cheat`/`dump`/`log`
+  (with `-Arg`) to hit the console surface. Launch is `steam://rungameid/2186680`.
 - **Shared-harness rule**: do NOT drive the live game while another agent/session is driving it.
   Give the user manual test steps instead.
 

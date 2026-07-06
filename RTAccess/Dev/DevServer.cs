@@ -15,6 +15,9 @@ namespace RTAccess.Dev;
 ///   POST /loadsave       load a save from the title screen and block until in-play.
 ///   GET  /health         liveness.
 ///   GET  /gui POST /input land in Phase 2 (need the parallel Screen/Navigator tree).
+///   Game cheat/console surface — mirrored in-process by <see cref="GameConsole"/> (no CheatsEnabled
+///   needed): POST /cheat, /command, /external, /getvariable, /setvariable, /autocomplete, /dumpstate;
+///   GET /known, /bindings, /status; GET|POST /log.
 ///
 /// Eval runs on the Unity main thread: HTTP requests enqueue a job and block until <see cref="Pump"/>
 /// (called once per frame from Main.OnUpdate) executes it. /speech reads a thread-safe buffer directly
@@ -94,7 +97,7 @@ internal sealed class DevServer
             _http = new DevHttpServer(port, HandleRequest);
             _http.Start();
             _enabled = true;
-            Main.Log?.Log("Dev server on http://127.0.0.1:" + port + " (gate: " + how + "; POST /eval, GET /speech)");
+            Main.Log?.Log("Dev server on http://127.0.0.1:" + port + " (gate: " + how + "; POST /eval, GET /speech, POST /cheat, POST /dumpstate, GET /known)");
         }
         catch (Exception e)
         {
@@ -167,6 +170,11 @@ internal sealed class DevServer
         }
 
         if (route == "/health" || route == "/") return "ok\n";
+
+        // Game cheat/console surface mirrored in-process (POST /cheat, POST /dumpstate, GET /known, …).
+        // See GameConsole. OnMainThread has an optional arg, so wrap it in a lambda to match the delegate.
+        if (GameConsole.TryHandle(route, method, body, work => OnMainThread(work), out string gc))
+            return gc;
 
         return "[404] " + method + " " + route + "\n";
     }
