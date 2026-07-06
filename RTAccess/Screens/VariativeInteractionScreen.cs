@@ -3,7 +3,7 @@ using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.VariativeInteraction;
 using RTAccess.Accessibility; // InteractableDescriber (object name)
 using RTAccess.UI;
-using RTAccess.UI.Proxies;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Screens
 {
@@ -16,11 +16,13 @@ namespace RTAccess.Screens
     /// RT has no <c>LockpickVM</c>; a locked/variative object raises <see cref="IVariativeInteractionUIHandler"/>
     /// and the game builds <c>SurfaceDynamicPartVM.VariativeInteractionVM.Value</c> — a collection of
     /// <see cref="InteractionVariantVM"/> rows, each already carrying its localized label + chance (via
-    /// <c>UIUtility.GetInteractionVariantActorText</c>). We mirror that live collection into
-    /// <see cref="ProxyActionButton"/>s; activating one runs <see cref="InteractionVariantVM.Interact"/> — which
-    /// dispatches through the game's own <c>ClickMapObjectHandler.TryInteract</c> and then closes the VM. The
-    /// win/fail OUTCOME is voiced by the game's own combat log (PickLockLogThread / InteractionRestrictionLogThread)
-    /// via <see cref="RTAccess.Accessibility.LogTap"/>.
+    /// <c>UIUtility.GetInteractionVariantActorText</c>). Graph-native: one button per variant, declared fresh
+    /// from that live collection every render; activating one runs <see cref="InteractionVariantVM.Interact"/> —
+    /// which dispatches through the game's own <c>ClickMapObjectHandler.TryInteract</c> and then closes the VM.
+    /// Node keys carry the VM's identity, so a fresh interaction request (a new VM) re-keys the rows and focus
+    /// re-homes with a fresh readout — no rebuild bookkeeping. The win/fail OUTCOME is voiced by the game's own
+    /// combat log (PickLockLogThread / InteractionRestrictionLogThread) via
+    /// <see cref="RTAccess.Accessibility.LogTap"/>.
     ///
     /// We only reach this screen because <see cref="RTAccess.Exploration.ProxyMapObject.Interact"/> raises the
     /// request event when <see cref="VariativeInteractionVM.HasVariativeInteraction"/> is true — the static
@@ -43,9 +45,13 @@ namespace RTAccess.Screens
             get
             {
                 var vm = Vm();
-                if (vm?.MapObjectView == null) return "Interaction";
-                try { var n = InteractableDescriber.ResolveName(vm.MapObjectView, out _); return string.IsNullOrWhiteSpace(n) ? "Interaction" : n + ", interaction"; }
-                catch { return "Interaction"; }
+                if (vm?.MapObjectView == null) return Loc.T("vi.interaction");
+                try
+                {
+                    var n = InteractableDescriber.ResolveName(vm.MapObjectView, out _);
+                    return string.IsNullOrWhiteSpace(n) ? Loc.T("vi.interaction") : Loc.T("vi.screen_name", new { name = n });
+                }
+                catch { return Loc.T("vi.interaction"); }
             }
         }
 
@@ -54,46 +60,42 @@ namespace RTAccess.Screens
         private static VariativeInteractionVM Vm()
             => Game.Instance?.RootUiContext?.SurfaceVM?.DynamicPartVM?.VariativeInteractionVM?.Value;
 
-        private VariativeInteractionVM _builtVm;
+        public override bool BuildsGraph => true;
 
-        // Build in OnPush so the screen-name + first-focus announce right after push. Rebuild only if the game
-        // swaps the VM under us (a fresh interaction request).
-        public override void OnPush() { _builtVm = null; Rebuild(); }
-        public override void OnPop() { Clear(); _builtVm = null; }
-        public override void OnUpdate() { Rebuild(); }
-
-        private void Rebuild()
+        public override void Build(GraphBuilder b)
         {
             var vm = Vm();
-            if (vm == null || vm == _builtVm) return;
-            _builtVm = vm;
-            Clear();
+            if (vm == null) return;
+            string k = "vi:" + vm.GetHashCode() + ":";
 
-            var list = new ListContainer();
             bool any = false;
+            int i = 0;
             foreach (var variant in vm.Variants)
             {
+                i++;
                 if (variant == null) continue;
                 var v = variant; // capture per iteration
-                list.Add(new ProxyActionButton(() => VariantLabel(v), () => !v.Disabled, () => v.Interact(), actionVerb: "choose"));
+                b.AddItem(ControlId.Referenced(v, k + i), GraphNodes.Button(
+                    () => VariantLabel(v),
+                    () => v.Interact(),
+                    () => !v.Disabled));
                 any = true;
             }
             // Defensive: a variative object whose actors all got filtered (all UnlockRestriction / !CanUse) would
             // leave an empty list; give the player something to hear and a focus target so Escape still cancels.
             if (!any)
-                list.Add(new ProxyActionButton("No interaction options.", () => false, () => { }));
-            Add(list);
+                b.AddItem(ControlId.Structural(k + "none"), GraphNodes.Text(() => Loc.T("vi.no_options")));
         }
 
-        // The VM's row text is already "<name>: <chance>% [<unit>]" (or "<name>: Locked%"); append the tool/ammo
-        // requirement and a spoken "unavailable" note so a disabled choice reads clearly.
+        // The VM's row text is already "<name>: <chance>% [<unit>]" (or "<name>: Locked%") — game-localized,
+        // passed through; append the tool/ammo requirement. Disabled is spoken by the button's standard
+        // disabled part, not the label.
         private static string VariantLabel(InteractionVariantVM v)
         {
             var text = v.InteractionName != null ? v.InteractionName.Value : null;
-            if (string.IsNullOrEmpty(text)) text = "Interaction";
+            if (string.IsNullOrEmpty(text)) text = Loc.T("vi.interaction");
             if (v.RequiredResourceCount.HasValue && v.RequiredResourceCount.Value > 0 && !string.IsNullOrEmpty(v.ResourceName))
-                text += ", " + (v.ResourceCount ?? 0) + " of " + v.RequiredResourceCount.Value + " " + v.ResourceName;
-            if (v.Disabled) text += ", unavailable";
+                text += ", " + Loc.T("vi.resource", new { have = v.ResourceCount ?? 0, need = v.RequiredResourceCount.Value, name = v.ResourceName });
             return text;
         }
 
@@ -102,7 +104,7 @@ namespace RTAccess.Screens
         {
             var vm = Vm();
             if (vm != null)
-                yield return new ElementAction(ActionIds.Back, Message.Raw("Cancel"), _ => vm.Close());
+                yield return new ElementAction(ActionIds.Back, Message.Localized("ui", "action.cancel"), _ => vm.Close());
         }
     }
 }

@@ -72,8 +72,8 @@ namespace RTAccess.UI
 
         /// <summary>A push button ("label, button[, disabled][, n of m]"). The vtable is declared fresh
         /// every render, so gating on <paramref name="enabled"/> HERE reads live state: a disabled button
-        /// advertises no action and no sound — Enter consumes silently, the ProxyActionButton convention
-        /// (it didn't advertise the action either). Sounds ride the vtable slots the navigator plays at
+        /// advertises no action and no sound — Enter consumes silently (the retired ProxyActionButton
+        /// widget kept the same convention). Sounds ride the vtable slots the navigator plays at
         /// its chokepoints: a themed hover/click sound-type where the card carries one (the main-menu
         /// sidebar's Analog), else the generic blueprint ButtonClick — UIElement's default pair.
         /// <paramref name="tooltip"/> is a template FACTORY resolved live on each Space press (the

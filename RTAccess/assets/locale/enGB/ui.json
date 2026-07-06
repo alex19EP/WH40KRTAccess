@@ -1017,6 +1017,11 @@
   "scan.no_rooms": "No room map yet",
   "scan.no_exits": "No exits from this room",
 
+  "vi.interaction": "Interaction",
+  "vi.screen_name": "{name}, interaction",
+  "vi.no_options": "No interaction options.",
+  "vi.resource": "{have} of {need} {name}",
+
   "where.indoors": "indoors",
   "where.unexplored": "unexplored",
   "where.region": "{region} of the map",
