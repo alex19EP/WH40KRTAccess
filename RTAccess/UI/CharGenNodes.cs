@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using Kingmaker.Blueprints.Base;                 // Gender
+using Kingmaker.Blueprints.Root.Strings;         // UIStrings (the game's localized chargen vocabulary)
 using Kingmaker.UI.MVVM.VM.CharGen.Phases;       // CharGenPhaseBaseVM
+using Kingmaker.UI.MVVM.VM.CharGen.Phases.Appearance.Pages; // CharGenAppearancePageComponent
 using Kingmaker.UI.MVVM.VM.CharGen.Phases.Stats; // CharGenAttributesItemVM
 using Owlcat.Runtime.UI.SelectionGroup;          // SelectionGroupEntityVM
 using Owlcat.Runtime.UI.Tooltips;                // TooltipBaseTemplate
@@ -176,14 +179,15 @@ namespace RTAccess.UI
         /// skin/hair/…): "Title, slider, N of M" (or an explicit <paramref name="value"/> for the ones
         /// with a meaningful value — gender reads Male/Female off the doll); Left/Right cycle through
         /// the game's own OnLeft/OnRight (which play their own tick) and the step re-announces the new
-        /// value synchronously.</summary>
+        /// value synchronously. <paramref name="fallbackLabel"/> is resolved lazily, only when the VM
+        /// carries no Title.</summary>
         public static NodeVtable SequentialSelector(object vm, Func<string> value = null,
-            string fallbackLabel = null)
+            Func<string> fallbackLabel = null)
         {
             Func<string> title = () =>
             {
                 var s = RpValue(Prop(vm, "Title")) as string;
-                return string.IsNullOrEmpty(s) ? (fallbackLabel ?? "") : s;
+                return string.IsNullOrEmpty(s) ? (fallbackLabel?.Invoke() ?? "") : s;
             };
             Func<string> val = value ?? (() => Loc.T("nav.position", new
             {
@@ -202,6 +206,99 @@ namespace RTAccess.UI
                 StateText = val, // spoken (interrupting) after each step — keypress provenance
                 OnAdjust = (sign, large) => Call(vm, sign < 0 ? "OnLeft" : "OnRight"),
             };
+        }
+
+        // ---- game-localized chargen vocabulary ----
+
+        /// <summary>The doll's gender as the game's own localized word
+        /// (<c>UIStrings.CharacterSheet.Male/Female</c>) — the gender cycler shows only body
+        /// textures, so the word IS the accessible value; mod table / enum name as fallbacks.</summary>
+        public static string GenderName(Gender gender)
+        {
+            return gender == Gender.Male
+                ? GameOrMod(() => UIStrings.Instance?.CharacterSheet?.Male?.Text, "gender.male", gender.ToString())
+                : GameOrMod(() => UIStrings.Instance?.CharacterSheet?.Female?.Text, "gender.female", gender.ToString());
+        }
+
+        /// <summary>Spoken title for an appearance component whose VM carries no Title: the same
+        /// <c>UIStrings.CharGen</c> string the game's CharGenAppearanceComponentFactory titles that
+        /// component's selector with — so the spoken title matches the on-screen one — with the mod
+        /// table, then the humanized enum name, as fallbacks.</summary>
+        public static string ComponentTitle(CharGenAppearancePageComponent type)
+        {
+            return GameOrMod(() => GameComponentTitle(type),
+                "chargen.component." + type.ToString().ToLowerInvariant(), Humanize(type.ToString()));
+        }
+
+        /// <summary>Mirrors CharGenAppearanceComponentFactory's SetTitle calls, member for member.
+        /// Null/empty when the blueprint root isn't up yet or the game shipped the string blank.</summary>
+        private static string GameComponentTitle(CharGenAppearancePageComponent type)
+        {
+            var cg = UIStrings.Instance?.CharGen;
+            switch (type)
+            {
+                case CharGenAppearancePageComponent.Portraits: return cg?.Portrait?.Text;
+                // The game titles the GENDER cycler "Body Type" — and the build cycler below it
+                // "Body Constitution" (the factory's own mapping, not a transposition here).
+                case CharGenAppearancePageComponent.Gender: return cg?.BodyType?.Text;
+                case CharGenAppearancePageComponent.FaceType: return cg?.Face?.Text;
+                case CharGenAppearancePageComponent.BodyType: return cg?.BodyConstitution?.Text;
+                case CharGenAppearancePageComponent.SkinColour: return cg?.SkinTone?.Text;
+                case CharGenAppearancePageComponent.HairType: return cg?.HairStyle?.Text;
+                case CharGenAppearancePageComponent.HairColour: return cg?.HairColor?.Text;
+                case CharGenAppearancePageComponent.EyebrowType: return cg?.Eyebrows?.Text;
+                case CharGenAppearancePageComponent.EyebrowColour: return cg?.EyebrowsColor?.Text;
+                case CharGenAppearancePageComponent.BeardType: return cg?.Beard?.Text;
+                case CharGenAppearancePageComponent.BeardColour: return cg?.BeardColor?.Text;
+                case CharGenAppearancePageComponent.ScarsType: return cg?.Scars?.Text;
+                case CharGenAppearancePageComponent.FacePaint: return cg?.FacePaint?.Text;
+                case CharGenAppearancePageComponent.Tattoo: return cg?.Tattoo?.Text;
+                case CharGenAppearancePageComponent.TattooColor: return cg?.TattooColor?.Text;
+                case CharGenAppearancePageComponent.PortType1: return ImplantTitle(cg, 1);
+                case CharGenAppearancePageComponent.PortType2: return ImplantTitle(cg, 2);
+                case CharGenAppearancePageComponent.VoiceType: return cg?.Voice?.Text;
+                // The factory hardcodes "ServoSkull"; the localized page label is the real vocabulary.
+                case CharGenAppearancePageComponent.ServoSkullType: return cg?.Servoskull?.Text;
+                case CharGenAppearancePageComponent.NavigatorMutations: return cg?.NavigatorMutations?.Text;
+                default: return null;
+            }
+        }
+
+        /// <summary>CharGen.Implant is a format string ("Implant {0}" in English) — the factory
+        /// stamps the port number into it.</summary>
+        private static string ImplantTitle(UICharGen cg, int number)
+        {
+            var fmt = cg?.Implant?.Text;
+            return string.IsNullOrEmpty(fmt) ? null : string.Format(fmt, number.ToString());
+        }
+
+        /// <summary>Like <see cref="GameText.Or"/> but degrading to <paramref name="fallback"/>
+        /// (a humanized enum name) instead of the raw key when the mod table misses the key too —
+        /// a browse label must never speak as "chargen.component.x".</summary>
+        private static string GameOrMod(Func<string> game, string key, string fallback)
+        {
+            try
+            {
+                var s = game();
+                if (!string.IsNullOrEmpty(s)) return s;
+            }
+            catch (Exception e) { Main.Log?.Error("CharGenNodes.GameOrMod(" + key + "): " + e); }
+            return RTAccess.Localization.LocalizationManager.GetOrDefault("ui", key, fallback);
+        }
+
+        /// <summary>"EyebrowColour" → "Eyebrow colour", "PortType1" → "Port type 1" — the
+        /// last-resort readable form of an enum member name.</summary>
+        private static string Humanize(string enumName)
+        {
+            var sb = new System.Text.StringBuilder(enumName.Length + 4);
+            for (int i = 0; i < enumName.Length; i++)
+            {
+                char c = enumName[i];
+                if (i > 0 && (char.IsUpper(c) || (char.IsDigit(c) && !char.IsDigit(enumName[i - 1]))))
+                    sb.Append(' ');
+                sb.Append(i > 0 && char.IsUpper(c) ? char.ToLowerInvariant(c) : c);
+            }
+            return sb.ToString();
         }
 
         private static object RpValue(object rp) => rp?.GetType().GetProperty("Value")?.GetValue(rp);

@@ -15,7 +15,8 @@ namespace RTAccess.Screens.CharGen
     /// <list type="bullet">
     /// <item><b>Voice</b> — a radio list of named voices; selecting one plays its sample (the high-value
     /// part for a non-sighted player); Enter on the already-chosen voice replays it.</item>
-    /// <item><b>Gender</b> — a cycler whose value is read from the doll (Male/Female), not just an index.</item>
+    /// <item><b>Gender</b> — a cycler whose value is read from the doll (the game's localized
+    /// Male/Female word), not just an index.</item>
     /// <item>Other cyclers (face/body/skin/hair/…) — navigable "Title, N of M" (the values are visual, so
     /// there's no name to read; cycling still works and the doll updates live). Single-option cyclers
     /// (IsAvailable false) drop out of nav, as in the game.</item>
@@ -81,10 +82,10 @@ namespace RTAccess.Screens.CharGen
                     if (!CharGenNodes.SequentialAvailable(comp)) { ci++; continue; }
                     bool isGender = comp.Type == CharGenAppearancePageComponent.Gender;
                     System.Func<string> valueText = isGender
-                        ? (System.Func<string>)(() => vm.DollState?.Gender.ToString() ?? "")
+                        ? (System.Func<string>)(() => vm.DollState == null ? "" : CharGenNodes.GenderName(vm.DollState.Gender))
                         : null;
                     b.AddItem(ControlId.Referenced(comp, pk + "comp:" + ci),
-                        CharGenNodes.SequentialSelector(comp, valueText, comp.Type.ToString()));
+                        CharGenNodes.SequentialSelector(comp, valueText, () => CharGenNodes.ComponentTitle(comp.Type)));
                 }
                 else
                 {
