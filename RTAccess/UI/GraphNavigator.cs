@@ -503,7 +503,8 @@ namespace RTAccess.UI
                 if (Screen != null && Screen.StartUnfocused)
                 {
                     Blur(); // truly unfocused → a later re-entry stays in exploration
-                    if (!string.IsNullOrEmpty(Screen.ScreenName)) Speak(Screen.ScreenName, interrupt: true);
+                    var exit = Screen.UnfocusedAnnouncement;
+                    if (!string.IsNullOrEmpty(exit)) Speak(exit, interrupt: true);
                     return true;
                 }
                 if (Screen != null && Screen.Wrap)

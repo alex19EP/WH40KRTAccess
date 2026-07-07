@@ -441,7 +441,8 @@ namespace RTAccess.Screens
         {
             yield return new ElementAction(ActionIds.Back, Message.Raw("Back"), _ =>
             {
-                if (Navigation.Current == null) return; // unfocused → the game's Escape (stop ship / menu)
+                // Node-based HasFocus, not Navigation.Current — graph-native nodes have no backing UIElement.
+                if (!Navigation.HasFocus) return; // unfocused → the game's Escape (stop ship / menu)
                 Navigation.Blur();
                 Tts.Speak(Loc.T("systemmap.screen"), interrupt: true);
             });

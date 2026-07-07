@@ -62,6 +62,11 @@ namespace RTAccess.Screens
         /// exploration keeps the arrows and Tab brings up the HUD regions.</summary>
         public virtual bool StartUnfocused => false;
 
+        /// <summary>Spoken when Tab exits past the ends of a <see cref="StartUnfocused"/> screen back to
+        /// the unfocused (world) state. Defaults to <see cref="ScreenName"/>; override where ScreenName is
+        /// null by design but the exit still needs a landmark (the in-game HUD → "Exploration").</summary>
+        public virtual string UnfocusedAnnouncement => ScreenName;
+
         /// <summary>
         /// When true (and this is the focused screen), InputManager stops dispatching so raw
         /// keys reach the game (e.g. the key-binding capture dialog, which reads input itself).

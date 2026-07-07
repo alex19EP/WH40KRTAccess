@@ -75,19 +75,25 @@ namespace RTAccess.Screens
           :                           UnfocusedCats;
 
         // Escape backs out of the focused HUD to exploration — a direct exit (Tab off the last region does the
-        // same, but silently, since ScreenName is null). Only acts while something is focused: on the bare HUD
-        // nothing is focused, and ui.back is a context-split (YieldsWhenUnfocused) that hands Escape to the game
-        // there, so it opens the game's pause menu instead. The no-op guard means that yield path is untouched
-        // even though ui.back is still dispatched to us this frame.
+        // same, announced via UnfocusedAnnouncement below). Only acts while something is focused: on the bare
+        // HUD nothing is focused, and ui.back is a context-split (YieldsWhenUnfocused) that hands Escape to the
+        // game there, so it opens the game's pause menu instead. The no-op guard means that yield path is
+        // untouched even though ui.back is still dispatched to us this frame. The guard is the node-based
+        // HasFocus, NOT Navigation.Current — graph-native nodes have no backing UIElement, so Current is null
+        // even while a HUD node is focused.
         public override IEnumerable<ElementAction> GetActions()
         {
             yield return new ElementAction(ActionIds.Back, Message.Raw("Back"), _ =>
             {
-                if (Navigation.Current == null) return; // unfocused → let the yield reach the game (pause menu)
+                if (!Navigation.HasFocus) return; // unfocused → let the yield reach the game (pause menu)
                 Navigation.Blur();
                 Tts.Speak(Loc.T("nav.exploration"), interrupt: true);
             });
         }
+
+        // Tab off either end of the HUD lands the keys back in exploration — say so (ScreenName is null by
+        // design, so the navigator's default exit announce would be silent). Same line Escape speaks.
+        public override string UnfocusedAnnouncement => Loc.T("nav.exploration");
 
         /// <summary>The shared gate the exploration helpers ride: this screen is the live top screen (no window
         /// or dialogue layered over it), the game exists, and we're on-foot (Default = exploration AND surface
