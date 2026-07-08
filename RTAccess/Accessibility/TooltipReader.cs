@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using Kingmaker.Blueprints.Root.Strings.GameLog;
 using Kingmaker.Code.UI.MVVM.VM.Tooltip.Bricks;
 using Owlcat.Runtime.UI.Tooltips;
@@ -26,8 +25,6 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal static class TooltipReader
 {
-    private static readonly Regex Tags = new Regex("<[^>]+>", RegexOptions.Compiled);
-
     public static string GetTitle(Component comp) => ReadTemplates(GetTemplates(comp), TooltipTemplateType.Tooltip, titleOnly: true);
 
     public static string GetFull(Component comp) => ReadFull(GetTemplates(comp));
@@ -321,7 +318,8 @@ internal static class TooltipReader
     private static string Clean(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
-        return Tags.Replace(s, " ").Trim();
+        var clean = TextUtil.StripRichTextSpaced(s);
+        return string.IsNullOrEmpty(clean) ? null : clean;
     }
 
     private static string Join(string a, string b)

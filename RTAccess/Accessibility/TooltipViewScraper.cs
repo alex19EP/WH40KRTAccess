@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using Kingmaker.Code.UI.MVVM.VM.Tooltip.Utils;
 using Kingmaker.Code.UI.MVVM.View.Tooltip;
 using Owlcat.Runtime.UI.Tooltips;
@@ -28,9 +27,6 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal static class TooltipViewScraper
 {
-    private static readonly Regex Tags = new Regex("<[^>]+>", RegexOptions.Compiled);
-    private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
-
     // The prefab registry is a component that lives on the tooltip UI; find once, re-find if it's torn down.
     private static TooltipBricksView s_Config;
 
@@ -118,8 +114,8 @@ internal static class TooltipViewScraper
     private static string Clean(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
-        var stripped = Whitespace.Replace(Tags.Replace(s, " "), " ").Trim();
-        return stripped.Length > 0 ? stripped : null;
+        var stripped = TextUtil.StripRichTextSpaced(s);
+        return string.IsNullOrEmpty(stripped) ? null : stripped;
     }
 
     private static bool HasAlnum(string s)

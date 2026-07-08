@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Kingmaker;
 using Kingmaker.Blueprints.Root;               // UIConfig.Instance.DialogColors
 using Kingmaker.Code.UI.MVVM.VM.Dialog.Dialog;
@@ -15,9 +14,6 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal static class DialogText
 {
-    private static readonly Regex RichText = new Regex("<[^>]+>", RegexOptions.Compiled);
-    private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
-
     /// <summary>
     /// Build the spoken cue line from a <see cref="CueVM"/>, falling back to the controller's current cue when
     /// the VM is null. Prepends "Speaker. " only when <paramref name="includeSpeaker"/> is true. Returns null
@@ -63,6 +59,7 @@ internal static class DialogText
     private static string Clean(string raw)
     {
         if (string.IsNullOrEmpty(raw)) return null;
-        return Whitespace.Replace(RichText.Replace(raw, " "), " ").Trim();
+        var clean = TextUtil.StripRichTextSpaced(raw);
+        return string.IsNullOrEmpty(clean) ? null : clean;
     }
 }

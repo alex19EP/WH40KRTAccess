@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Kingmaker;
 using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
@@ -33,8 +32,6 @@ internal sealed class BarkEvents : IBarkHandler, ISubtitleBarkHandler
 {
     internal static readonly BarkEvents Instance = new BarkEvents();
 
-    private static readonly Regex RichText = new Regex("<[^>]+>", RegexOptions.Compiled);
-
     private const double DedupeWindowSeconds = 2.0;
     private string _lastSpoken;
     private double _lastSpokenAt = -100.0;
@@ -64,8 +61,8 @@ internal sealed class BarkEvents : IBarkHandler, ISubtitleBarkHandler
         try
         {
             if (string.IsNullOrWhiteSpace(text)) return;
-            var clean = RichText.Replace(text, " ").Trim();
-            if (clean.Length == 0) return;
+            var clean = TextUtil.StripRichTextSpaced(text);
+            if (string.IsNullOrEmpty(clean)) return;
 
             var line = string.IsNullOrWhiteSpace(speakerName) ? clean : speakerName.Trim() + ": " + clean;
 

@@ -25,8 +25,6 @@ namespace RTAccess.Accessibility
         // <link="KEY">label</link> — KEY is the raw link id, label may itself carry nested color/bold markup.
         private static readonly Regex LinkTag =
             new Regex("<link=\"([^\"]+)\"[^>]*>(.*?)</link>", RegexOptions.Compiled | RegexOptions.Singleline);
-        private static readonly Regex RichText = new Regex("<[^>]+>", RegexOptions.Compiled);
-        private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
 
         internal readonly struct Entry
         {
@@ -84,8 +82,8 @@ namespace RTAccess.Accessibility
         private static string CleanLabel(string s)
         {
             if (string.IsNullOrEmpty(s)) return null;
-            var clean = Whitespace.Replace(RichText.Replace(s, " "), " ").Trim();
-            return clean.Length > 0 ? clean : null;
+            var clean = TextUtil.StripRichTextSpaced(s);
+            return string.IsNullOrEmpty(clean) ? null : clean;
         }
     }
 }

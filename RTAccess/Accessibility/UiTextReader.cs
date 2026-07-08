@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Kingmaker.Code.UI.MVVM.VM.Settings.Entities;
 using Kingmaker.Code.UI.MVVM.VM.Settings.Entities.Difficulty;
 using Kingmaker.Code.UI.MVVM.View.Settings.Console.Entities;
@@ -17,9 +16,6 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal static class UiTextReader
 {
-    private static readonly Regex RichText = new Regex("<[^>]+>", RegexOptions.Compiled);
-    private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
-
     /// <summary>Read ONLY the current value of an adjustable settings widget — the selected dropdown option or
     /// the slider's value label. Returns null for non-value widgets.</summary>
     public static string ReadAdjustableValue(Component comp)
@@ -58,7 +54,7 @@ internal static class UiTextReader
     private static string CleanInline(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
-        var clean = Whitespace.Replace(RichText.Replace(s, " "), " ").Trim();
-        return clean.Length > 0 ? clean : null;
+        var clean = TextUtil.StripRichTextSpaced(s);
+        return string.IsNullOrEmpty(clean) ? null : clean;
     }
 }
