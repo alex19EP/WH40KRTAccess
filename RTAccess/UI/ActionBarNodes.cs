@@ -82,6 +82,14 @@ namespace RTAccess.UI
                         ? Loc.T("slot.unavailable", new { reason = why })
                         : Loc.T("state.disabled"), interrupt: true);
                 },
+                // Backspace — the sighted convert-ARROW's keyboard twin (same OnShowConvertRequest, same
+                // HasConvert && IsCanConvert visibility): toggles the variant list on ANY slot carrying
+                // converts. This is the only keyboard route for an ITEM's converts ("use on another
+                // character"), whose Enter uses the item directly instead of opening the list. Declared
+                // fresh per render, so the hook exists exactly while the arrow would be visible.
+                OnSecondary = (vm?.HasConvert?.Value ?? false) && (vm?.IsCanConvert?.Value ?? false)
+                    ? (Action)(() => ToggleConvert(vm))
+                    : null,
                 OnTooltip = () => TooltipChooser.OpenTemplate(Title(vm), vm?.Tooltip?.Value),
                 HoverSound = isOverdrive ? Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.AugmentationsOverdriveHover
                     : (Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum?)null,
@@ -95,6 +103,19 @@ namespace RTAccess.UI
         {
             try { return vm?.MechanicActionBarSlot?.GetTitle() ?? ""; }
             catch { return ""; }
+        }
+
+        // Toggle the slot's convert/variant flyout through the game's own request (the exact call the
+        // sighted arrow's click makes) and announce the result — the rows render right after the parent.
+        private static void ToggleConvert(ActionBarSlotVM vm)
+        {
+            bool wasOpen = vm.ConvertedVm?.Value != null;
+            vm.OnShowConvertRequest();
+            var conv = vm.ConvertedVm?.Value;
+            if (conv != null && !wasOpen)
+                Tts.Speak(Loc.T("slot.variants_open", new { count = conv.Slots.Count }), interrupt: true);
+            else if (conv == null && wasOpen)
+                Tts.Speak(Loc.T("slot.variants_closed"), interrupt: true);
         }
 
         // The slot's ability for the detail readout. The VM's own AbilityData getter covers ability and
@@ -175,12 +196,11 @@ namespace RTAccess.UI
                     AppendEndTurn(sb, ab);   // "ends turn" / "spends all movement" cue
                 }
 
-                // #3 the convert/variant cue — spoken only for slots where Enter genuinely OPENS the choice
-                // list (OnMainClick's auto-open cases are ability slots; on an ITEM slot Enter uses the item
-                // and its convert options stay unreachable, so announcing "has variants" there promises a
-                // list that never comes — review finding).
-                if ((vm.HasConvert?.Value ?? false) && (vm.IsCanConvert?.Value ?? false)
-                    && vm.MechanicActionBarSlot is MechanicActionBarSlotAbility)
+                // #3 the convert/variant cue — the sighted arrow's visibility (HasConvert && IsCanConvert).
+                // Every such slot is now reachable: Enter auto-opens the list on an ability slot, Backspace
+                // (the secondary action) opens it on any slot — including an ITEM's "use on another
+                // character" converts, whose Enter uses the item directly.
+                if ((vm.HasConvert?.Value ?? false) && (vm.IsCanConvert?.Value ?? false))
                     Append(sb, Loc.T("slot.has_variants"));
 
                 // Why it's greyed out — the game's own reason (not enough AP, on cooldown, out of range, …),
