@@ -140,6 +140,10 @@ internal sealed class ProxyUnit : ScanItem
                 if (life.IsDead)
                 {
                     bits.Add("dead");
+                    // The game marks an opened-but-not-emptied body by highlight color only (VisitedLootColor
+                    // in AbstractUnitEntityView.GetHighlightColor) — color-only on screen, so voice it. Session-
+                    // scoped like the game's own flag (BaseUnitEntity.m_LootViewed is not persisted to the save).
+                    if (LootableCorpse && _unit.LootViewed) bits.Add(Loc.T("scan.already_opened"));
                 }
                 else if (!life.IsConscious)
                 {

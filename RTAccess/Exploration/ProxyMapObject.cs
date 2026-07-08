@@ -149,11 +149,23 @@ internal sealed class ProxyMapObject : ScanItem
                         case InteractionLootPart loot:
                             var kind = LootKindWord(loot.Settings.LootContainerType);
                             if (kind != null) bits.Add(kind);
+                            // The game's only "you already opened this" cue is a highlight-color swap
+                            // (VisitedLootColor vs StandartLootColor in MapObjectView.GetHighlightColor) —
+                            // color-only on screen, so it must be voiced.
+                            if (loot.LootViewed) bits.Add(Loc.T("scan.already_opened"));
                             break;
                         // A trap is only flagged when its disarm interaction is live (part.Enabled == detected) and
                         // still armed — an undetected trap never lists the object (awareness gate), so this is no spoiler.
                         case DisableTrapInteractionPart trap when part.Enabled && trap.Owner?.TrapActive == true:
                             bits.Add("trapped");
+                            var trapInfo = InteractableDescriber.CheckInfo(part);
+                            if (trapInfo != null) bits.Add(trapInfo);
+                            break;
+                        // The skill-check card line (short description + "[Skill: NN%]" chance, or the after-use
+                        // passed/failed description) — what a sighted hover shows under the name.
+                        case InteractionSkillCheckPart when part.Enabled:
+                            var checkInfo = InteractableDescriber.CheckInfo(part);
+                            if (checkInfo != null) bits.Add(checkInfo);
                             break;
                     }
                 }

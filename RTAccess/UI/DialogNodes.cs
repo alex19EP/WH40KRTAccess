@@ -50,19 +50,42 @@ namespace RTAccess.UI
 
         /// <summary>The game's own TMP rich-text answer label ((<c>&lt;link&gt;</c>)-wrapped DC tags; Tts
         /// strips them at speak time). System/continue answers carry no DisplayText — a plain "Continue",
-        /// UNNUMBERED. Also voiced as confirmation by the number-key quick-select in DialogueScreen.</summary>
+        /// UNNUMBERED. An answer picked on an earlier visit gets a "previously chosen" tail (see
+        /// <see cref="PreviouslyChosen"/>). Also voiced as confirmation by the number-key quick-select in
+        /// DialogueScreen.</summary>
         public static string AnswerText(AnswerVM vm)
         {
             var bp = vm?.Answer?.Value;
             if (bp == null) return "";
+            string text;
             if (string.IsNullOrEmpty(bp.DisplayText))
-                return Message.Localized("ui", "label.continue").Resolve();
+                text = Message.Localized("ui", "label.continue").Resolve();
+            else
+            {
+                try
+                {
+                    var s = UIConstsExtensions.GetAnswerFormattedString(bp, "DialogChoice" + vm.Index, vm.Index);
+                    text = BookNumberDecoration.Replace(s, "$1. ");
+                }
+                catch { text = vm.Index + ". " + bp.DisplayText; }
+            }
+            if (PreviouslyChosen(vm)) text += ", " + Loc.T("dialog.previously_chosen");
+            return text;
+        }
+
+        // The game's own "picked on an earlier visit" recolor condition, verbatim (DialogAnswerBaseView colors
+        // the answer m_DialogColors.SelectedAnswer when CanSelect && IsAlreadySelected && !IsSystem &&
+        // !IsCurrentUnselectedWithNewAnswers — the last so a branch that still leads to UNSEEN content doesn't
+        // read as exhausted). Backed by the save-persisted DialogState.SelectedAnswers. On screen this is a
+        // color change ONLY, so it must be voiced. Disabled answers skip it, matching the game's color
+        // precedence (DisabledAnswer wins) — the node already appends its own "disabled".
+        private static bool PreviouslyChosen(AnswerVM vm)
+        {
             try
             {
-                var s = UIConstsExtensions.GetAnswerFormattedString(bp, "DialogChoice" + vm.Index, vm.Index);
-                return BookNumberDecoration.Replace(s, "$1. ");
+                return vm.Enable.Value && !vm.IsSystem && vm.IsAlreadySelected() && !vm.IsCurrentUnselectedWithNewAnswers;
             }
-            catch { return vm.Index + ". " + bp.DisplayText; }
+            catch { return false; }
         }
     }
 }

@@ -6,6 +6,7 @@ using Kingmaker.Controllers.Clicks.Handlers; // ClickMapObjectHandler.HasAvailab
 using Kingmaker.Controllers.Optimization;
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.LocalMap.Utils;
 using Kingmaker.EntitySystem.Entities;
+using Kingmaker.UI.Common;                       // UIUtility.GetOvertipSkillCheckText / GetTrapSkillCheckText
 using Kingmaker.Mechanics.Entities;
 using Kingmaker.Pathfinding;
 using Kingmaker.View;
@@ -47,6 +48,10 @@ internal static class InteractableDescriber
 
         var verb = Verb(interaction);
         if (verb != null) Append(sb, verb);
+
+        // The skill-check card line a sighted hover shows (short description + "[Skill: NN%]" chance).
+        var check = CheckInfo(interaction);
+        if (check != null) Append(sb, check);
 
         // Distance + map-relative compass from the active character (skipped if unavailable).
         var self = Game.Instance?.SelectionCharacter?.SelectedUnit?.Value;
@@ -337,6 +342,14 @@ internal static class InteractableDescriber
             case InteractionActionPart action:
                 var actionName = action.Settings?.DisplayName?.String?.Text;
                 return string.IsNullOrWhiteSpace(actionName) ? "Action" : actionName;
+            // Mirror the overtip (OvertipMapObjectVM): the designer's DisplayName while live, and the
+            // DisplayNameAfterUse swap once a check-once interaction is spent — the game's own "already
+            // examined" cue. No designer name → the localized category singular (the raw GameObject name
+            // the old fallback produced is dev-string junk for these locators).
+            case InteractionSkillCheckPart check:
+                var used = check.AlreadyUsed && check.Settings?.OnlyCheckOnce == true;
+                var checkName = Clean((used ? check.Settings?.DisplayNameAfterUse : check.Settings?.DisplayName)?.String?.Text);
+                return string.IsNullOrWhiteSpace(checkName) ? Loc.T("scan.singular.search_point") : checkName;
         }
 
         // Trap parts (several subtypes) — match by name so we don't bind every concrete type.
@@ -347,6 +360,45 @@ internal static class InteractableDescriber
         // unnamed interactable should still announce something rather than just "N tiles, <dir>".
         var fallback = Clean(entity.GameObjectName)?.Replace("(Clone)", "").Trim();
         return string.IsNullOrWhiteSpace(fallback) ? "Object" : fallback;
+    }
+
+    /// <summary>The skill-check line the object's overtip card shows on hover — the short description plus the
+    /// "[Skill: NN%]" success chance for the currently selected unit(s) (or, once a check-once interaction is
+    /// spent, the designer's passed/failed after-use description); for an armed, detected trap the
+    /// "[DisarmSkill: NN%]" line. Pure pass-through of the game's own localized card text
+    /// (<c>UIUtility.GetOvertipSkillCheckText</c> / <c>GetTrapSkillCheckText</c> — the exact sighted-hover
+    /// parity, including the HideDC "[Skill]"-only form). Null when the part carries no card line. Public so
+    /// the scanner's map-object proxies and the focused readout speak the same line.</summary>
+    public static string CheckInfo(InteractionPart interaction)
+    {
+        try
+        {
+            switch (interaction)
+            {
+                case InteractionSkillCheckPart check when check.Enabled:
+                {
+                    var settings = check.Settings;
+                    if (settings == null) return null;
+                    if (check.AlreadyUsed && settings.OnlyCheckOnce)
+                        return Clean((check.CheckPassed ? settings.ShortDescriptionPassed : settings.ShortDescriptionFailed)?.String?.Text);
+                    var desc = Clean(settings.ShortDescription?.String?.Text);
+                    var units = Game.Instance?.SelectionCharacter?.SelectedUnits?.ToList();
+                    var chance = units != null && units.Count > 0
+                        ? UIUtility.GetOvertipSkillCheckText(check, units, out _)
+                        : null;
+                    if (string.IsNullOrWhiteSpace(desc)) return string.IsNullOrWhiteSpace(chance) ? null : chance;
+                    return string.IsNullOrWhiteSpace(chance) ? desc : desc + ", " + chance;
+                }
+                case DisableTrapInteractionPart trap when trap.Enabled && trap.Owner?.TrapActive == true:
+                {
+                    var units = Game.Instance?.SelectionCharacter?.SelectedUnits?.ToList();
+                    var text = units != null && units.Count > 0 ? UIUtility.GetTrapSkillCheckText(trap, units) : null;
+                    return string.IsNullOrWhiteSpace(text) ? null : text;
+                }
+            }
+        }
+        catch (Exception e) { Main.Log?.Error("CheckInfo failed: " + e); }
+        return null;
     }
 
     /// <summary>English verb for the interaction type; null when there is no meaningful verb. Public so the
