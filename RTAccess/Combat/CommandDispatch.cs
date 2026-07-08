@@ -41,12 +41,12 @@ public static class CommandDispatch
         var game = Game.Instance;
         var tc = game?.TurnController;
         if (tc == null || !tc.TurnBasedModeActive)
-        { if (speak) Speaker.Speak("Not in turn-based combat.", interrupt: true); return null; }
+        { if (speak) Speaker.Speak(Loc.T("combat.not_turn_based"), interrupt: true); return null; }
         if (!tc.IsPlayerTurn)
-        { if (speak) Speaker.Speak("Not your turn.", interrupt: true); return null; }
+        { if (speak) Speaker.Speak(Loc.T("combat.not_your_turn"), interrupt: true); return null; }
         var unit = game.SelectionCharacter?.SelectedUnit?.Value as BaseUnitEntity;
         if (unit == null || unit != tc.CurrentUnit as BaseUnitEntity || !unit.IsDirectlyControllable())
-        { if (speak) Speaker.Speak("Select your active character.", interrupt: true); return null; }
+        { if (speak) Speaker.Speak(Loc.T("combat.select_active"), interrupt: true); return null; }
         return unit;
     }
 
@@ -173,11 +173,11 @@ public static class CommandDispatch
     {
         switch (status)
         {
-            case UnitHelper.MoveCommandStatus.NotEnoughMovementPoints: return "Not enough movement points.";
-            case UnitHelper.MoveCommandStatus.DestinationUnreachable: return "Path blocked.";
-            case UnitHelper.MoveCommandStatus.CannotMove: return "Can't move.";
-            case UnitHelper.MoveCommandStatus.SamePath: return "Already moving there.";
-            default: return "Can't reach that tile.";
+            case UnitHelper.MoveCommandStatus.NotEnoughMovementPoints: return Loc.T("path.not_enough_mp");
+            case UnitHelper.MoveCommandStatus.DestinationUnreachable: return Loc.T("path.blocked");
+            case UnitHelper.MoveCommandStatus.CannotMove: return Loc.T("path.cant_move");
+            case UnitHelper.MoveCommandStatus.SamePath: return Loc.T("path.already_moving");
+            default: return Loc.T("path.preview.cant_reach");
         }
     }
 

@@ -96,7 +96,7 @@ namespace RTAccess.Input
             // F12 speech self-test (was a bare UnityEngine.Input poll in Main.OnUpdate). Global so it works
             // anywhere; a useful first-run "is my TTS alive" check for end users, and bare F12 is free in the game.
             InputManager.Register("diag.speech_test", "Speech self-test", InputCategory.Global, () =>
-                Tts.Speak("RTAccess speech test. Backend is " + RTAccess.Speech.Speaker.ActiveBackend + ".", interrupt: true))
+                Tts.Speak(Loc.T("speech.self_test", new { backend = RTAccess.Speech.Speaker.ActiveBackend }), interrupt: true))
                 .AddBinding(KeyCode.F12);
 #if DEBUG
             // Dev-only config dumps (F9 Rewired, F10 keybindings). Debug-gated so a Release build neither ships the

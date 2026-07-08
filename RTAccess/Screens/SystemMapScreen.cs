@@ -313,14 +313,10 @@ namespace RTAccess.Screens
         private static string BearingAndUnits(Vector3 from, Vector3 to)
         {
             float dx = to.x - from.x, dz = to.z - from.z;
-            float dist = Mathf.Sqrt(dx * dx + dz * dz);
+            float dist = Exploration.Geo.Distance(from, to);
             var s = Loc.T("systemmap.units", new { n = Mathf.RoundToInt(dist) });
-            if (dist > 0.5f)
-            {
-                float angle = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // 0 = north(+Z), +90 = east(+X)
-                int sector = ((Mathf.RoundToInt(angle / 45f) % 8) + 8) % 8;
-                s += ", " + Accessibility.InteractableDescriber.Compass8[sector];
-            }
+            if (dist > 0.5f && Exploration.Geo.CompassSector(dx, dz, out int sector))
+                s += ", " + Loc.T(Accessibility.InteractableDescriber.Compass8[sector]);
             return s;
         }
 

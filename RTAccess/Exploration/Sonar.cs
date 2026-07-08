@@ -110,7 +110,7 @@ internal static class Sonar
             _ => "off",
         };
         s.Set(next);
-        Speaker.Speak(next == "when_moving" ? "Sonar when moving" : "Sonar " + next, interrupt: true);
+        Speaker.Speak(Loc.T("sonar.mode." + next), interrupt: true);
     }
 
     private static void TrackMotion(float dt)

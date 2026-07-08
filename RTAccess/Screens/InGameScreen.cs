@@ -179,60 +179,13 @@ namespace RTAccess.Screens
         }
 
         // internal: SystemMapScreen offers the same openers on the space map (same labels/gates, Space VM).
+        // The label + gate live in the shared ServiceWindowInfo home so the HUD list, the star-system openers,
+        // and the on-open announcer never drift; the HUD list keeps its own type.ToString() belt for an
+        // unexpected type (the shared Label returns null for None/unknown so the announcer can stay silent).
         internal static string WindowLabel(ServiceWindowsType type)
-        {
-            switch (type)
-            {
-                case ServiceWindowsType.Inventory: return GameText.Or(() => UIStrings.Instance.MainMenu.Inventory, "screen.inventory");
-                case ServiceWindowsType.CharacterInfo: return GameText.Or(() => UIStrings.Instance.MainMenu.CharacterInfo, "screen.character");
-                case ServiceWindowsType.Journal: return GameText.Or(() => UIStrings.Instance.MainMenu.Journal, "screen.journal");
-                case ServiceWindowsType.LocalMap: return GameText.Or(() => UIStrings.Instance.MainMenu.LocalMap, "screen.map");
-                case ServiceWindowsType.Encyclopedia: return GameText.Or(() => UIStrings.Instance.MainMenu.Encyclopedia, "screen.encyclopedia");
-                case ServiceWindowsType.ShipCustomization: return GameText.Or(() => UIStrings.Instance.MainMenu.ShipCustomization, "screen.ship");
-                case ServiceWindowsType.ColonyManagement: return GameText.Or(() => UIStrings.Instance.MainMenu.ColonyManagement, "screen.colony");
-                case ServiceWindowsType.CargoManagement: return GameText.Or(() => UIStrings.Instance.MainMenu.CargoManagement, "screen.cargo");
-                case ServiceWindowsType.Augmentations: return GameText.Or(() => UIStrings.Instance.MainMenu.Augmentations, "screen.augmentations");
-                default: return type.ToString();
-            }
-        }
+            => ServiceWindowInfo.Label(type) ?? type.ToString();
 
-        // Availability gate mirroring the game's own HUD button visibility (IngameMenuNewPCView.CheckEnabled* /
-        // CheckServiceWindowsBlocked). The original five stay always-offered (unchanged behavior); the four RT
-        // windows read as disabled exactly when the game would hide their buttons, so Enter never drops the player
-        // into a window the game is refusing. HandleOpenWindow is itself a no-op when blocked, so this is belt-and-
-        // braces, not the only guard.
-        internal static bool WindowEnabled(ServiceWindowsType type)
-        {
-            var player = Game.Instance?.Player;
-            if (player == null) return false;
-            switch (type)
-            {
-                case ServiceWindowsType.ShipCustomization:
-                {
-                    bool canShip = player.CanAccessStarshipInventory;
-                    bool blocked = player.ServiceWindowsBlocked;
-                    return canShip && !blocked;
-                }
-                case ServiceWindowsType.ColonyManagement:
-                {
-                    bool canShip = player.CanAccessStarshipInventory;
-                    bool forbid = player.ColoniesState.ForbidColonization;
-                    return canShip && !forbid;
-                }
-                case ServiceWindowsType.CargoManagement:
-                {
-                    bool blocked = player.ServiceWindowsBlocked;
-                    return !blocked;
-                }
-                case ServiceWindowsType.Augmentations:
-                {
-                    bool augBlocked = player.AugmentationsWindowBlocked;
-                    return StoreManager.CheckIfDlcPurchasedAndInstalled(DlcNameEnum.DLC3TheInfiniteMuseion) && !augBlocked;
-                }
-                default:
-                    return true;
-            }
-        }
+        internal static bool WindowEnabled(ServiceWindowsType type) => ServiceWindowInfo.Enabled(type);
 
         // ---- Action bar region (abilities / weapon attacks / consumables the selected unit can use) ----
 

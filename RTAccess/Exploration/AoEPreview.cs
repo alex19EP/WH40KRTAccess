@@ -157,14 +157,11 @@ internal static class AoEPreview
         => ability.IsScatter || pat.Type == PatternType.Cone || pat.Type == PatternType.Ray || pat.Type == PatternType.Sector;
 
     /// <summary>8-way compass word from an (east=+X, north=+Z) delta; null when the delta is ~zero (cursor on the
-    /// caster). Matches the game's axis convention (see <see cref="Geo.RegionWord"/>).</summary>
+    /// caster). Sector math is shared via <see cref="Geo.CompassSector"/>; the words are the same localized
+    /// compass keys the focused readout and the system map speak.</summary>
     private static string Facing(float east, float north)
     {
-        if (east * east + north * north < 0.01f) return null;
-        float deg = Mathf.Atan2(east, north) * Mathf.Rad2Deg;   // 0 = north, +90 = east
-        if (deg < 0f) deg += 360f;
-        int idx = Mathf.RoundToInt(deg / 45f) % 8;
-        string[] keys = { "aim.dir_n", "aim.dir_ne", "aim.dir_e", "aim.dir_se", "aim.dir_s", "aim.dir_sw", "aim.dir_w", "aim.dir_nw" };
-        return Loc.T(keys[idx]);
+        if (!Geo.CompassSector(east, north, out int sector, 0.1f)) return null;   // ~0.01 m² too-close threshold, preserved
+        return Loc.T(Accessibility.InteractableDescriber.Compass8[sector]);
     }
 }

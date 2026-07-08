@@ -1,5 +1,6 @@
 using HarmonyLib;
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;
+using RTAccess.Screens;   // ServiceWindowInfo (shared label/gate)
 using RTAccess.Speech;
 
 namespace RTAccess.Accessibility;
@@ -19,23 +20,13 @@ internal static class ServiceWindowAnnounce
 {
     private static void Postfix(ServiceWindowsType type)
     {
-        var label = Label(type);
+        // Shared label with the HUD windows list / star-system openers (ServiceWindowInfo) — localized, and
+        // covering Augmentations (which this announcer used to drop, opening it silently). Null for None/unknown
+        // → stay silent.
+        var label = ServiceWindowInfo.Label(type);
         if (label == null) return;
         // The user opened this window (a keypress), so interrupt to say which one it is. The window's own
         // screen then reads its content — giving "Inventory. <first item>." in order. Per [[rt-interrupt-speech-rule]].
         Speaker.Speak(label, interrupt: true);
     }
-
-    private static string Label(ServiceWindowsType type) => type switch
-    {
-        ServiceWindowsType.Inventory => "Inventory",
-        ServiceWindowsType.CharacterInfo => "Character",
-        ServiceWindowsType.Journal => "Journal",
-        ServiceWindowsType.LocalMap => "Map",
-        ServiceWindowsType.Encyclopedia => "Encyclopedia",
-        ServiceWindowsType.ShipCustomization => "Ship",
-        ServiceWindowsType.ColonyManagement => "Colony",
-        ServiceWindowsType.CargoManagement => "Cargo",
-        _ => null,
-    };
 }

@@ -1,6 +1,5 @@
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using Kingmaker;
 using Kingmaker.Controllers.Clicks.Handlers; // ClickMapObjectHandler.HasAvailableInteractions (the game's own gate)
 using Kingmaker.Controllers.Optimization;
@@ -30,13 +29,12 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal static class InteractableDescriber
 {
-    private static readonly Regex RichText = new Regex("<[^>]+>", RegexOptions.Compiled);
-    private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
-
-    // 8-way MAP-relative compass (world axes: +Z = north, +X = east). Stable regardless of camera rotation.
+    // 8-way MAP-relative compass (world axes: +Z = north, +X = east), as LOCALIZATION KEYS resolved at speak
+    // time (never a frozen resolved-string array — the game language can switch at runtime). Reuses the aim
+    // readout's direction words (identical vocabulary) so the map compass and the aim compass share one source.
     // internal: the system-map screen speaks the same compass for ship-relative bearings.
     internal static readonly string[] Compass8 =
-        { "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west" };
+        { "aim.dir_n", "aim.dir_ne", "aim.dir_e", "aim.dir_se", "aim.dir_s", "aim.dir_sw", "aim.dir_w", "aim.dir_nw" };
 
     /// <summary>Full spoken line for a chosen interactable view. Never throws; returns "" if nothing readable.</summary>
     public static string Describe(EntityViewBase entity)
@@ -98,7 +96,7 @@ internal static class InteractableDescriber
         var fog = RTAccess.Exploration.FogProbe.Classify((Vector3)node.position);
         bool seen = fog != RTAccess.Exploration.FogProbe.FogState.NeverSeen;
         bool hideUnits = fog == RTAccess.Exploration.FogProbe.FogState.Explored;   // explored-not-visible: static layout only
-        if (!seen) sb.Append("unexplored");
+        if (!seen) sb.Append(Loc.T("where.unexplored"));
 
         var unit = seen && !hideUnits ? node.GetUnit() : null;
         // Parity gate (main-HUD audit L2): the fog probe classifies the GROUND, not the occupant — a
@@ -111,12 +109,12 @@ internal static class InteractableDescriber
         if (unit != null)
         {
             sb.Append(unit.CharacterName);
-            Append(sb, unit.Faction != null && unit.Faction.IsPlayerEnemy ? "enemy" : "ally");
+            Append(sb, Loc.T(unit.Faction != null && unit.Faction.IsPlayerEnemy ? "scan.faction.enemy" : "scan.faction.party"));
             // The tile cursor sits ON the tile, so a corpse must be READ (not hidden) — but tagged so it doesn't read
             // as a live enemy. GetUnit() returns corpses (they stay in the grid's awake set until destroyed), and the
             // scanner cycles now skip the dead, so the tile cursor is the one place a corpse is still announced.
-            if (unit.LifeState.IsDead) Append(sb, "dead");
-            else if (!unit.LifeState.IsConscious) Append(sb, "unconscious");
+            if (unit.LifeState.IsDead) Append(sb, Loc.T("unit.dead"));
+            else if (!unit.LifeState.IsConscious) Append(sb, Loc.T("unit.unconscious"));
         }
         if (seen && TryNameMapObject(node, out var objectName, out var objectVerb))
         {
@@ -125,8 +123,8 @@ internal static class InteractableDescriber
         }
         else if (seen && unit == null)
         {
-            if (DestructibleEntity.FindByNode(node) != null) sb.Append("obstacle");
-            else sb.Append(node.Walkable ? "clear" : "wall");
+            if (DestructibleEntity.FindByNode(node) != null) sb.Append(Loc.T("tile.obstacle"));
+            else sb.Append(Loc.T(node.Walkable ? "tile.clear" : "tile.wall"));
         }
 
         // 1b. Ground hazard / buff zone standing ON this tile — fire, gas, a psychic cloud: the thing a sighted player
@@ -166,16 +164,16 @@ internal static class InteractableDescriber
             var checkType = Game.Instance?.SelectionCharacter?.SelectedUnit?.Value != null
                 ? LosCalculations.ForcedCoverCheckType.BySource
                 : LosCalculations.ForcedCoverCheckType.ByTarget;
-            AppendCover(sb, node, 2, "north", checkType);
-            AppendCover(sb, node, 1, "east", checkType);
-            AppendCover(sb, node, 0, "south", checkType);
-            AppendCover(sb, node, 3, "west", checkType);
+            AppendCover(sb, node, 2, "aim.dir_n", checkType);
+            AppendCover(sb, node, 1, "aim.dir_e", checkType);
+            AppendCover(sb, node, 0, "aim.dir_s", checkType);
+            AppendCover(sb, node, 3, "aim.dir_w", checkType);
 
             // Reachability is an additive note, not a cover gate. UnitMovableAreaController.CurrentUnit is non-null
             // only for a live directly-controllable turn; a tile outside that unit's movable area is "unreachable".
             var controller = Game.Instance?.UnitMovableAreaController;
             if (controller?.CurrentUnit != null && controller.CurrentUnitMovableArea?.Contains(node) == false)
-                Append(sb, "unreachable");
+                Append(sb, Loc.T("tile.unreachable"));
         }
 
         // 3. Offset from the anchor unit, in tiles (+Z = north, +X = east — matches the compass above).
@@ -313,18 +311,20 @@ internal static class InteractableDescriber
     }
 
     /// <summary>Append "half/full cover &lt;dir&gt;" (or "blocked &lt;dir&gt;" for sight-blocking) for one edge, read
-    /// with the same <paramref name="checkType"/> the game's cover mesh uses (BySource on the acting unit).</summary>
-    private static void AppendCover(StringBuilder sb, CustomGridNodeBase node, int direction, string word,
+    /// with the same <paramref name="checkType"/> the game's cover mesh uses (BySource on the acting unit).
+    /// <paramref name="dirKey"/> is the localization key for the edge's direction word.</summary>
+    private static void AppendCover(StringBuilder sb, CustomGridNodeBase node, int direction, string dirKey,
         LosCalculations.ForcedCoverCheckType checkType)
     {
         LosCalculations.CoverType cover;
         try { cover = LosCalculations.GetCellCoverStatus(node, direction, checkType).CoverType; }
         catch (Exception e) { Main.Log?.Error("DescribeTile cover read failed: " + e); return; }
+        var dir = Loc.T(dirKey);
         switch (cover)
         {
-            case LosCalculations.CoverType.Half: Append(sb, "half cover " + word); break;
-            case LosCalculations.CoverType.Full: Append(sb, "full cover " + word); break;
-            case LosCalculations.CoverType.Invisible: Append(sb, "blocked " + word); break;
+            case LosCalculations.CoverType.Half: Append(sb, Loc.T("cover.half") + " " + dir); break;
+            case LosCalculations.CoverType.Full: Append(sb, Loc.T("cover.full") + " " + dir); break;
+            case LosCalculations.CoverType.Invisible: Append(sb, Loc.T("cover.blocked") + " " + dir); break;
         }
     }
 
@@ -335,14 +335,14 @@ internal static class InteractableDescriber
         if (origin == null) return null;
         int dx = node.XCoordinateInGrid - origin.XCoordinateInGrid; // east(+) / west(-)
         int dz = node.ZCoordinateInGrid - origin.ZCoordinateInGrid; // north(+) / south(-)
-        if (dx == 0 && dz == 0) return "here";
+        if (dx == 0 && dz == 0) return Loc.T("geo.here");
         var sb = new StringBuilder();
-        if (dx > 0) sb.Append(dx).Append(" east");
-        else if (dx < 0) sb.Append(-dx).Append(" west");
+        if (dx > 0) sb.Append(dx).Append(' ').Append(Loc.T("aim.dir_e"));
+        else if (dx < 0) sb.Append(-dx).Append(' ').Append(Loc.T("aim.dir_w"));
         if (dz != 0)
         {
             if (sb.Length > 0) sb.Append(", ");
-            sb.Append(dz > 0 ? dz + " north" : -dz + " south");
+            sb.Append(dz > 0 ? dz : -dz).Append(' ').Append(Loc.T(dz > 0 ? "aim.dir_n" : "aim.dir_s"));
         }
         return sb.ToString();
     }
@@ -352,12 +352,12 @@ internal static class InteractableDescriber
     {
         switch (type)
         {
-            case LocalMapMarkType.Exit: return "exit";
-            case LocalMapMarkType.DestinationMark: return "objective";
-            case LocalMapMarkType.VeryImportantThing: return "important";
-            case LocalMapMarkType.Loot: return "loot";
-            case LocalMapMarkType.Poi: return "point of interest";
-            case LocalMapMarkType.Unit: return "creature";
+            case LocalMapMarkType.Exit: return Loc.T("marker.exit");
+            case LocalMapMarkType.DestinationMark: return Loc.T("marker.objective");
+            case LocalMapMarkType.VeryImportantThing: return Loc.T("marker.important");
+            case LocalMapMarkType.Loot: return Loc.T("marker.loot");
+            case LocalMapMarkType.Poi: return Loc.T("marker.poi");
+            case LocalMapMarkType.Unit: return Loc.T("marker.creature");
             default: return null;
         }
     }
@@ -378,15 +378,15 @@ internal static class InteractableDescriber
         switch (interaction)
         {
             case InteractionDoorPart:
-                return tips?.Door?.Text ?? "Door";
+                return tips?.Door?.Text ?? Loc.T("scan.singular.door");
             case InteractionLootPart loot:
                 var lootName = loot.GetName();
-                return string.IsNullOrWhiteSpace(lootName) ? "Container" : lootName;
+                return string.IsNullOrWhiteSpace(lootName) ? Loc.T("scan.singular.container") : lootName;
             case InteractionStairsPart:
-                return tips?.Ladder?.Text ?? "Stairs";
+                return tips?.Ladder?.Text ?? Loc.T("scan.singular.stairs");
             case InteractionActionPart action:
                 var actionName = action.Settings?.DisplayName?.String?.Text;
-                return string.IsNullOrWhiteSpace(actionName) ? "Action" : actionName;
+                return string.IsNullOrWhiteSpace(actionName) ? Loc.T("scan.singular.action") : actionName;
             // Mirror the overtip (OvertipMapObjectVM): the designer's DisplayName while live, and the
             // DisplayNameAfterUse swap once a check-once interaction is spent — the game's own "already
             // examined" cue. No designer name → the localized category singular (the raw GameObject name
@@ -399,7 +399,7 @@ internal static class InteractableDescriber
 
         // Trap parts (several subtypes) — match by name so we don't bind every concrete type.
         if (interaction != null && interaction.GetType().Name.Contains("Trap"))
-            return tips?.Trap?.Text ?? "Trap";
+            return tips?.Trap?.Text ?? Loc.T("scan.singular.trap");
 
         // Area exits (main-HUD audit #2): a transition carries no InteractionPart — its name is the destination
         // tooltip the sighted overtip shows persistently (OvertipTransitionVM.Title). Prefer the per-exit
@@ -416,7 +416,7 @@ internal static class InteractableDescriber
         // Last resort: the GameObject name (minus the Unity "(Clone)" suffix). Never return empty — an
         // unnamed interactable should still announce something rather than just "N tiles, <dir>".
         var fallback = Clean(entity.GameObjectName)?.Replace("(Clone)", "").Trim();
-        return string.IsNullOrWhiteSpace(fallback) ? "Object" : fallback;
+        return string.IsNullOrWhiteSpace(fallback) ? Loc.T("scan.singular.object") : fallback;
     }
 
     /// <summary>The skill-check line the object's overtip card shows on hover — the short description plus the
@@ -465,11 +465,11 @@ internal static class InteractableDescriber
         if (interaction == null) return null;
         switch (interaction.UIInteractionType)
         {
-            case UIInteractionType.Action: return "activate";
-            case UIInteractionType.Move: return "approach";
-            case UIInteractionType.Info: return "examine";
-            case UIInteractionType.Credits: return "collect";
-            case UIInteractionType.Pets: return "interact";
+            case UIInteractionType.Action: return Loc.T("verb.activate");
+            case UIInteractionType.Move: return Loc.T("verb.approach");
+            case UIInteractionType.Info: return Loc.T("verb.examine");
+            case UIInteractionType.Credits: return Loc.T("verb.collect");
+            case UIInteractionType.Pets: return Loc.T("verb.interact");
             default: return null;
         }
     }
@@ -481,16 +481,12 @@ internal static class InteractableDescriber
     {
         float dx = to.x - from.x; // east(+) / west(-)
         float dz = to.z - from.z; // north(+) / south(-)
-        float dist = Mathf.Sqrt(dx * dx + dz * dz);
+        float dist = RTAccess.Exploration.Geo.Distance(from, to);
         int tiles = Mathf.RoundToInt(dist / GraphParamsMechanicsCache.GridCellSize); // world metres -> 1.35 m grid cells
         var sb = new StringBuilder();
-        sb.Append(tiles == 1 ? "1 tile" : tiles + " tiles");
-        if (dist > 0.5f)
-        {
-            float angle = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // 0 = north, +90 = east
-            int sector = ((Mathf.RoundToInt(angle / 45f) % 8) + 8) % 8;
-            sb.Append(", ").Append(Compass8[sector]);
-        }
+        sb.Append(tiles == 1 ? Loc.T("aim.tile_one") : Loc.T("aim.tiles", new { count = tiles }));
+        if (dist > 0.5f && RTAccess.Exploration.Geo.CompassSector(dx, dz, out int sector))
+            sb.Append(", ").Append(Loc.T(Compass8[sector]));
         return sb.ToString();
     }
 
@@ -501,9 +497,7 @@ internal static class InteractableDescriber
         sb.Append(part);
     }
 
+    // Strip TMP rich-text (and decorative sub/superscript) from game-sourced text for speech; "" for blank input.
     private static string Clean(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
-        return Whitespace.Replace(RichText.Replace(raw, " "), " ").Trim();
-    }
+        => string.IsNullOrWhiteSpace(raw) ? string.Empty : TextUtil.StripRichTextSpaced(raw);
 }

@@ -73,7 +73,7 @@ internal static class TileExplorer
     {
         if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys; the primary cursor controls stand down
         var node = GetAnchor()?.CurrentUnwalkableNode;
-        if (node == null) { Speaker.Speak("No reference point.", interrupt: true); return; }
+        if (node == null) { Speaker.Speak(Loc.T("cursor.no_reference"), interrupt: true); return; }
         MapCursor.Set(node);
         _armedNode = null;   // the destination moved; never carry a pending confirm across a recenter
         ScrollTo(node);
@@ -96,7 +96,7 @@ internal static class TileExplorer
             var cur = MapCursor.Node;
             if (cur == null) return;   // EnsurePlanted guarantees this; defensive only
             var next = NavmeshProbe.Neighbour(cur, dx, dz);
-            if (next == null) { Speaker.Speak("Edge.", interrupt: true); return; }
+            if (next == null) { Speaker.Speak(Loc.T("cursor.edge"), interrupt: true); return; }
             MapCursor.Set(next);
             _armedNode = null;   // any cursor step re-arms the move-to two-step confirm — no stale arm survives a move
             ScrollTo(next);
@@ -115,7 +115,7 @@ internal static class TileExplorer
         fresh = false;
         if (MapCursor.Has) return true;
         var node = GetAnchor()?.CurrentUnwalkableNode;
-        if (node == null) { Speaker.Speak("No reference point.", interrupt: true); return false; }
+        if (node == null) { Speaker.Speak(Loc.T("cursor.no_reference"), interrupt: true); return false; }
         MapCursor.Set(node);
         ScrollTo(node);
         fresh = true;
@@ -150,11 +150,11 @@ internal static class TileExplorer
 
             if (game.TurnController.TurnBasedModeActive)
             {
-                if (!game.TurnController.IsPlayerTurn) { Speaker.Speak("Not your turn.", interrupt: true); return; }
+                if (!game.TurnController.IsPlayerTurn) { Speaker.Speak(Loc.T("combat.not_your_turn"), interrupt: true); return; }
                 var unit = game.SelectionCharacter?.SelectedUnit?.Value as BaseUnitEntity;
                 var current = game.TurnController.CurrentUnit as BaseUnitEntity;
                 if (unit == null || unit != current || !unit.IsDirectlyControllable())
-                { Speaker.Speak("Select your active character.", interrupt: true); return; }
+                { Speaker.Speak(Loc.T("combat.select_active"), interrupt: true); return; }
 
                 // First press on this tile arms + previews the PATH (reachability + step count, from the game's own
                 // movable-area set); a second within the window commits. The arm is unconditional — the engine stays
@@ -195,10 +195,10 @@ internal static class TileExplorer
     /// </summary>
     public static void PlantOn(Vector3 worldPos)
     {
-        if (!MapCursor.Set(worldPos)) { Speaker.Speak("Can't place the cursor there.", interrupt: true); return; }
+        if (!MapCursor.Set(worldPos)) { Speaker.Speak(Loc.T("cursor.cant_place"), interrupt: true); return; }
         _armedNode = null;
         var node = MapCursor.Node;
-        if (node == null) { Speaker.Speak("No reference point.", interrupt: true); return; }
+        if (node == null) { Speaker.Speak(Loc.T("cursor.no_reference"), interrupt: true); return; }
         ScrollTo(node);
         Announce();
     }
@@ -268,11 +268,13 @@ internal static class TileExplorer
         {
             var sel = Game.Instance?.SelectionCharacter?.SelectedUnits;
             int n = sel?.Count ?? 0;
-            if (n > 1) return "Moving party.";
+            if (n > 1) return Loc.T("path.moving_party");
             var one = (n == 1 ? sel[0] : null) ?? GetAnchor() as BaseUnitEntity;
-            return string.IsNullOrWhiteSpace(one?.CharacterName) ? "Moving." : "Moving " + one.CharacterName + ".";
+            return string.IsNullOrWhiteSpace(one?.CharacterName)
+                ? Loc.T("path.moving")
+                : Loc.T("path.moving_name", new { name = one.CharacterName });
         }
-        catch { return "Moving."; }
+        catch { return Loc.T("path.moving"); }
     }
 
     // ---- readout ----
@@ -283,7 +285,7 @@ internal static class TileExplorer
     private static string Describe()
     {
         var line = InteractableDescriber.DescribeTile(MapCursor.Node, GetAnchor());
-        if (string.IsNullOrWhiteSpace(line)) line = "Unknown tile.";
+        if (string.IsNullOrWhiteSpace(line)) line = Loc.T("cursor.unknown_tile");
         // While deploying, follow the tile readout with its deploy legality + the holographic vantage from here.
         if (RTAccess.Exploration.DeploymentMode.Active)
         {

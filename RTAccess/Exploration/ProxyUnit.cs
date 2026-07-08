@@ -140,7 +140,7 @@ internal sealed class ProxyUnit : ScanItem
                 var life = _unit.LifeState;
                 if (life.IsDead)
                 {
-                    bits.Add("dead");
+                    bits.Add(Loc.T("unit.dead"));
                     // The game marks an opened-but-not-emptied body by highlight color only (VisitedLootColor
                     // in AbstractUnitEntityView.GetHighlightColor) — color-only on screen, so voice it. Session-
                     // scoped like the game's own flag (BaseUnitEntity.m_LootViewed is not persisted to the save).
@@ -148,7 +148,7 @@ internal sealed class ProxyUnit : ScanItem
                 }
                 else if (!life.IsConscious)
                 {
-                    bits.Add("unconscious");
+                    bits.Add(Loc.T("unit.unconscious"));
                 }
                 else
                 {
@@ -193,7 +193,7 @@ internal sealed class ProxyUnit : ScanItem
                                     : Loc.T("unit.squad_member"));
                         }
                     }
-                    if (_unit.IsInCombat) bits.Add("in combat");
+                    if (_unit.IsInCombat) bits.Add(Loc.T("unit.in_combat"));
                     // #7 Turn-status marker — mirrors SurfaceCombatUnitVM's own priority (will-lose-turn folds
                     // Stunned/Helpless/Prone; then control-loss; then generic unable-to-act). A combat-tracker
                     // concept, so only while in combat; both allies and enemies, but gated so a not-yet-seen enemy's
@@ -272,7 +272,7 @@ internal sealed class ProxyUnit : ScanItem
          : ScanTaxonomy.UnitsNeutrals;
 
     private string FactionWord()
-        => _unit.IsPlayerFaction ? "ally"
-         : _unit.IsPlayerEnemy ? "enemy"
-         : "neutral";
+        => Loc.T(_unit.IsPlayerFaction ? "scan.faction.party"
+              : _unit.IsPlayerEnemy ? "scan.faction.enemy"
+              : "scan.faction.neutral");
 }

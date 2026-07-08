@@ -428,5 +428,16 @@
   "sound.control_lost": "Control lost",
 
   "overlay.cursor.announce_rooms": "Announce room changes",
-  "bind.scan.debugRooms": "Read room map stats (debug)"
+  "bind.scan.debugRooms": "Read room map stats (debug)",
+
+  "exploration.camera_follow": "Camera follows cursor",
+  "exploration.sonar": "Sonar",
+  "exploration.sonar_volume": "Sonar volume",
+  "exploration.walltones": "Wall tones",
+  "exploration.walltones_volume": "Wall tone volume",
+  "exploration.walltones_set": "Wall tone set",
+  "exploration.walltones_set.1": "Set 1",
+  "exploration.walltones_set.2": "Set 2",
+  "audio.itd": "Interaural time delay (stereo depth)",
+  "audio.front_back_filter": "Front/back muffling"
 }

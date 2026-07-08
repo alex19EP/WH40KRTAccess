@@ -133,7 +133,7 @@ internal static class WallTones
             _ => "off",
         };
         s.Set(next);
-        Speaker.Speak(next == "when_moving" ? "Wall tones when moving" : "Wall tones " + next, interrupt: true);
+        Speaker.Speak(Loc.T("walltones.mode." + next), interrupt: true);
     }
 
     /// <summary>Drop the voices on area change / feature reset so nothing stale survives; also clear the motion

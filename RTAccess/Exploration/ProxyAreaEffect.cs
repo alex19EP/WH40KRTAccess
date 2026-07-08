@@ -95,7 +95,7 @@ internal sealed class ProxyAreaEffect : ScanItem
         return true;
     }
 
-    private string TypeWord => _node == ScanTaxonomy.BuffZones ? "buff zone" : "hazard";
+    private string TypeWord => Loc.T(_node == ScanTaxonomy.BuffZones ? "areaeffect.buffzone" : "areaeffect.hazard");
 
     // A zone that can catch enemies (a damage/debuff field, TargetType Enemy or Any) is a HAZARD — the safe default
     // for a blind player, who wants to route around anything dangerous; an ally-EXCLUSIVE zone (TargetType Ally) is

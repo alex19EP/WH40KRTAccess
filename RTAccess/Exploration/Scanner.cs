@@ -78,11 +78,6 @@ internal static class Scanner
     private static int _exitIndex = -1;     // current room-exit cycle position (reset when the room changes)
     private static RoomMap.Room _exitRoom;  // the room the exit cycle is scoped to
 
-    // Cached reflection handle for the indoors flag — BlueprintAreaPart.m_IndoorType is private with no public
-    // accessor. Resolved once at load; null (→ treated as outdoors) if a game update ever renames the field.
-    private static readonly System.Reflection.FieldInfo _indoorTypeField =
-        HarmonyLib.AccessTools.Field(typeof(Kingmaker.Blueprints.Area.BlueprintAreaPart), "m_IndoorType");
-
     // ---- registered action entry points (InputCategory.Exploration; see InputBindings.RegisterDefaults) ----
     // Each is wired to an InputAction so the dev harness /input can drive it and the framework's chord shadowing
     // decides HUD-vs-exploration ownership of the shared Home chord (vs ui.home). The old manual
@@ -399,19 +394,13 @@ internal static class Scanner
         catch { return null; }
     }
 
-    // Is the loaded area part flagged indoors? Read from the blueprint's private IndoorType (any value but None is an
-    // interior). Best-effort: a null field handle / missing area part / read failure → outdoors (the word is omitted).
-    // (The fog "unexplored" branch is handled above via FogProbe; the room name via RoomMap.RoomAt above it.)
+    // Is the loaded area part flagged indoors? Read directly from the publicized blueprint IndoorType (any value
+    // but None is an interior). Fail-safe: a missing area part → outdoors (the word is omitted). (The fog
+    // "unexplored" branch is handled above via FogProbe; the room name via RoomMap.RoomAt above it.)
     private static bool IsIndoors()
     {
-        try
-        {
-            var areaPart = Game.Instance?.CurrentlyLoadedAreaPart;
-            if (areaPart == null || _indoorTypeField == null) return false;
-            return _indoorTypeField.GetValue(areaPart) is Kingmaker.Blueprints.Area.IndoorType t
-                   && t != Kingmaker.Blueprints.Area.IndoorType.None;
-        }
-        catch { return false; }
+        var areaPart = Game.Instance?.CurrentlyLoadedAreaPart;
+        return areaPart != null && areaPart.m_IndoorType != Kingmaker.Blueprints.Area.IndoorType.None;
     }
 
     private static void PartyReadout()

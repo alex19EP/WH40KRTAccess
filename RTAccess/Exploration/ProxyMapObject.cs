@@ -112,9 +112,9 @@ internal sealed class ProxyMapObject : ScanItem
         get
         {
             var view = _obj.View;
-            if (view == null) return "Object";
+            if (view == null) return Loc.T("scan.singular.object");
             try { return InteractableDescriber.ResolveName(view, out _); }
-            catch { return "Object"; }
+            catch { return Loc.T("scan.singular.object"); }
         }
     }
 
@@ -145,7 +145,7 @@ internal sealed class ProxyMapObject : ScanItem
                     switch (part)
                     {
                         case InteractionDoorPart door when door.IsOpen:
-                            bits.Add("open");
+                            bits.Add(Loc.T("object.open"));
                             break;
                         case InteractionLootPart loot:
                             var kind = LootKindWord(loot.Settings.LootContainerType);
@@ -158,7 +158,7 @@ internal sealed class ProxyMapObject : ScanItem
                         // A trap is only flagged when its disarm interaction is live (part.Enabled == detected) and
                         // still armed — an undetected trap never lists the object (awareness gate), so this is no spoiler.
                         case DisableTrapInteractionPart trap when part.Enabled && trap.Owner?.TrapActive == true:
-                            bits.Add("trapped");
+                            bits.Add(Loc.T("object.trapped"));
                             var trapInfo = InteractableDescriber.CheckInfo(part);
                             if (trapInfo != null) bits.Add(trapInfo);
                             break;
@@ -178,7 +178,7 @@ internal sealed class ProxyMapObject : ScanItem
             // the interact path uses, so the spoken label and the behaviour never diverge.
             if (view != null)
             {
-                try { if (VariativeInteractionVM.HasVariativeInteraction(view)) bits.Add("locked"); }
+                try { if (VariativeInteractionVM.HasVariativeInteraction(view)) bits.Add(Loc.T("object.locked")); }
                 catch { /* best-effort */ }
             }
 
@@ -219,11 +219,11 @@ internal sealed class ProxyMapObject : ScanItem
     private static string LootKindWord(LootContainerType type)
         => type switch
         {
-            LootContainerType.Chest => "chest",
-            LootContainerType.Environment => "environment",
-            LootContainerType.PlayerChest => "stash",
-            LootContainerType.OneSlot => "single slot",
-            LootContainerType.StarSystemObject => "cargo",
+            LootContainerType.Chest => Loc.T("object.kind.chest"),
+            LootContainerType.Environment => Loc.T("object.kind.environment"),
+            LootContainerType.PlayerChest => Loc.T("object.kind.stash"),
+            LootContainerType.OneSlot => Loc.T("object.kind.single_slot"),
+            LootContainerType.StarSystemObject => Loc.T("object.kind.cargo"),
             _ => null, // DefaultLoot, Unit → no extra word
         };
 
