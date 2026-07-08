@@ -54,7 +54,7 @@ namespace RTAccess.UI
 
         /// <summary>One option of a single-select group ("label, radio button[, selected][, n of m]") —
         /// a dropdown option, a tab row entry. Activation selects it; the navigator plays the generic
-        /// button click (the sound ProxyChoiceOption inherited from UIElement). Positions come from the
+        /// button click. Positions come from the
         /// builder's auto-stamp, so callers declare none.</summary>
         public static NodeVtable ChoiceOption(Func<string> label, Func<bool> selected, Action select)
             => new NodeVtable
@@ -75,7 +75,7 @@ namespace RTAccess.UI
         /// advertises no action and no sound — Enter consumes silently (the retired ProxyActionButton
         /// widget kept the same convention). Sounds ride the vtable slots the navigator plays at
         /// its chokepoints: a themed hover/click sound-type where the card carries one (the main-menu
-        /// sidebar's Analog), else the generic blueprint ButtonClick — UIElement's default pair.
+        /// sidebar's Analog), else the generic blueprint ButtonClick — the default pair.
         /// <paramref name="tooltip"/> is a template FACTORY resolved live on each Space press (the
         /// tooltips-live-not-cached rule) for buttons that carry one (a travel destination's quest
         /// objectives) — opened through the shared <see cref="TooltipChooser"/>: the rendered body plus
@@ -112,7 +112,7 @@ namespace RTAccess.UI
         /// effect settles ASYNCHRONOUSLY in the game, pass <paramref name="announceOnActivate"/> false and
         /// let the LIVE value part speak the settled truth (safe alongside StateText — VtableActivate
         /// rebaselines the live watch after speaking). Sounds ride the vtable slots: default = the generic
-        /// click (UIElement's pair, the settings-toggle convention); pass a themed hover/click sound-type
+        /// click (the settings-toggle convention); pass a themed hover/click sound-type
         /// or a one-off blueprint <paramref name="activateSound"/> where the game's card differs (the
         /// tutorial ban toggle's NoSound hover + BanTutorialType sting).</summary>
         public static NodeVtable Toggle(Func<string> label, Func<bool> isChecked, Action onToggle,

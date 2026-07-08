@@ -15,16 +15,13 @@
   "role.group": "group",
   "role.table": "table",
   "role.heading": "heading",
-  "role.heading_level": "heading level {level}",
   "role.key binding": "key binding",
   "role.expanded": "expanded",
   "role.collapsed": "collapsed",
-
   "state.disabled": "disabled",
   "state.prerequisites_not_met": "prerequisites not met",
   "state.enabled": "enabled",
   "state.selected": "selected",
-
   "tooltip.requires": "Requires: {text}",
   "tooltip.requires_one": "Requires one of: {text}",
   "tooltip.armor_deflection": "Deflection",
@@ -32,7 +29,6 @@
   "tooltip.dodge": "Dodge",
   "tooltip.shot": "shot {n}",
   "tooltip.deviation": "deviation {value}, range {min} to {max}",
-
   "action.select": "Select",
   "action.toggle": "Toggle",
   "action.open": "Open",
@@ -53,10 +49,8 @@
   "action.raise": "Raise",
   "action.lower": "Lower",
   "action.choose": "Choose",
-  "action.menu": "Actions",
   "action.edit": "Edit",
   "action.delete": "Delete",
-
   "value.on": "on",
   "value.off": "off",
   "value.not_owned": "not owned",
@@ -77,8 +71,6 @@
   "value.points_back": "{count} points back",
   "value.ability_summary": "{name} {total}, {mod}, {points} points left",
   "value.blank": "blank",
-  "value.expanded": "expanded",
-  "value.collapsed": "collapsed",
   "action.expand": "Expand",
   "action.collapse": "Collapse",
   "action.cant_use": "Can't use that now",
@@ -98,20 +90,14 @@
   "unit.casts": "casts",
   "unit.charge": "charge",
   "unit.charges": "charges",
-
   "label.custom_character": "Custom Character",
   "label.continue": "Continue",
-
   "nav.position": "{index} of {count}",
-  "count.items": "{count} items",
-
   "encyclopedia.topics": "Topics",
-
   "journal.active": "active",
   "journal.completed": "completed",
   "journal.failed": "failed",
   "journal.updated": "updated",
-
   "log.title": "Log",
   "log.channels": "Channels",
   "log.empty": "No messages.",
@@ -119,7 +105,6 @@
   "log.tab.events": "Events",
   "log.tab.dialogue": "Dialogue",
   "log.tab.combat": "Combat",
-
   "combat.mode_turn_based": "Turn-based mode",
   "combat.mode_real_time": "Real-time mode",
   "combat.turn": "{name}'s turn",
@@ -157,7 +142,6 @@
   "path.preview.tile_many": "tiles",
   "path.preview.provokes": "Provokes attacks of opportunity from {names}.",
   "path.preview.press_again": "Press again to move.",
-
   "geo.feet": "{feet} ft",
   "geo.here": "here",
   "geo.above": "above",
@@ -480,7 +464,6 @@
   "gauge.objective": "Objective {label} {counter}",
   "cue.turn_timer_low": "Five seconds left.",
   "cue.boss_hp": "Boss at {percent} percent.",
-
   "predict.to_hit": "{hit}% to hit",
   "predict.crit": "{crit}% crit",
   "predict.base": "Base {value}%",
@@ -554,7 +537,6 @@
   "aim.dir_sw": "south-west",
   "aim.dir_w": "west",
   "aim.dir_nw": "north-west",
-
   "cover.none": "no cover",
   "vantage.hidden": "hidden",
   "vantage.cover_from": "{cover} from {name}",
@@ -562,7 +544,6 @@
   "vantage.threatened": "threatened by {count}",
   "vantage.no_enemies": "No visible enemies.",
   "vantage.not_in_combat": "Not in combat.",
-
   "deploy.arm": "Reposition up to {cells} cells. Step the cursor and press Enter to place the selected character, or B to start the battle.",
   "deploy.arm_nocount": "Step the cursor and press Enter to place the selected character, or B to start the battle.",
   "deploy.arm_surprise": "Ambush. You are surprised and cannot reposition. Press B to start the battle.",
@@ -575,7 +556,6 @@
   "deploy.cannot_reposition": "You can't reposition. Press B to start the battle.",
   "deploy.cannot_start": "Can't start the battle yet. Move your characters away from enemies.",
   "deploy.move_cursor_first": "Step the cursor to a tile first.",
-
   "areaeffect.hazard": "Hazard",
   "areaeffect.buffzone": "Buff zone",
   "rest.making_camp": "Making camp",
@@ -601,7 +581,6 @@
   "rest.success": "success",
   "rest.failure": "failure",
   "hud.no_actions": "No actions.",
-
   "hud.turn": "Turn",
   "turn.end": "End turn",
   "turn.five_foot_on": "Five foot step on",
@@ -609,16 +588,12 @@
   "turn.cant_delay": "Can't delay the turn right now",
   "turn.delay_self": "That's the acting unit",
   "turn.delayed": "Turn delayed until after {name}",
-
   "speech.handler_changed": "Speech handler changed to {handler}",
-
   "overlay.default_name": "Default",
   "bind.option_add": "Add binding",
   "bind.option_clear": "Clear bindings",
-
   "search.no_match": "{text}, no match",
   "search.cleared": "Search cleared",
-
   "screen.main_menu": "Main Menu",
   "screen.game": "Game",
   "screen.new_game": "New Game",
@@ -1011,26 +986,21 @@
   "text.help": "Type to edit, Backspace to delete, Enter to confirm, Escape to cancel.",
   "text.cancelled": "Cancelled",
   "text.space": "space",
-
   "scan.singular.trap": "Trap",
-
   "review.others": "Objects",
   "exit.to_room": "Exit to {room}",
   "scan.no_rooms": "No room map yet",
   "scan.no_exits": "No exits from this room",
-
   "vi.interaction": "Interaction",
   "vi.screen_name": "{name}, interaction",
   "vi.no_options": "No interaction options.",
   "vi.resource": "{have} of {need} {name}",
-
   "where.indoors": "indoors",
   "where.unexplored": "unexplored",
   "where.region": "{region} of the map",
   "where.center": "center",
   "where.unknown": "Unknown location",
   "ency.untitled": "Untitled entry",
-
   "detail.painting_01": "A painting of a woman lying in repose",
   "detail.painting_02": "A painting: portrait of a young woman with long golden hair",
   "detail.painting_03": "A painting dominated by blue: a woman in deep blue robes, head bowed",
@@ -1048,7 +1018,6 @@
   "detail.button_green": "Green button",
   "detail.button_red": "Red button",
   "detail.button_yellow": "Yellow button",
-
   "where.room": "Room {id}",
   "room.class.room": "room",
   "room.class.passage": "narrow passage",
@@ -1056,7 +1025,6 @@
   "room.class.small": "small room",
   "room.class.hall": "large hall",
   "room.class.stairs": "stairs",
-
   "systemmap.screen": "System map",
   "systemmap.objects": "Objects",
   "systemmap.status": "Status",
@@ -1102,7 +1070,6 @@
   "systemmap.stop_ship": "Stop ship",
   "systemmap.to_bridge": "Return to bridge",
   "systemmap.not_now": "Not available now.",
-
   "exploration.screen": "exploration",
   "exploration.undetermined": "undetermined",
   "exploration.tithe": "Tithe grade",
@@ -1131,19 +1098,16 @@
   "exploration.start_project": "Start project",
   "exploration.show_blocked": "Show blocked projects",
   "exploration.show_finished": "Show finished projects",
-
   "statcheck.screen": "Skill check",
   "statcheck.roll": "Check {stat}: {name}, {value}",
   "statcheck.switch": "Change character for {stat}",
   "statcheck.pick_unit": "Choose character",
   "statcheck.confirm_unit": "Confirm",
-
   "expedition.screen": "Expedition",
   "expedition.crew": "Crew size",
   "expedition.people": "{n} of {max}",
   "expedition.tier": "Reward tier {n} unlocked",
   "expedition.send": "Send expedition",
-
   "groupchanger.screen": "Party selection",
   "groupchanger.party": "In party",
   "groupchanger.reserve": "Reserve",
@@ -1156,7 +1120,6 @@
   "groupchanger.no_effects": "No active effects",
   "groupchanger.confirm": "Confirm party",
   "groupchanger.cannot_close": "A party must be chosen to continue.",
-
   "systemmap.radar": "Radar contacts: {n}",
   "systemmap.no_anomalies": "No anomalies in system",
   "colonymgmt.colonies": "Colonies",

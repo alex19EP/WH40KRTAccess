@@ -3,9 +3,9 @@ using System;
 namespace RTAccess.UI
 {
     /// <summary>
-    /// An action a UIElement advertises (distinct from <c>InputAction</c>, which is a
+    /// An action a Screen advertises (distinct from <c>InputAction</c>, which is a
     /// keybinding). Navigators discover actions by <see cref="Id"/> and invoke them —
-    /// they never switch on element type. Parameterless actions (activate/increase/…)
+    /// they never switch on screen type. Parameterless actions (activate/increase/…)
     /// ignore args; parameterized ones (setValue/…) read named values from the
     /// anonymous-object <c>args</c> via <see cref="ActionArgs"/>.
     /// </summary>

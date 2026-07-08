@@ -85,9 +85,9 @@ public static class Main {
                 audioCat.Add(new Settings.BoolSetting("itd", "Interaural time delay (stereo depth)", true, "audio.itd"));
             if (audioCat.GetByKey("front_back_filter") == null)
                 audioCat.Add(new Settings.BoolSetting("front_back_filter", "Front/back muffling", true, "audio.front_back_filter"));
-            // UI = per-announcement settings (global toggles) + per-element-type overrides discovered by
-            // reflection + the graph control-type registry (ControlTypes.All). Creates the "announcements"
-            // + "ui" categories under the settings Root — declared BEFORE Initialize like everything else.
+            // UI = per-announcement settings (global toggles) + the graph control-type override registry
+            // (ControlTypes.All). Creates the "announcements" + "ui" categories under the settings Root —
+            // declared BEFORE Initialize like everything else.
             UI.Announcements.AnnouncementRegistry.RegisterDefaults();
             // The graph announcer consults the same announcement settings (per control type + per kind).
             UI.Graph.GraphAnnouncer.PartFilter = (type, part) =>

@@ -38,7 +38,7 @@ namespace RTAccess
             try { UISounds.Instance?.PlayHoverSound((int)type.Value); } catch { }
         }
 
-        /// <summary>Play a specific UI sound (an element's <see cref="UI.UIElement.ActivateSound"/>); null
+        /// <summary>Play a specific UI sound (a control's blueprint-typed activate sound); null
         /// = play nothing.</summary>
         public static void Play(BlueprintUISound.UISound sound)
         {

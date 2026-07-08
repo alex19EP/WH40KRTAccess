@@ -164,20 +164,6 @@ namespace RTAccess.UI.Announcements
 
         public static string DeriveAnnouncementKey(Type annType) => ToSnake(StripSuffix(annType.Name, "Announcement"));
 
-        public static string DeriveElementKey(Type elType)
-        {
-            var attr = elType.GetCustomAttribute<ElementSettingsKeyAttribute>();
-            if (attr != null) return attr.Key;
-            return ToSnake(StripPrefix(StripSuffix(elType.Name, "Element"), "Proxy"));
-        }
-
-        private static string DeriveElementDisplayName(Type elType)
-        {
-            var attr = elType.GetCustomAttribute<ElementSettingsKeyAttribute>();
-            if (attr != null) return SnakeToTitle(attr.Key);
-            return DeriveDisplayName(StripPrefix(StripSuffix(elType.Name, "Element"), "Proxy"));
-        }
-
         private static string DeriveDisplayName(string pascal)
         {
             var sb = new StringBuilder(pascal.Length + 4);
@@ -216,7 +202,5 @@ namespace RTAccess.UI.Announcements
 
         private static string StripSuffix(string name, string suffix)
             => name.EndsWith(suffix) ? name.Substring(0, name.Length - suffix.Length) : name;
-        private static string StripPrefix(string name, string prefix)
-            => name.StartsWith(prefix) ? name.Substring(prefix.Length) : name;
     }
 }

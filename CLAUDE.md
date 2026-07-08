@@ -113,20 +113,20 @@ attaches the **`GraphNavigator`** — the pull-based key-graph core ported from 
 by `ControlId` identity, and a focus change is **announced exactly once no matter what caused
 it** (input, screen-moved focus, VM swap/rebuild). Never hand-write announce calls around
 focus mutations — the frame differ owns that.
-Screens come in two kinds:
-- **Adapter (legacy)**: retained `Container`/`UIElement` trees with per-widget **Proxies**
-  (`UI/Proxies/`) mirroring the game's live VMs; compiled by `TreeGraphAdapter` per frame.
-- **Graph-native**: `BuildsGraph => true` + `Build(GraphBuilder)` declaring nodes fresh from
-  live game state each render (immediate mode — node contents hold **NO view state**: read the
-  game's own state, flip it via the game's own methods; read the SELECTION, not hover-poisoned
-  reactives; some control state lives on game VIEWS, not VMs — reflect the live view).
-**Policy: every NEW screen is born graph-native.** When a legacy screen migrates, the
-VM-contract knowledge in its proxies moves into a node factory and the proxy is deleted once
-its last user is gone (waves + WA recipe commits: `docs/plans/keyed-graphing-tarjan.md`).
-Either way we read/activate by driving the game's own VMs and handlers, and a spoken
-browse-label **mirrors what the card shows visually** (tooltip-only detail stays on Space).
-Upstream sync rule: WA `graph-nav` deleted its element layer at HEAD — adapter-era files are
-pinned at WA `4715f3d`; take only core `Graph/*` fixes, tests, and native-screen recipes.
+**The graph IS the navigation model** (the element layer — UIElement/Container/FlowSheet/
+TreeGraphAdapter/proxies — was deleted in the teardown; there are no "adapter screens" anymore).
+Every screen overrides `Build(GraphBuilder)`, declaring nodes fresh from live game state each
+render (immediate mode — node contents hold **NO view state**: read the game's own state, flip
+it via the game's own methods; read the SELECTION, not hover-poisoned reactives; some control
+state lives on game VIEWS, not VMs — reflect the live view). A raw-capture screen (key-bind
+dialog) simply declares nothing. Shared spoken contracts live in node factories (`UI/GraphNodes`,
+`ItemNodes`, `DialogNodes`, `CharGenNodes`, `ActionBarNodes`, `GraphSheet`); `UI/Proxies/` holds
+only `DialogChoiceGate` (an EventSystem ownership gate, not a widget). Migration history:
+`docs/plans/keyed-graphing-tarjan.md`.
+We read/activate by driving the game's own VMs and handlers, and a spoken browse-label
+**mirrors what the card shows visually** (tooltip-only detail stays on Space).
+Upstream sync rule: track WrathAccess **`main`** (graph-nav merged into it; the old adapter-era
+pin is history) — take core `Graph/*` fixes, tests, and screen recipes.
 
 **Keyboard ownership** is per-chord arbitration, not a blanket mute: `FocusMode` +
 `KeyboardArbitration` suppress only the chords the mod claims each frame, and `GameKeybinds`
@@ -172,7 +172,9 @@ Load-bearing knowledge about how the game world works (all verified in-harness):
 - `UI/` — `Navigation` facade + `GraphNavigator`, `UI/Graph/` (the BCL-only key-graph core:
   KeyGraph, GraphBuilder, differ/announcer — pinned to upstream, tested by link from `tests/`;
   run `just test` or `dotnet test tests/RTAccess.Tests.csproj`, never the slnx),
-  `TreeGraphAdapter` + `UI/Proxies/` (adapter-era per-widget VM adapters), `UI/Announcements/`.
+  the node factories (`GraphNodes`, `ItemNodes`, `DialogNodes`, `CharGenNodes`, `ActionBarNodes`,
+  `GraphSheet`), `UI/Proxies/` (only `DialogChoiceGate` — the dialogue EventSystem ownership
+  gate), `UI/Announcements/` (settings-marker kinds + the control-type override registry).
 - `Accessibility/` — event readers/announcers (`ExplorationEvents`, `BarkEvents`, `CombatEvents`,
   `WarningReader`, `ConvictionEvents`, `LogTap`, `SelectionAnnouncer`, `TileExplorer`, …).
 - `Exploration/` — `WorldModel` (per-frame entity registry), `Scanner` (the review/scan cursor),

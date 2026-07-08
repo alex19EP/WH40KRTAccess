@@ -33,7 +33,7 @@ namespace RTAccess.UI
     /// (equip-comparison templates precede it — the same end the game's ShowInfo reads), resolved live
     /// per press and routed through <see cref="TooltipChooser"/> (body + inline glossary links).</item>
     /// <item>Hover is silent (<c>NoSound</c>) — dense item grids, which the game keeps quiet too;
-    /// activation keeps the generic click the adapter's UIElement default played (the game's own
+    /// activation keeps the generic click (the game's own
     /// loot/transfer sounds ride the command it fires).</item>
     /// <item>Every action drives the game's OWN handler (the exact call/event the sighted click makes);
     /// the post-action confirmation ("X taken.") rides <see cref="NodeVtable.StateText"/> — spoken
@@ -395,7 +395,7 @@ namespace RTAccess.UI
         }
 
         // The shared item-row shell: label + "item" role, silent hover (dense grid), the item's own
-        // tooltip on Space, generic click on activation (the adapter's UIElement default — the game's
+        // tooltip on Space, generic click on activation (the game's
         // loot/transfer sounds ride the fired command).
         private static NodeVtable ItemRow(ItemSlotVM slot, Action activate, Func<string> stateText)
         {
