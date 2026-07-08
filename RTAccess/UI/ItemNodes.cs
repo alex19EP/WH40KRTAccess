@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Kingmaker;                                              // Game (favorite command)
+using Kingmaker.Blueprints.Items.Augments;                    // BlueprintItemAugment (equip guard)
 using Kingmaker.Blueprints.Root.Strings;                      // UIStrings (context-menu labels)
 using Kingmaker.Cargo;                                        // CargoHelper (auto-add-to-cargo gate)
+using Kingmaker.Code.UI.MVVM.VM.ContextMenu;                  // ContextMenuCollectionEntity (the game's menu model)
 using Kingmaker.Code.UI.MVVM.VM.Loot;    // InsertableLootSlotVM, InteractionSlotPartVM
 using Kingmaker.Code.UI.MVVM.VM.MessageBox;                   // DialogMessageBoxBase (search text entry)
 using Kingmaker.Code.UI.MVVM.VM.SelectorWindow;               // InventorySelectorWindowVM
@@ -13,6 +15,7 @@ using Kingmaker.PubSubSystem;                                 // IDialogMessageB
 using Kingmaker.PubSubSystem.Core;       // EventBus
 using Kingmaker.UI.Common;               // InventoryHelper
 using Kingmaker.UI.MVVM.VM.ServiceWindows.Inventory;          // EquipSelectorSlotVM (the OTHER namespace)
+using Warhammer.SpaceCombat.Blueprints;                       // BlueprintStarshipItem (equip guard)
 using Owlcat.Runtime.UI.Tooltips;        // TooltipBaseTemplate
 using RTAccess.Accessibility;                                 // TooltipReader, GlossaryLinks
 using RTAccess.UI.Graph;
@@ -316,43 +319,63 @@ namespace RTAccess.UI
             return slotName + ": " + name;
         }
 
-        // The live context-menu set — mirrors InventorySlotPCView.SetupContextMenu, each entry gated by
-        // the same VM predicate, evaluated AT OPEN (a non-applicable action just isn't listed). Labels are
-        // the game's own localized context-menu strings (pass-through game content). Every verb routes
-        // through the same EventBus / GameCommandQueue contracts InventorySlotView uses.
+        // The item context menu, built as the game's OWN entity list (a ContextMenuCollectionEntity per verb)
+        // and surfaced through the shared ContextMenuNodes driver — the same model the game's right-click uses.
+        // Entries, order, labels, Condition (⇒ shown) and IsInteractable (⇒ clickable, else greyed) mirror
+        // InventorySlotPCView.SetupContextMenu EXACTLY, so the menu can't drift from the game the way a
+        // hand-picked subset did. We can't read ItemSlotVM.ContextMenu directly here: it is populated by the
+        // live PC VIEW's SetupContextMenu, which never runs for the virtualized off-screen slots the parallel
+        // nav tree still walks — so we rebuild the identical list from VM state, each verb still routing
+        // through the game's own EventBus / GameCommandQueue contracts (never a reimplemented flow).
         private static void OpenStashMenu(ItemSlotVM slot)
         {
-            var labels = new List<string>();
-            var runs = new List<Action>();
-            void Add(bool when, string entry, Action run) { if (when) { labels.Add(entry); runs.Add(run); } }
-
             var item = slot.Item.Value;
             var cm = UIStrings.Instance.ContextMenu;
+            var loot = UIStrings.Instance.LootWindow;
+            // The starship/augment equip guard only applies while the Inventory window is showing (the game
+            // reads RootUiContext.IsInventoryShow) — off it, the same slot in a loot window CAN equip them.
+            bool inv = Game.Instance.RootUiContext.IsInventoryShow;
+            bool isStarship = inv && item?.Blueprint is BlueprintStarshipItem;
+            bool isAugment = inv && item?.Blueprint is BlueprintItemAugment;
 
-            Add(slot.IsEquipPossible, cm.Equip.Text, () => Equip(slot));
-            Add(slot.IsInStash && slot.CanTransferToCargo, UIStrings.Instance.LootWindow.SendToCargo.Text,
-                () => EventBus.RaiseEvent<IInventoryHandler>(h => h.TryMoveToCargo(slot, true)));
-            Add(slot.SlotsGroupType == ItemSlotsGroupType.Cargo && slot.CanTransferToInventory,
-                UIStrings.Instance.LootWindow.SendToInventory.Text,
-                () => EventBus.RaiseEvent<IInventoryHandler>(h => h.TryMoveToInventory(slot, true)));
-            Add(slot.IsPosibleSplit, cm.Split.Text,
-                () => EventBus.RaiseEvent<INewSlotsHandler>(h => h.HandleTrySplitSlot(slot)));
-            Add(slot.HasItem && slot.IsInStash, cm.Drop.Text,
-                () => EventBus.RaiseEvent<IInventoryHandler>(h => h.TryDrop(slot)));
-            Add(slot.HasItem, (item != null && item.IsFavorite) ? cm.RemoveFromFav.Text : cm.AddToFav.Text,
-                () =>
-                {
-                    var it = slot.Item.Value;
-                    if (it != null) Game.Instance.GameCommandQueue.AddRemoveItemAsFavorite(it);
-                });
-            // Auto-add-to-Cargo: a per-item toggle (the game shows a checkmark) — we append its on/off state.
-            Add(item != null && CargoHelper.CanTransferFromCargo(item) && CargoHelper.CanTransferToCargo(item),
-                cm.AutoAddToCargo.Text + ", " + Loc.T(item != null && item.ToCargoAutomatically ? "value.on" : "value.off"),
-                () => slot.AddToCargoAutomatically());
+            var entities = new List<ContextMenuCollectionEntity>
+            {
+                // Equip — shown when equippable in principle and not a starship/augment item; clickable only
+                // when there's an unlocked slot to take it (else greyed, as the game shows it).
+                new ContextMenuCollectionEntity(cm.Equip, () => Equip(slot),
+                    slot.IsEquipPossible && !(isStarship || isAugment), slot.IsEquipToUnlockedSlotPossible),
+                // Send to Cargo — always listed in the stash, greyed unless the item can transfer.
+                new ContextMenuCollectionEntity(loot.SendToCargo,
+                    () => EventBus.RaiseEvent<IInventoryHandler>(h => h.TryMoveToCargo(slot, true)),
+                    true, slot.IsInStash && slot.CanTransferToCargo),
+                // Send to Inventory — the cargo-side counterpart.
+                new ContextMenuCollectionEntity(loot.SendToInventory,
+                    () => EventBus.RaiseEvent<IInventoryHandler>(h => h.TryMoveToInventory(slot, true)),
+                    true, slot.SlotsGroupType == ItemSlotsGroupType.Cargo && slot.CanTransferToInventory),
+                // Favorite toggle — label reflects the current state; clickable while an item is present.
+                new ContextMenuCollectionEntity((item != null && item.IsFavorite) ? cm.RemoveFromFav : cm.AddToFav,
+                    () => { var it = slot.Item.Value; if (it != null) Game.Instance.GameCommandQueue.AddRemoveItemAsFavorite(it); },
+                    true, item != null),
+                // Auto-add-to-Cargo — a per-item toggle; the game shows a checkmark, we fold the on/off state
+                // into the label (a plain-string entity so the driver reads the composed text).
+                new ContextMenuCollectionEntity(
+                    cm.AutoAddToCargo.Text + ", " + Loc.T(item != null && item.ToCargoAutomatically ? "value.on" : "value.off"),
+                    () => slot.AddToCargoAutomatically(),
+                    item != null && CargoHelper.CanTransferFromCargo(item) && CargoHelper.CanTransferToCargo(item)),
+                // Split — a stack of more than one.
+                new ContextMenuCollectionEntity(cm.Split,
+                    () => EventBus.RaiseEvent<INewSlotsHandler>(h => h.HandleTrySplitSlot(slot)),
+                    slot.IsPosibleSplit),
+                // Drop — the game gates this on CanEquip (not "in stash"); mirror it exactly.
+                new ContextMenuCollectionEntity(cm.Drop,
+                    () => EventBus.RaiseEvent<IInventoryHandler>(h => h.TryDrop(slot)),
+                    slot.CanEquip),
+                // Information — the item's own card (our accessible equivalent of the game's ShowInfo).
+                new ContextMenuCollectionEntity(cm.Information, () => OpenItemTooltip(slot), slot.HasItem),
+            };
 
-            if (labels.Count == 0) { Tts.Speak(Loc.T("inv.no_actions"), interrupt: true); return; }
-            RTAccess.Screens.ChoiceSubmenuScreen.Open(ItemLabel(slot, withFavorite: true), labels, -1,
-                idx => { if (idx >= 0 && idx < runs.Count) runs[idx]?.Invoke(); });
+            ContextMenuNodes.Open(ItemLabel(slot, withFavorite: true), entities,
+                onEmpty: () => Tts.Speak(Loc.T("inv.no_actions"), interrupt: true));
         }
 
         // Space on a stash item: its own card (the LAST template), plus any LEADING compare-vs-equipped
