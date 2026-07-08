@@ -104,12 +104,36 @@ namespace RTAccess.UI
         internal GraphRender CurrentRender => _graph?.Current;
         internal ControlId FocusedNodeId => _graph?.CurrentNode?.Id;
 
-        // Screens declare fresh from live game state on every render (immediate mode).
+        // Screens declare fresh from live game state on every render (immediate mode). ISOLATED: a screen's
+        // Build reads live VMs that Owlcat disposes/recreates mid-transition (and reads reactives non-
+        // defensively), so a throw here must NOT escape to Main.OnUpdate and skip the rest of the mod tick —
+        // repeating every frame while the bad state persists would mute the mod for a blind player. Swallow it
+        // (log once per (screen, exception signature)) and render nothing this frame; focus state survives, so
+        // the next good render reconciles back. ScreenManager Safe()-wraps its own lifecycle hooks but Build
+        // routes through the navigator, escaping that net — this is the equivalent guard for the render path.
         private GraphRender BuildRender(Screens.Screen screen)
         {
-            var b = new GraphBuilder(_state.Expanded); // groups consult the persistent expansion set
-            screen.Build(b);
-            return b.Build();
+            try
+            {
+                var b = new GraphBuilder(_state.Expanded); // groups consult the persistent expansion set
+                screen.Build(b);
+                return b.Build();
+            }
+            catch (System.Exception e)
+            {
+                LogBuildFailureOnce(screen, e);
+                return null; // treated as "no content" — Rerender returns false and leaves focus intact
+            }
+        }
+
+        // Dedupe the storm: while a bad transition-window state persists, Build throws every frame — log the
+        // first occurrence of each (screen, exception signature) and stay silent after so the log isn't flooded.
+        private readonly HashSet<string> _loggedBuildFailures = new HashSet<string>();
+        private void LogBuildFailureOnce(Screens.Screen screen, System.Exception e)
+        {
+            string key = (screen?.Key ?? "?") + "|" + e.GetType().Name + ":" + e.Message;
+            if (_loggedBuildFailures.Add(key))
+                Main.Log?.Error("Screen.Build threw for '" + (screen?.Key ?? "?") + "': " + e);
         }
 
         public override void Blur()
@@ -126,6 +150,11 @@ namespace RTAccess.UI
         /// path replaces per-callsite announce decisions.</summary>
         public override void EnsureFocus()
         {
+            // While we own focus, keep the game view holding no EventSystem selection so its Submit (Enter)
+            // path can't fire behind our own activation (the generalized DialogChoiceGate fix). Runs before
+            // the early-return: it self-gates on focus/text-field state and no-ops when we don't own focus.
+            EventSystemGate.Tick();
+
             if (Screen == null || _graph == null) return;
 
             if (_state.CurKey == null && _pendingFocus == null)
@@ -514,8 +543,13 @@ namespace RTAccess.UI
 
         public override void TickTypeahead()
         {
+            // Mirror InputManager.Tick's typing-safety guard: stand down (and drop any pending search) while a
+            // text field is live — our TextEntry driving a game field, or the game's own field selected — so
+            // typing a character / ship / save name doesn't also drive type-ahead search (focus drift + spurious
+            // speech). InputManager.Tick early-returns on the same predicate for the rest of our input.
             if (Screen == null || Screen.CapturesRawInput || !Screen.AllowsTypeahead
-                || !FocusMode.Active || _graph?.CurrentNode == null)
+                || !FocusMode.Active || _graph?.CurrentNode == null
+                || TextEntry.SuppressInput || Kingmaker.UI.InputSystems.KeyboardAccess.IsInputFieldSelected())
             {
                 if (_search.IsSearchActive || _search.HasBuffer) ClearSearch(announce: false);
                 _lastTypeaheadScreen = Screen;

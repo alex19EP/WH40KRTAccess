@@ -208,7 +208,7 @@ namespace RTAccess.Screens
             }
 
             var usable = new List<WeaponSetVM>();
-            foreach (var s in sets) if (s != null && s.IsEnabled.Value) usable.Add(s);
+            foreach (var s in sets) if (s != null && s.IsEnabled?.Value == true) usable.Add(s);
             if (usable.Count == 0) usable.Add(sets[0]);
 
             if (usable.Count > 1)
@@ -254,18 +254,18 @@ namespace RTAccess.Screens
             b.SetRegion(k + "defenses");
             b.PushContext(Loc.T("inv.defenses"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural(uk + "def:deflection"),
-                StatLine(() => Loc.T("stat.deflection", new { value = s.ArmorDeflection.Value }), () => s.DeflectionTooltip.Value));
+                StatLine(() => Loc.T("stat.deflection", new { value = s.ArmorDeflection?.Value }), () => s.DeflectionTooltip?.Value));
             b.AddItem(ControlId.Structural(uk + "def:absorption"),
-                StatLine(() => Loc.T("stat.absorption", new { value = s.ArmorAbsorption.Value }), () => s.AbsorptionTooltip.Value));
+                StatLine(() => Loc.T("stat.absorption", new { value = s.ArmorAbsorption?.Value }), () => s.AbsorptionTooltip?.Value));
             b.AddItem(ControlId.Structural(uk + "def:dodge"),
-                StatLine(() => Loc.T("stat.dodge", new { value = s.Dodge.Value }), () => s.DodgeTooltip.Value));
+                StatLine(() => Loc.T("stat.dodge", new { value = s.Dodge?.Value }), () => s.DodgeTooltip?.Value));
             b.AddItem(ControlId.Structural(uk + "def:dodge_reduction"),
-                StatLine(() => Loc.T("stat.dodge_reduction", new { value = s.DodgeReduction.Value })));
-            if (!string.IsNullOrEmpty(s.Resolve.Value) && s.Resolve.Value != "—")
+                StatLine(() => Loc.T("stat.dodge_reduction", new { value = s.DodgeReduction?.Value })));
+            if (!string.IsNullOrEmpty(s.Resolve?.Value) && s.Resolve?.Value != "—")
                 b.AddItem(ControlId.Structural(uk + "def:resolve"),
-                    StatLine(() => Loc.T("stat.resolve", new { value = s.Resolve.Value })));
+                    StatLine(() => Loc.T("stat.resolve", new { value = s.Resolve?.Value })));
             b.AddItem(ControlId.Structural(uk + "def:parry"),
-                StatLine(() => Loc.T("stat.parry", new { value = s.Parry.Value })));
+                StatLine(() => Loc.T("stat.parry", new { value = s.Parry?.Value })));
             b.PopContext();
         }
 
@@ -289,8 +289,8 @@ namespace RTAccess.Screens
             if (enc != null)
                 b.AddItem(ControlId.Structural(k + "sum:enc"), GraphNodes.Text(() =>
                 {
-                    var status = enc.LoadStatus.Value;
-                    var load = enc.LoadWeight.Value + (string.IsNullOrEmpty(status) ? "" : ", " + status);
+                    var status = enc.LoadStatus?.Value;
+                    var load = (enc.LoadWeight?.Value ?? "") + (string.IsNullOrEmpty(status) ? "" : ", " + status);
                     return Loc.T("inv.encumbrance", new { value = load });
                 }));
             b.AddItem(ControlId.Structural(k + "sum:gold"),
@@ -316,7 +316,7 @@ namespace RTAccess.Screens
             b.AddItem(ControlId.Structural(k + "filter"), Cycler(
                 () => Loc.T("inv.filters"),
                 () => filters.ConvertAll(t => LocalizedTexts.Instance.ItemsFilter.GetText(t)),
-                () => Math.Max(0, filters.IndexOf(stash.CurrentFilter.Value)),
+                () => { var cf = stash?.ItemsFilter?.CurrentFilter; return cf != null ? Math.Max(0, filters.IndexOf(cf.Value)) : 0; },
                 i => { if (i >= 0 && i < filters.Count) filter.SetCurrentFilter(filters[i]); }));
 
             var sorters = SortOptions;
@@ -382,7 +382,7 @@ namespace RTAccess.Screens
                 foreach (var slot in vis)
                 {
                     if (slot == null || !slot.HasItem) continue;
-                    var ent = slot.Item.Value;
+                    var ent = slot.Item?.Value;
                     if (ent == null) continue;
                     b.AddItem(ControlId.Referenced(ent, k + "stash:" + ent.UniqueId), ItemNodes.InventoryItem(slot));
                     any = true;
