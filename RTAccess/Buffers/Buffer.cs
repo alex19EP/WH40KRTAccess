@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Owlcat.Runtime.UI.Tooltips;
 
 namespace RTAccess.Buffers;
 
@@ -8,12 +9,17 @@ namespace RTAccess.Buffers;
 /// (Alt+Up/Down within a buffer, Alt+Left/Right between buffers — see <see cref="BufferControls"/>). A buffer
 /// is orthogonal to focus navigation — a parallel review channel onto a live thing (a unit, …). Subclasses
 /// bind a live game object and override <see cref="Update"/> to repopulate from it, so a buffer always reads
-/// the current state when navigated. Ported from WrathAccess (sibling WOTR mod), itself from SayTheSpire2;
-/// the buffer name is a hardcoded English <see cref="Label"/> (no localization table in RTAccess yet).
+/// the current state when navigated. A line may carry a game tooltip template (the same detail a sighted
+/// player hovers for), opened on demand by <see cref="BufferControls.Detail"/>. Ported from WrathAccess
+/// (sibling WOTR mod), itself from SayTheSpire2; the buffer name is a hardcoded English <see cref="Label"/>
+/// (no localization table in RTAccess yet).
 /// </summary>
 internal class Buffer
 {
     private readonly List<string> _contents = new List<string>();
+    // Lockstep with _contents: the line's on-demand detail source (null for a plain line). A provider, not a
+    // template — built lazily on the Detail keypress so a stale line can't hold a torn-down template alive.
+    private readonly List<Func<TooltipBaseTemplate>> _details = new List<Func<TooltipBaseTemplate>>();
 
     /// <summary>The spoken buffer name (hardcoded English, supplied at construction).</summary>
     public string Label { get; }
@@ -33,8 +39,14 @@ internal class Buffer
 
     public Buffer(string label) { Label = label; }
 
-    public void Add(string item) { if (!string.IsNullOrEmpty(item)) _contents.Add(item); }
-    public void Clear() { _contents.Clear(); Position = 0; }
+    public void Add(string item) => Add(item, null);
+    public void Add(string item, Func<TooltipBaseTemplate> detail)
+    {
+        if (string.IsNullOrEmpty(item)) return;
+        _contents.Add(item);
+        _details.Add(detail);
+    }
+    public void Clear() { _contents.Clear(); _details.Clear(); Position = 0; }
     public bool IsEmpty => _contents.Count == 0;
     public int Count => _contents.Count;
 
@@ -47,6 +59,10 @@ internal class Buffer
             return _contents[Position];
         }
     }
+
+    /// <summary>The current line's detail-template provider, or null for a plain line.</summary>
+    public Func<TooltipBaseTemplate> CurrentDetail
+        => _contents.Count == 0 || Position >= _details.Count ? null : _details[Position];
 
     public bool MoveToNext()
     {

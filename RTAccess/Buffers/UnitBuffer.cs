@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates; // TooltipTemplateBuff (buff-line detail)
 using Kingmaker.Controllers.Combat;     // GetCombatStateOptional()
 using Kingmaker.EntitySystem.Entities;  // BaseUnitEntity, UnitEntity
 using Kingmaker.RuleSystem;             // Rulebook
@@ -58,12 +59,17 @@ internal sealed class UnitBuffer : Buffer
         Add(DefenseLine(unit));
 
         // Visible buffs/debuffs in game order — Buff.Hidden already folds in the blueprint's IsHiddenInUI and
-        // the buff's suppression, matching the game's own buff panel.
+        // the buff's suppression, matching the game's own buff panel. Each line carries the game's OWN buff
+        // tooltip (TooltipTemplateBuff — description, source, and the non-stack conflict list, audit #20) as
+        // its on-demand detail, exactly what a sighted player reads hovering the icon.
         var buffs = unit.Buffs;
         if (buffs != null)
             foreach (var buff in buffs)
                 if (buff != null && !buff.Hidden)
-                    Add(BuffLine(buff));
+                {
+                    var b = buff; // pin for the lazy detail closure
+                    Add(BuffLine(b), () => new TooltipTemplateBuff(b));
+                }
     }
 
     // "absorption 35 percent, deflection 4, dodge 20 percent, parry 15 percent" — the RT defense values, each
@@ -118,7 +124,9 @@ internal sealed class UnitBuffer : Buffer
         // #20 Non-stack conflict — the game shows BuffVM.ShowNonStackNotification when this buff's bonus is being
         // overridden by a stronger non-stacking one; UnitPartNonStackBonuses.ShouldShowWarning(buff) is the same
         // source the VM reads. The part only tracks party companions (see HandleModifierAdded's IsPlayer /
-        // IsInCompanionRoster gate), so this is parity-safe with no visibility gate needed.
+        // IsInCompanionRoster gate), so this is parity-safe with no visibility gate needed. This inline marker
+        // mirrors the card's warning badge; WHICH sources conflict is tooltip detail (TooltipBrickNonStack in
+        // the game's buff tooltip), reached through the line's detail template above — as the sighted split is.
         if (buff.Owner?.GetOptional<UnitPartNonStackBonuses>()?.ShouldShowWarning(buff) ?? false)
             line += ", " + Loc.T("buffer.non_stack");
 

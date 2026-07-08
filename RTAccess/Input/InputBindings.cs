@@ -36,6 +36,11 @@ namespace RTAccess.Input
                 () => { if (InAGame()) RTAccess.Buffers.BufferControls.PrevItem(); }).AddBinding(KeyCode.UpArrow, alt: true).Repeating();
             InputManager.Register("buffer.line_next", "Next review line", InputCategory.Global,
                 () => { if (InAGame()) RTAccess.Buffers.BufferControls.NextItem(); }).AddBinding(KeyCode.DownArrow, alt: true).Repeating();
+            // Alt+T ("tooltip") — the current review line's detail via the game's own tooltip template (a
+            // buff's description / non-stack sources). Alt+Space and Alt+Enter are OS-claimed on Windows
+            // (system menu / display toggle), so the mnemonic letter is the safe chord in the Alt layer.
+            InputManager.Register("buffer.detail", "Read details of the current review line", InputCategory.Global,
+                () => { if (InAGame()) RTAccess.Buffers.BufferControls.Detail(); }).AddBinding(KeyCode.T, alt: true);
 
             // L — open the message-log review (a child overlay: channel tabs + newest-first history, with
             // per-line tooltip / glossary drill-in). Global + self-gated so it opens in surface/space and over

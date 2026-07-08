@@ -462,6 +462,12 @@ namespace RTAccess.Screens
                     if (i == tracker.RoundIndex + 1)
                         b.AddItem(ControlId.Structural("hud:round"), GraphNodes.Text(
                             () => RoundDividerLabel(SurfaceHUD()?.InitiativeTrackerVM?.Value)));
+                    // #17 squads render collapsed on the tracker: a member's card is hidden behind the leader's
+                    // (which carries the alive-count badge) unless the player expands the squad — the NeedToShow
+                    // toggle InitiativeTrackerSquadLeaderVM propagates leader→members. Mirror the exact
+                    // InitiativeTrackerVerticalView filter so the review speaks one entry per squad, after the
+                    // divider check above so a skipped member can't swallow the round boundary.
+                    if (vm.IsInSquad.Value && !vm.IsSquadLeader.Value && !vm.NeedToShow.Value) continue;
                     var row = vm; // loop-local copy for the closure
                     b.AddItem(ControlId.Referenced(row, "hud:init:" + (row.Unit?.UniqueId ?? "slot" + i)),
                         GraphNodes.Text(() => InitiativeLabel(row)));
@@ -483,6 +489,12 @@ namespace RTAccess.Screens
                     vm.IsEnemy.Value  ? "combat.faction_enemy"
                   : vm.IsPlayer.Value ? "combat.faction_ally"
                   :                     "combat.faction_neutral"));
+
+                // #17 the leader card's squad badge (SurfaceCombatUnitOrderView shows m_SquadNumber only when
+                // IsSquadLeader && HasAliveUnitsInSquad; SquadCount = living members). Member cards are collapsed
+                // out by the queue walk, so the squad reads as one entry carrying its strength.
+                if (vm.IsSquadLeader.Value && vm.HasAliveUnitsInSquad.Value)
+                    sb.Append(", ").Append(Loc.T("combat.squad_of", new { n = vm.SquadCount.Value }));
 
                 // #9 Per-card HP (the card renders UIUtility.GetHpText). Only read a foe's HP the game itself would
                 // show — party units are always visible, enemy/neutral only when IsVisibleForPlayer (belt-and-braces

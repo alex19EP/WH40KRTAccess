@@ -104,6 +104,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 - **Sighted reads it at:** `SurfaceCombatUnitVM.cs:62,281` (`SquadCount` = alive squad members); `SurfaceCombatUnitOrderView.cs:192-198` (squad number shown when `IsSquadLeader`).
 - **Mod status:** *missing grouping* — grep `squad` = 0; underlying members are individually voiced by the scanner, so lower impact than raw "missing".
 - **Fix:** In the scanner unit label / `BattlefieldSummary`, when `IsSquadLeader && HasAliveUnitsInSquad` append localized "squad leader, N alive" (`SquadCount.Value`); tag non-leaders "squad member". Source from `PartUnitSquad`/`m_SquadOptional`, gated on already-visible/`CurrentlySeen`.
+- **✅ Implemented (2026-07-08):** two surfaces. Scanner: `ProxyUnit.Detail` reads `GetSquadOptional()?.Squad` and tags `unit.squad_leader` ("squad leader, N alive") / `unit.squad_member`, leader mirroring the VM's first-living-member fallback, visibility-gated. Initiative review: the `InGameScreen` queue walk now mirrors the sighted collapse (`InitiativeTrackerVerticalView` hides `IsInSquad && !IsSquadLeader && !NeedToShow` cards) and appends `combat.squad_of` from `SquadCount` on the leader card — squads read as one entry with their strength, as on screen.
 
 #### 18. Weapon-ability ammo cost per activation (ammo-cost badge)
 - **Sighted reads it at:** `ActionBarSlotVM.cs:50,222` (`AmmoCost`, distinct from Current/Max ammo); `SurfaceActionBarSlotWeaponAbilityView.cs:52-88` (separate `m_AmmoCost` badge, shown when > 0).
@@ -119,6 +120,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 - **Sighted reads it at:** `BuffVM.cs:27,72-79` (`ShowNonStackNotification`), `BuffPCView.cs:47-49` (badge), `TooltipTemplateBuff.cs:205-210` (`TooltipBrickNonStack` lists overriding sources).
 - **Mod status:** *missing* — `UnitBuffer.cs:82-89` reads name+rank+duration only; grep `NonStack` = 0. Parity-safe (`UnitPartNonStackBonuses.cs:82` is party-only).
 - **Fix:** In `UnitBuffer.BuffLine`, query `buff.Owner?.GetOptional<UnitPartNonStackBonuses>()?.ShouldShowWarning(buff)` and append `buffer.non_stack` ("bonus overridden"); list overriding source names on Space via `GetBuffList`/`GetItemsList`.
+- **✅ Implemented (2026-07-08):** the inline `buffer.non_stack` marker mirrors the card badge (earlier sweep); the source list now rides the game's OWN tooltip instead of re-derived strings — buffer lines can carry a detail template (`Buffer.Add(line, () => tpl)`), `UnitBuffer` hands each buff line `TooltipTemplateBuff(buff)`, and a new **Alt+T** (`buffer.detail`) opens it through `TooltipChooser`/the view-factory scraper, which renders `TooltipBrickNonStack` (localized header + conflicting item/buff names) with no per-brick mod code. Bonus: Alt+T also reads any buff's full description from the buffer, which had no detail path at all.
 
 #### 21. Momentum / Resolve running delta (per kill/turn) voiced live
 - **Sighted reads it at:** `RulePerformMomentumChangeLogThread.cs:13-38` (every change emits `MomentumValueChanged` with delta + current + reason).
@@ -136,6 +138,10 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 - **Fix:** In `CursorTail`, replace the single total-count loop (`:89-92`) with a walk of `pattern.NodesWithExtraData` tallying `MainCell` (or `position == ApplicationNode.position`) vs the rest; when main count > 1 speak "N main-impact tiles, M splash tiles". No new API — mod already holds the `OrientedPatternData`.
 
 #### 24. Enemy shield (starship) value + predicted shield damage
+> **Deferred (2026-07-08): removed from this plan.** Space/starship combat accessibility will be its own plan;
+> this item moves there. The passive current/max void-shield readout is already live (`ProxyUnit` speaks
+> `unit.shields` from `ShieldsSum`/`ShieldsMaxSum`, visibility-gated); the predicted-shield-damage half needs
+> the armed starship weapon and belongs to the starship aim path.
 - **Sighted reads it at:** `OvertipHealthBlockVM.cs:38-44,160-183` (`UpdateEnemyShields`, gated `IsPlayerEnemy`) populates current/max shield + predicted min/max shield damage via `AbilityDataHelper.GetStarshipDamagePrediction`.
 - **Mod status:** *missing* — grep `[Ss]hield` across `RTAccess/` = 0 files; the only `Starship` hits are unrelated inventory access.
 - **Fix:** In the enemy HP/prediction readout (`HitPredictor` + `ProxyUnit`/`Inspect`), detect `StarshipEntity` targets and append a shield line mirroring the overtip — current/max shield + predicted min-max shield damage from `AbilityDataHelper.GetStarshipDamagePrediction(...).resultShields`, gated identically on `IsPlayerEnemy`/visibility. New localized "shield" string.

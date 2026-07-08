@@ -5,6 +5,7 @@ using Kingmaker.UI.Common;                        // UIUtilityUnit.GetSurfaceEne
 using Kingmaker.UnitLogic;                        // HasMechanicFeature (ext)
 using Kingmaker.UnitLogic.Enums;                  // MechanicsFeatureType (HideRealHealthInUI), UnitCondition (Stunned)
 using Kingmaker.UnitLogic.Parts;                  // UnitPartInteractions (HasDialogInteractions)
+using Kingmaker.UnitLogic.Squads;                 // GetSquadOptional (squad grouping)
 using UnityEngine;
 
 namespace RTAccess.Exploration;
@@ -166,6 +167,31 @@ internal sealed class ProxyUnit : ScanItem
                     {
                         int tier = UIUtilityUnit.GetSurfaceEnemyDifficulty(_unit);
                         if (tier > 0) bits.Add(Loc.T("unit.threat_tier", new { n = tier }));
+                    }
+                    // #17 squad grouping — the tracker collapses a squad to its leader's card with an
+                    // alive-count badge; on the battlefield the members are ordinary visible units with no
+                    // cue that they act as one initiative slot. Tag each: the leader carries the strength,
+                    // members their membership. Leader mirrors SurfaceCombatUnitVM's formula — the flagged
+                    // leader, falling back to the first LIVING member once that leader is dead.
+                    if (_unit.IsPlayerFaction || _unit.IsVisibleForPlayer)
+                    {
+                        var squad = _unit.GetSquadOptional()?.Squad;
+                        if (squad != null)
+                        {
+                            int alive = 0;
+                            object firstAlive = null;
+                            foreach (var r in squad.Units)
+                            {
+                                var e = r.Entity;
+                                if (e == null || e.IsDead) continue;
+                                alive++;
+                                firstAlive ??= e;
+                            }
+                            if (alive > 1)
+                                bits.Add(_unit.IsSquadLeader || ReferenceEquals(firstAlive, _unit)
+                                    ? Loc.T("unit.squad_leader", new { count = alive })
+                                    : Loc.T("unit.squad_member"));
+                        }
                     }
                     if (_unit.IsInCombat) bits.Add("in combat");
                     // #7 Turn-status marker — mirrors SurfaceCombatUnitVM's own priority (will-lose-turn folds

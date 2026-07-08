@@ -3,10 +3,12 @@ using RTAccess.Speech;
 namespace RTAccess.Buffers;
 
 /// <summary>
-/// The four buffer review actions, bound to Alt+arrows (wired by the main session in InputBindings):
-/// Alt+Left/Right cycle between buffers (announcing the buffer's name + its current line), Alt+Up/Down move
-/// through the current buffer's lines (announcing just the line). Speech interrupts so rapid scrolling stays
-/// responsive (the interrupt-on-keypress rule). Spoken strings resolve through the locale table (see Loc / ui.json).
+/// The buffer review actions (wired by the main session in InputBindings): Alt+Left/Right cycle between
+/// buffers (announcing the buffer's name + its current line), Alt+Up/Down move through the current buffer's
+/// lines (announcing just the line), Alt+T opens the current line's detail — the game's own tooltip for the
+/// line's subject (a buff's description / non-stack sources), through the same chooser the graph's Space
+/// uses. Speech interrupts so rapid scrolling stays responsive (the interrupt-on-keypress rule). Spoken
+/// strings resolve through the locale table (see Loc / ui.json).
 /// </summary>
 internal static class BufferControls
 {
@@ -25,6 +27,18 @@ internal static class BufferControls
         var b = BufferManager.Instance.CurrentBuffer;
         b?.MoveToPrevious();
         ReportItem(b);
+    }
+
+    // The current line's on-demand detail: render its game tooltip template (if the line carries one) through
+    // the shared chooser — the exact Space experience on graph nodes, including the "No tooltip" fallback for
+    // a plain line (TooltipChooser speaks it for a null/empty render). Title = the line itself, so the reader
+    // announces what the detail belongs to.
+    public static void Detail()
+    {
+        var b = BufferManager.Instance.CurrentBuffer;
+        if (b == null) { Speaker.Speak(Loc.T("buffer.none_selected"), interrupt: true); return; }
+        if (b.IsEmpty) { Speaker.Speak(Loc.T("buffer.empty", new { label = b.Label }), interrupt: true); return; }
+        RTAccess.UI.TooltipChooser.OpenTemplate(b.CurrentItem, b.CurrentDetail?.Invoke());
     }
 
     // Switching buffers reads "<buffer>. <current line>" (or empty / none).
