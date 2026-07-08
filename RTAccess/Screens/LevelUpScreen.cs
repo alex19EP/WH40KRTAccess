@@ -94,12 +94,7 @@ namespace RTAccess.Screens
 
         // ---- resolution (Surface OR Space — the character sheet opens in both) ----
 
-        private static ServiceWindowsVM ServiceWindows()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            return rc?.SurfaceVM?.StaticPartVM?.ServiceWindowsVM
-                ?? rc?.SpaceVM?.StaticPartVM?.ServiceWindowsVM;
-        }
+        private static ServiceWindowsVM ServiceWindows() => UiContexts.ServiceWindows();
 
         private static UnitProgressionVM Vm() => Vm(ServiceWindows()?.CharacterInfoVM?.Value);
 

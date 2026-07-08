@@ -46,12 +46,7 @@ namespace RTAccess.Screens
 
         // Loot opens on the planet surface AND in the star-system/space context; resolve from whichever static part is
         // live (the LootContextVM is a sibling of ServiceWindowsVM on both).
-        private static LootVM Vm()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            return rc?.SurfaceVM?.StaticPartVM?.LootContextVM?.LootVM?.Value
-                ?? rc?.SpaceVM?.StaticPartVM?.LootContextVM?.LootVM?.Value;
-        }
+        private static LootVM Vm() => UiContexts.Loot();
 
         // The chest slot group is the first ContextLoot view (all stash items in PlayerChest mode); the party inventory
         // is InventoryStash's group. Both rebuild their visible collection on every transfer.

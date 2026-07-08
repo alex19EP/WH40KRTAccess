@@ -104,12 +104,7 @@ namespace RTAccess.Screens
 
         // ---- resolution (Surface OR Space — the sheet opens in both exploration and star-system) ----
 
-        private static ServiceWindowsVM ServiceWindows()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            return rc?.SurfaceVM?.StaticPartVM?.ServiceWindowsVM
-                ?? rc?.SpaceVM?.StaticPartVM?.ServiceWindowsVM;
-        }
+        private static ServiceWindowsVM ServiceWindows() => UiContexts.ServiceWindows();
 
         // The unit whose sheet the window is showing (the VM binds to this), NOT SelectionCharacter.SelectedUnit.
         private static BaseUnitEntity SheetUnit()
@@ -495,20 +490,8 @@ namespace RTAccess.Screens
             return Loc.T("charinfo.modifier", new { source = src, value });
         }
 
-        // Mirrors InGameScreen.AppendWounds: current/max wounds, temp HP, and the 40K trauma stacks.
-        private static string WoundsLine(BaseUnitEntity unit)
-        {
-            var h = unit.Health;
-            if (h == null) return null;
-            var sb = new StringBuilder();
-            sb.Append(Loc.T("unit.wounds", new { current = h.HitPointsLeft, max = h.MaxHitPoints }));
-            if (h.TemporaryHitPoints > 0)
-                sb.Append(", ").Append(Loc.T("unit.wounds_temp", new { temp = h.TemporaryHitPoints }));
-            if (h.WoundFreshStacks > 0)
-                sb.Append(", ").Append(Loc.T("charinfo.fresh_wounds", new { count = h.WoundFreshStacks }));
-            if (h.WoundOldStacks > 0)
-                sb.Append(", ").Append(Loc.T("charinfo.old_wounds", new { count = h.WoundOldStacks }));
-            return sb.ToString();
-        }
+        // Shared with InGameScreen.AppendWounds via UnitReads: current/max wounds + temp HP, here WITH the
+        // 40K trauma stacks (fresh/old wounds).
+        private static string WoundsLine(BaseUnitEntity unit) => UnitReads.Wounds(unit, withTrauma: true);
     }
 }

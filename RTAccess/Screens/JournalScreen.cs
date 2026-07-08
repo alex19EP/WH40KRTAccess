@@ -42,12 +42,7 @@ namespace RTAccess.Screens
         }
 
         // ---- VM access (Surface OR Space — the journal opens in both contexts) ----
-        private static ServiceWindowsVM ServiceWindows()
-        {
-            var ctx = Game.Instance?.RootUiContext;
-            return ctx?.SurfaceVM?.StaticPartVM?.ServiceWindowsVM
-                ?? ctx?.SpaceVM?.StaticPartVM?.ServiceWindowsVM;
-        }
+        private static ServiceWindowsVM ServiceWindows() => UiContexts.ServiceWindows();
 
         private static JournalVM Jv() => ServiceWindows()?.JournalVM?.Value;
 

@@ -35,13 +35,7 @@ namespace RTAccess.Screens
 
         public override bool IsActive() => Vm() != null;
 
-        private static ExitLocationWindowVM Vm()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            var loot = rc?.SurfaceVM?.StaticPartVM?.LootContextVM?.LootVM?.Value
-                    ?? rc?.SpaceVM?.StaticPartVM?.LootContextVM?.LootVM?.Value;
-            return loot?.ExitLocationWindowVM?.Value;
-        }
+        private static ExitLocationWindowVM Vm() => UiContexts.Loot()?.ExitLocationWindowVM?.Value;
 
 
         public override void Build(GraphBuilder b)

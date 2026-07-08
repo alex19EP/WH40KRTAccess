@@ -27,12 +27,7 @@ namespace RTAccess.Screens
             => Game.Instance?.RootUiContext?.CurrentServiceWindow == ServiceWindowsType.ColonyManagement
                && Vm() != null;
 
-        private static ServiceWindowsVM ServiceWindows()
-        {
-            var ctx = Game.Instance?.RootUiContext;
-            return ctx?.SurfaceVM?.StaticPartVM?.ServiceWindowsVM
-                ?? ctx?.SpaceVM?.StaticPartVM?.ServiceWindowsVM;
-        }
+        private static ServiceWindowsVM ServiceWindows() => UiContexts.ServiceWindows();
 
         private static ColonyManagementVM Vm() => ServiceWindows()?.ColonyManagementVM?.Value;
 

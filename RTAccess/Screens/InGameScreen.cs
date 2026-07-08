@@ -555,10 +555,9 @@ namespace RTAccess.Screens
 
         private static void AppendWounds(StringBuilder sb, BaseUnitEntity unit)
         {
-            var h = unit?.Health;
-            if (h == null) return;
-            sb.Append(", ").Append(Loc.T("unit.wounds", new { current = h.HitPointsLeft, max = h.MaxHitPoints }));
-            if (h.TemporaryHitPoints > 0) sb.Append(", ").Append(Loc.T("unit.wounds_temp", new { temp = h.TemporaryHitPoints }));
+            // Shared with CharacterInfoScreen.WoundsLine via UnitReads (no trauma stacks on the HUD line).
+            var line = RTAccess.Accessibility.UnitReads.Wounds(unit);
+            if (line != null) sb.Append(", ").Append(line);
         }
 
         private static string NameOf(MechanicEntity e)

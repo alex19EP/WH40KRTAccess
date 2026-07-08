@@ -45,12 +45,7 @@ namespace RTAccess.Screens
         // The selector lives on the currently-viewed doll of whichever inventory window is live (surface or space),
         // mirroring InventoryScreen.Vm()'s resolution.
         private static InventorySelectorWindowVM Selector()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            var vm = rc?.SurfaceVM?.StaticPartVM?.ServiceWindowsVM?.InventoryVM?.Value
-                  ?? rc?.SpaceVM?.StaticPartVM?.ServiceWindowsVM?.InventoryVM?.Value;
-            return vm?.DollVM?.InventorySelectorWindowVM?.Value;
-        }
+            => UiContexts.Inventory()?.DollVM?.InventorySelectorWindowVM?.Value;
 
 
         public override void Build(GraphBuilder b)

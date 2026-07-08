@@ -64,19 +64,9 @@ namespace RTAccess.Screens
 
         // Inventory opens on the planet surface AND in the star-system/space context; resolve from whichever
         // static part is live (RootUIContext checks both everywhere — IsInventoryShow / CurrentServiceWindow).
-        private static InventoryVM Vm()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            return rc?.SurfaceVM?.StaticPartVM?.ServiceWindowsVM?.InventoryVM?.Value
-                ?? rc?.SpaceVM?.StaticPartVM?.ServiceWindowsVM?.InventoryVM?.Value;
-        }
+        private static InventoryVM Vm() => UiContexts.Inventory();
 
-        private static ServiceWindowsVM ServiceWindows()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            return rc?.SurfaceVM?.StaticPartVM?.ServiceWindowsVM
-                ?? rc?.SpaceVM?.StaticPartVM?.ServiceWindowsVM;
-        }
+        private static ServiceWindowsVM ServiceWindows() => UiContexts.ServiceWindows();
 
 
         public override void Build(GraphBuilder b)

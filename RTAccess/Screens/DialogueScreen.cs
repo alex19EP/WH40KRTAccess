@@ -17,85 +17,38 @@ using UniRx;
 namespace RTAccess.Screens
 {
     /// <summary>
-    /// An in-game conversation (the common <see cref="DialogVM"/>) as ONE graph stop that reads like a
-    /// transcript: the scrollback (the game's own pre-formatted <c>DialogVM.History</c> lines — past cues and
-    /// chosen answers), then the CURRENT cue row, then the answers. A new cue re-keys the cue node and
-    /// <see cref="OnUpdate"/> points focus at it SILENTLY — you hear the line via the cue announcement, press
-    /// Down for the answers/Continue, or Up to re-read earlier lines.
+    /// An in-game conversation (the common <see cref="DialogVM"/>) on the shared
+    /// <see cref="TranscriptScreen{TVm,TId}"/> shell — ONE graph stop that reads like a transcript: the
+    /// scrollback (the game's own pre-formatted <c>DialogVM.History</c> lines — past cues and chosen answers),
+    /// then the CURRENT cue row, then the answers. A new cue re-keys the cue node and the shell points focus at
+    /// it SILENTLY — you hear the line via the cue announcement, press Down for the answers/Continue, or Up to
+    /// re-read earlier lines.
     ///
-    /// Graph-native and IMMEDIATE MODE: declared fresh from the live VM each render, so new cues / history
-    /// appear without any rebuild bookkeeping. We speak a line only once it is actually delivered: the dialogue
-    /// panel is visible (<see cref="DialogVM.IsVisible"/> — the engine drops it during cutscene/escmenu/pause,
-    /// RT's replacement for WOTR's <c>m_CutsceneScheduled</c>) AND not faded behind a designer mid-cue black
-    /// screen (<see cref="DialogContextVM.ToggleDialogFadeCommand"/>, shadowed into <see cref="_dialogFaded"/>).
-    /// Each cue is announced once, QUEUED — dialogue never interrupts speech. Book events / epilogues are a
-    /// separate screen. The transient notification block (reputation shifts, item/XP/Profit Factor gains,
-    /// companion ability/buff gains) is NOT read here: those flow through the game's log and are voiced by
-    /// <see cref="RTAccess.Accessibility.LogTap"/> — conviction (soul-mark) shifts, the one thing the game never
-    /// logs, by <see cref="RTAccess.Accessibility.ConvictionEvents"/>.
+    /// IMMEDIATE MODE: declared fresh from the live VM each render, so new cues / history appear without any
+    /// rebuild bookkeeping. We speak a line only once it is actually delivered: the dialogue panel is visible
+    /// (<see cref="DialogVM.IsVisible"/> — the engine drops it during cutscene/escmenu/pause, RT's replacement
+    /// for WOTR's <c>m_CutsceneScheduled</c>) AND not faded behind a designer mid-cue black screen
+    /// (<see cref="DialogContextVM.ToggleDialogFadeCommand"/>, shadowed into <see cref="_dialogFaded"/>) — the
+    /// shell's <see cref="Deliverable"/> gate. Each cue is announced once, QUEUED — dialogue never interrupts
+    /// speech. Book events / epilogues are a separate screen. The transient notification block (reputation
+    /// shifts, item/XP/Profit Factor gains, companion ability/buff gains) is NOT read here: those flow through
+    /// the game's log and are voiced by <see cref="RTAccess.Accessibility.LogTap"/> — conviction (soul-mark)
+    /// shifts, the one thing the game never logs, by <see cref="RTAccess.Accessibility.ConvictionEvents"/>.
     /// </summary>
-    public sealed class DialogueScreen : Screen
+    public sealed class DialogueScreen : TranscriptScreen<DialogVM, CueVM>
     {
         public override string Key => "ctx.dialogue";
         public override string ScreenName => Loc.T("screen.dialog");
-        public override int Layer => 15; // over the in-game context + service windows
-        // Dialogue "pops" without closing (it hides during cutscene gaps / under the pause menu) —
-        // keep the nav state so focus survives the gap.
-        public override bool KeepStateOnPop => true;
 
         private DialogContextVM _subCtx; // the context our fade subscription belongs to
         private IDisposable _fadeSub;
         private bool _dialogFaded;
 
-        private DialogVM _convVm;  // the conversation the focus/speak markers belong to (a fresh VM per conversation)
-        // Cues are tracked by their stable BlueprintCue identity, NOT the CueVM instance: DialogVM.HandleOnCueShow
-        // builds a fresh CueVM per fire and can re-fire for the same cue at dialog start, so instance-keyed dedup
-        // would re-home and re-announce the first cue twice. The CueVM instance is the fallback key for
-        // string-only cues that carry no BlueprintCue.
-        private CueVM _focusedCue;          // instance focus was last homed to (fallback key)
-        private BlueprintCue _focusedCueBp; // blueprint focus was last homed to (primary key)
-        private CueVM _spokenCue;           // instance we've announced (fallback key)
-        private BlueprintCue _spokenCueBp;  // blueprint we've announced (primary key)
+        // The conversation the focus/speak markers belong to (a fresh DialogVM per conversation). The shell's
+        // _focused/_spoken markers key on cue identity; this latches the conversation so a fresh VM re-homes.
+        private DialogVM _convVm;
 
-        // In-area OR star-system context — the DialogContextVM lives on whichever StaticPartVM is live
-        // (Surface or Space), exactly as RootUIContext.HasDialog resolves it.
-        private static DialogContextVM Context()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            if (rc == null) return null;
-            return rc.IsSpace
-                ? rc.SpaceVM?.StaticPartVM?.DialogContextVM
-                : rc.SurfaceVM?.StaticPartVM?.DialogContextVM;
-        }
-
-        private static DialogVM Vm() => Context()?.DialogVM?.Value;
-
-        public override bool IsActive() => Vm() != null; // == RootUiContext.HasDialog
-
-        public override void OnPush() { Reset(); }
-
-        // A hide (cutscene gap / pause menu) POPS us with KeepStateOnPop=true. Clear ONLY the focus marker so the
-        // next OnUpdate re-homes focus to the CURRENT cue (WA ff35982 — otherwise re-showing lands on the oldest
-        // transcript row); keep the spoken marker so the cue isn't re-read on a mere hide. A real close (the
-        // conversation ended, Vm()==null) fully resets.
-        public override void OnPop()
-        {
-            _focusedCue = null; _focusedCueBp = null;
-            if (Vm() == null) Reset();
-        }
-
-        private void Reset()
-        {
-            _convVm = null;
-            _focusedCue = null;
-            _focusedCueBp = null;
-            _spokenCue = null;
-            _spokenCueBp = null;
-            _fadeSub?.Dispose();
-            _fadeSub = null;
-            _subCtx = null;
-            _dialogFaded = false;
-        }
+        protected override DialogVM Vm() => Context()?.DialogVM?.Value; // == RootUiContext.HasDialog
 
         // Escape opens the game's pause menu, exactly like the game's own Esc during a conversation —
         // required for save/load/quit/settings mid-dialogue. Without this the dialogue screen swallows
@@ -106,14 +59,12 @@ namespace RTAccess.Screens
                 _ => EventBus.RaiseEvent<IEscMenuHandler>(h => h.HandleOpen()));
         }
 
-        public override void OnUpdate()
+        // Pre-identity hook: shadow the fade command on whatever context is live; re-subscribe on a context swap
+        // (area change), and reset the flag — the fade actions only ever target the surface context, so in space
+        // the command never fires and _dialogFaded stays false. Then, on a fresh conversation VM, clear the
+        // shell's markers so its first cue re-homes + re-announces.
+        protected override void PreUpdate(DialogVM vm)
         {
-            var vm = Vm();
-            if (vm == null) return;
-
-            // Shadow the fade command on whatever context is live; re-subscribe on a context swap (area
-            // change), and reset the flag — the fade actions only ever target the surface context, so in
-            // space the command never fires and _dialogFaded stays false.
             var ctx = Context();
             if (!ReferenceEquals(ctx, _subCtx))
             {
@@ -125,38 +76,49 @@ namespace RTAccess.Screens
                     _fadeSub = ctx.ToggleDialogFadeCommand.Subscribe(v => _dialogFaded = v);
             }
 
-            // A new conversation is a fresh DialogVM: force a re-home + re-announce of its first cue.
             if (!ReferenceEquals(vm, _convVm))
             {
                 _convVm = vm;
-                _focusedCue = null; _focusedCueBp = null;
-                _spokenCue = null; _spokenCueBp = null;
+                _focused = null;
+                _spoken = null;
             }
-
-            var cue = vm.Cue.Value;
-            if (cue == null) return;
-
-            // On a new cue (or after a hide cleared the focus marker), point focus at the cue node SILENTLY —
-            // the delivery announcement below is the speech, and the frame differ would otherwise double-speak.
-            // FocusNode is a request the navigator applies once the cue node is in the render (Build declares
-            // it live this frame). announce:false always here.
-            if (!SameCue(cue, _focusedCue, _focusedCueBp))
-            {
-                _focusedCue = cue; _focusedCueBp = cue.BlueprintCue;
-                Navigation.Active?.FocusNode(CueId(vm, cue), announce: false);
-            }
-
-            // Speak once delivered: panel visible and not faded. Once per cue, QUEUED (never interrupting).
-            if (!SameCue(cue, _spokenCue, _spokenCueBp) && vm.IsVisible.Value && !_dialogFaded)
-            {
-                _spokenCue = cue; _spokenCueBp = cue.BlueprintCue;
-                var line = DialogText.BuildCueLine(cue, includeSpeaker: true);
-                if (!string.IsNullOrEmpty(line)) Tts.Speak(line, interrupt: false);
-            }
-
-            TryNumberSelect(vm);
         }
 
+        protected override CueVM Identity(DialogVM vm) => vm.Cue.Value;
+
+        // Delivered only when the panel is visible and not faded — a queued Enter can't fire (nor a line be
+        // spoken) into a cutscene-hidden cue.
+        protected override bool Deliverable(DialogVM vm) => vm.IsVisible.Value && !_dialogFaded;
+
+        protected override ControlId HomeNode(DialogVM vm, CueVM cue) => CueId(vm, cue);
+
+        protected override void SpeakLine(DialogVM vm, CueVM cue)
+        {
+            var line = DialogText.BuildCueLine(cue, includeSpeaker: true);
+            if (!string.IsNullOrEmpty(line)) Tts.Speak(line, interrupt: false);
+        }
+
+        protected override void PostUpdate(DialogVM vm) => TryNumberSelect(vm);
+
+        // True when this cue is the one already homed/announced, keyed on the stable BlueprintCue (falling back
+        // to the CueVM instance for string-only cues). Guards against DialogVM.HandleOnCueShow re-firing a fresh
+        // CueVM for the same line at dialog start, which would otherwise re-home and double-announce the first
+        // cue. The marker CueVM still carries its own BlueprintCue, so no separate blueprint field is needed.
+        protected override bool SameId(CueVM a, CueVM b)
+        {
+            if (b == null) return false;
+            return a.BlueprintCue != null ? ReferenceEquals(a.BlueprintCue, b.BlueprintCue) : ReferenceEquals(a, b);
+        }
+
+        protected override void Reset()
+        {
+            base.Reset(); // clears the shell's _focused / _spoken markers
+            _convVm = null;
+            _fadeSub?.Dispose();
+            _fadeSub = null;
+            _subCtx = null;
+            _dialogFaded = false;
+        }
 
         public override void Build(GraphBuilder b)
         {
@@ -314,12 +276,6 @@ namespace RTAccess.Screens
             if (!string.IsNullOrEmpty(text)) Tts.Speak(text, interrupt: true);
             DialogChoiceGate.Choose(match);
         }
-
-        // True when this cue is the one already homed/announced, keyed on the stable BlueprintCue (falling back
-        // to the CueVM instance for string-only cues). Guards against HandleOnCueShow re-firing a fresh CueVM for
-        // the same line at dialog start, which would otherwise re-home and double-announce the first cue.
-        private static bool SameCue(CueVM cue, CueVM instance, BlueprintCue bp)
-            => cue.BlueprintCue != null ? ReferenceEquals(cue.BlueprintCue, bp) : ReferenceEquals(cue, instance);
     }
 
     /// <summary>

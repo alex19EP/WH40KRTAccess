@@ -29,12 +29,7 @@ namespace RTAccess.Screens
 
         public override bool IsActive() => Vm() != null;
 
-        private static GroupChangerVM Vm()
-        {
-            var ctx = Game.Instance?.RootUiContext;
-            return ctx?.SurfaceVM?.StaticPartVM?.GroupChangerContextVM?.GroupChangerVm?.Value
-                ?? ctx?.SpaceVM?.StaticPartVM?.GroupChangerContextVM?.GroupChangerVm?.Value;
-        }
+        private static GroupChangerVM Vm() => UiContexts.GroupChanger();
 
 
         public override void Build(GraphBuilder b)

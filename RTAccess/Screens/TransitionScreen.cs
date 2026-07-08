@@ -51,12 +51,7 @@ namespace RTAccess.Screens
         public override bool IsActive() => Vm() != null;
 
         // Held on Surface OR Space static part (the map opens in both contexts), like ServiceWindows in JournalScreen.
-        private static TransitionVM Vm()
-        {
-            var ctx = Game.Instance?.RootUiContext;
-            return ctx?.SurfaceVM?.StaticPartVM?.TransitionVM?.Value
-                ?? ctx?.SpaceVM?.StaticPartVM?.TransitionVM?.Value;
-        }
+        private static TransitionVM Vm() => UiContexts.Transition();
 
         // Rooms worth listing: every reachable destination + your current location (for orientation). Undiscovered
         // rooms (IsVisible == false and not interactable) are hidden on the visual map too, so we omit them.

@@ -54,12 +54,7 @@ namespace RTAccess.Screens
 
         // OneSlot opens on the planet surface AND in the star-system/space context; resolve from whichever static
         // part is live (the LootContextVM is a sibling of ServiceWindowsVM on both).
-        private static LootVM Vm()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            return rc?.SurfaceVM?.StaticPartVM?.LootContextVM?.LootVM?.Value
-                ?? rc?.SpaceVM?.StaticPartVM?.LootContextVM?.LootVM?.Value;
-        }
+        private static LootVM Vm() => UiContexts.Loot();
 
 
         public override void Build(GraphBuilder b)

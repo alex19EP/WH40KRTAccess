@@ -39,6 +39,12 @@ namespace RTAccess.Screens
         /// of its own (mirroring a page's old Tab topology — a description panel, a toggle block).</summary>
         protected abstract void BuildContent(GraphBuilder b, string k);
 
+        /// <summary>Content declared BEFORE the phase "content" stop — a subclass's leading strip that stays
+        /// first in Tab order (chargen's roadmap of jumpable phases). Default: nothing (the New Game wizard
+        /// opens straight on its page content). Keyed independently of the phase (a roadmap survives phase
+        /// changes), so no phase-prefix is passed; <see cref="InitialFocusStop"/> still lands on "content".</summary>
+        protected virtual void BuildLead(GraphBuilder b) { }
+
         protected abstract void OnBack();
         protected abstract void OnNext();
         protected abstract string NextLabel();
@@ -87,6 +93,9 @@ namespace RTAccess.Screens
 
             // Phase-carrying key prefix: advancing (or a VM swap) re-keys the whole page.
             string k = "wiz:" + vm.GetHashCode() + ":" + (phase != null ? phase.GetHashCode() : 0) + ":";
+
+            // Leading strip (chargen's roadmap), before the content stop so it stays first in Tab order.
+            BuildLead(b);
 
             // The phase's content, labeled with the phase name so entering it announces the phase.
             b.BeginStop("content").PushContext(PhaseLabel() ?? "");

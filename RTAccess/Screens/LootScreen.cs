@@ -56,12 +56,7 @@ namespace RTAccess.Screens
 
         // Loot opens on the planet surface AND in the star-system/space context; resolve from whichever static
         // part is live (the LootContextVM is a sibling of ServiceWindowsVM on both).
-        private static LootVM Vm()
-        {
-            var rc = Game.Instance?.RootUiContext;
-            return rc?.SurfaceVM?.StaticPartVM?.LootContextVM?.LootVM?.Value
-                ?? rc?.SpaceVM?.StaticPartVM?.LootContextVM?.LootVM?.Value;
-        }
+        private static LootVM Vm() => UiContexts.Loot();
 
         // Pass 1 (read/take: chest, environment, body) + Pass 2 (ZoneExit: mass-loot before leaving). OneSlot
         // (device insert) and PlayerChest (two-way stash) each have their own screen.
