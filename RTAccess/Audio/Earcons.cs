@@ -52,6 +52,19 @@ namespace RTAccess.Audio
         // driven by Exploration/FogCue on its own default-on toggle, so — unlike the rest of this deferred palette —
         // they bypass the master Enabled gate (see PlayUngated).
 
+        /// <summary>Formation editor: the glide cursor crossed ONTO a party member — a short bright blip.
+        /// Feature-owned (the editor is explicitly opened), so it bypasses the master gate like the fog cues.</summary>
+        public static void FormationEnter() => PlayUngated("form_enter", 1320, 60, 0.8f);
+
+        /// <summary>Formation editor: the glide cursor left a party member — the lower twin blip.</summary>
+        public static void FormationExit() => PlayUngated("form_exit", 990, 60, 0.8f);
+
+        /// <summary>Formation editor: the review cue at a member's layout offset — panned by lateral
+        /// position, attenuated by distance (both computed by the caller). Feature-owned, bypasses the gate.</summary>
+        public static void FormationReview(float pan, float gain)
+            => AudioMixer.Instance?.Play(Get("form_review", () => Chime(784, 90)), Volume * gain,
+                Math.Max(-1f, Math.Min(1f, pan)));
+
         /// <summary>Audition the whole palette in sequence (call from /eval to tune). Ignores
         /// <see cref="Enabled"/> so it can be heard even with the feature off.</summary>
         public static void Test()

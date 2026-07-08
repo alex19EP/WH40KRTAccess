@@ -13,6 +13,7 @@ using Kingmaker.View;
 using Kingmaker.View.Covers;
 using Kingmaker.View.MapObjects;
 using Kingmaker.View.MapObjects.InteractionComponentBase;
+using Kingmaker.View.MapObjects.Traps;           // TrapObjectView (trigger-zone footprint, audit #9)
 using UnityEngine;
 
 namespace RTAccess.Accessibility;
@@ -100,6 +101,13 @@ internal static class InteractableDescriber
         if (!seen) sb.Append("unexplored");
 
         var unit = seen && !hideUnits ? node.GetUnit() : null;
+        // Parity gate (main-HUD audit L2): the fog probe classifies the GROUND, not the occupant — a
+        // stealth-unspotted ambusher, an IsInvisible unit, or a scripted Features.Hidden NPC can stand on a
+        // lit tile with its view hidden (EntityVisibilityForPlayerController), invisible to a sighted player.
+        // Require the unit's OWN visibility with the same lens the scanner uses (ProxyUnit.IsVisible); this
+        // also covers NoFow maps, where every tile reads "seen" but hidden units stay hidden. A lootable
+        // corpse remains IsVisibleForPlayer, so the corpse readout below is unaffected.
+        if (unit != null && !(unit.IsPlayerFaction || unit.IsVisibleForPlayer)) unit = null;
         if (unit != null)
         {
             sb.Append(unit.CharacterName);
@@ -126,6 +134,13 @@ internal static class InteractableDescriber
         //     like a live creature (only on a currently-visible tile, hidden in fog) from the same placed-zone proxies
         //     the area scanner lists, so the wording matches and on-unit auras stay excluded.
         if (seen && !hideUnits) AppendZones(sb, node);
+
+        // 1c. Trap trigger-zone footprint (main-HUD audit #9): a revealed, armed trap renders its whole
+        //     trigger-zone mesh to sighted players (the warning decal + the zone's own force-enabled renderer),
+        //     so the OUTER tiles of a wide zone are visibly dangerous — not just the authored anchor point the
+        //     interactable headline names. Flag any probed tile inside the zone collider, gated exactly like the
+        //     decal (view visible && trap active).
+        if (seen) AppendTrapZone(sb, node);
 
         // 2. Combat tactical overlay, mirroring the game's own cover meshes (CoverVisualizer). The mesh shows a
         //    tile's per-edge cover whenever it is the player's turn (or the deployment phase) and the tile is
@@ -267,6 +282,36 @@ internal static class InteractableDescriber
         catch (Exception e) { Main.Log?.Error("DescribeTile hazard read failed: " + e); }
     }
 
+    /// <summary>Append the localized "trap zone" word when this tile lies inside a revealed, armed trap's
+    /// trigger-zone collider (main-HUD audit #9). The zone's MeshCollider is the one the game ensures on the
+    /// ScriptZoneTrigger's renderer and reparents under the trap view (<c>TrapObjectView.Collider</c>); a
+    /// downward collider raycast is the containment test (works on non-convex meshes, matches the rendered
+    /// XZ shape a sighted player sees). Gated exactly like the warning decal: view visible &amp;&amp; TrapActive.</summary>
+    private static void AppendTrapZone(StringBuilder sb, CustomGridNodeBase node)
+    {
+        try
+        {
+            var objs = Game.Instance?.State?.MapObjects;
+            if (objs == null) return;
+            var p = node.Vector3Position;
+            foreach (var mo in objs)
+            {
+                if (!(mo?.View is TrapObjectView tv)) continue;
+                if (!tv.IsVisible || tv.Data?.TrapActive != true) continue;
+                var col = tv.Collider;
+                if (col == null || !col.enabled) continue;
+                // Short vertical window (±1 m around the tile plane): the zone mesh lies on the floor, and a
+                // longer ray could cross into a zone on a storey below/above on multi-level maps.
+                if (col.Raycast(new Ray(p + Vector3.up * 1f, Vector3.down), out _, 2f))
+                {
+                    Append(sb, Loc.T("tile.trap_zone"));
+                    return; // one flag is enough — overlapping zones read identically
+                }
+            }
+        }
+        catch (Exception e) { Main.Log?.Error("DescribeTile trap-zone read failed: " + e); }
+    }
+
     /// <summary>Append "half/full cover &lt;dir&gt;" (or "blocked &lt;dir&gt;" for sight-blocking) for one edge, read
     /// with the same <paramref name="checkType"/> the game's cover mesh uses (BySource on the acting unit).</summary>
     private static void AppendCover(StringBuilder sb, CustomGridNodeBase node, int direction, string word,
@@ -355,6 +400,18 @@ internal static class InteractableDescriber
         // Trap parts (several subtypes) — match by name so we don't bind every concrete type.
         if (interaction != null && interaction.GetType().Name.Contains("Trap"))
             return tips?.Trap?.Text ?? "Trap";
+
+        // Area exits (main-HUD audit #2): a transition carries no InteractionPart — its name is the destination
+        // tooltip the sighted overtip shows persistently (OvertipTransitionVM.Title). Prefer the per-exit
+        // Tooltip(TooltipIndex) over the index-less TooltipDescription (the game's own local-map marker makes the
+        // same call, AreaTransitionPart.OnSettingsDidSet), falling back to the localized exit word when the
+        // designer left it empty. Without this case exits fell to the GameObject-name junk below.
+        var transition = (entity.Data as MapObjectEntity)?.GetOptional<AreaTransitionPart>();
+        if (transition != null)
+        {
+            var title = Clean(transition.AreaEnterPoint?.Tooltip(transition.Settings?.TooltipIndex ?? 0)?.Text);
+            return string.IsNullOrWhiteSpace(title) ? Loc.T("scan.singular.exit") : title;
+        }
 
         // Last resort: the GameObject name (minus the Unity "(Clone)" suffix). Never return empty — an
         // unnamed interactable should still announce something rather than just "N tiles, <dir>".

@@ -319,11 +319,16 @@ internal static class Scanner
 
         // Room name (RoomMap watershed): the planted cursor's room when scouting ahead, else the anchor's. Ready is
         // false for the first few frames after an area load (the map self-builds once the grid streams in).
+        // Parity gate (main-HUD audit L4): the room map is fog-free by construction, but a sighted player sees only
+        // blackness on never-seen ground — suppress the room id/class there (the "unexplored" tag below still fires).
         if (RoomMap.Ready)
         {
             var rpos = MapCursor.Has ? MapCursor.Position : (anchor != null ? anchor.Position : Vector3.zero);
-            var room = RoomMap.RoomAt(rpos);
-            if (room != null) parts.Add(RoomMap.Describe(room));
+            if (FogProbe.Classify(rpos) != FogProbe.FogState.NeverSeen)
+            {
+                var room = RoomMap.RoomAt(rpos);
+                if (room != null) parts.Add(RoomMap.Describe(room));
+            }
         }
 
         // Fog "unexplored": query the tile the player is oriented to — the planted cursor when the tile explorer is
@@ -356,10 +361,42 @@ internal static class Scanner
         _exitIndex = Wrap(_exitIndex + dir, exits.Count);
         var ex = exits[_exitIndex];
         MapCursor.Set(ex.Position); // plant so cursor.move_to (Backspace) walks the party to the opening
-        string line = Loc.T("exit.to_room", new { room = RoomMap.Describe(ex.To) })
+        // Parity gate (main-HUD audit L4): a wholly-unexplored destination room's id/class must not leak — degrade
+        // to the class-less "unexplored" line (centroid probe; a partially explored destination keeps its class,
+        // which the sighted map's explored layout already reveals).
+        string destination = FogProbe.Classify(ex.To.Centroid) == FogProbe.FogState.NeverSeen
+            ? Loc.T("exit.to_unexplored")
+            : Loc.T("exit.to_room", new { room = RoomMap.Describe(ex.To) });
+        // Audit #2 (second half): when the opening coincides with an area-transition object, name where it
+        // leads — the destination title the Exits category now resolves — so the V cycle carries the same
+        // decision-critical datum without a category switch. The proxy's own gate (revealed + awareness)
+        // rides along via IsVisible.
+        var transitionName = NearbyExitName(ex.Position);
+        string line = destination
+            + (transitionName != null ? ", " + transitionName : "")
             + ", " + RTAccess.Accessibility.InteractableDescriber.DirectionAndDistance(origin, ex.Position)
             + ", " + Loc.T("nav.position", new { index = _exitIndex + 1, count = exits.Count });
         Speak(line);
+    }
+
+    // The nearest visible area-transition scan item within ~2 tiles of a room-exit opening, by name — the
+    // destination title InteractableDescriber.ResolveName resolves for the Exits category (audit #2). Null
+    // when the opening is a plain doorway (no transition object) or the transition isn't revealed yet.
+    private static string NearbyExitName(Vector3 pos)
+    {
+        try
+        {
+            ScanItem best = null;
+            float bestSq = 7.3f; // (2 tiles ≈ 2.7 m)²
+            foreach (var it in WorldModel.Items)
+            {
+                if (it == null || !it.IsVisible || !it.HasNode(ScanTaxonomy.Exits)) continue;
+                float sq = (it.Position - pos).sqrMagnitude;
+                if (sq < bestSq) { bestSq = sq; best = it; }
+            }
+            return best?.Name;
+        }
+        catch { return null; }
     }
 
     // Is the loaded area part flagged indoors? Read from the blueprint's private IndoorType (any value but None is an
@@ -489,13 +526,16 @@ internal static class Scanner
     }
 
     // The "points of interest" category: area-wide local-map landmark pins (objective / POI / important / loot),
-    // wrapped as ScanItems and sourced from LocalMapModel.Markers, NOT the WorldModel snapshot. Objective / POI /
-    // important pins stay ungated (they are curated navigation aids the game means you to see, and marker.IsVisible()
-    // hides ordinary ones). LOOT pins, however, ARE perception-gated: an undiscovered loot pin leaks its location —
-    // verified in-game, two GoodLoot caches surfaced their pins with IsVisible()==false — so a Loot pin is listed
-    // only once the game says you can see it. Exit markers are deliberately excluded: area exits are surfaced as
-    // their real (activatable) world objects in the Exits category. Creature/Unit markers are excluded too — they
-    // belong to the party/enemies/neutrals cycles.
+    // wrapped as ScanItems and sourced from LocalMapModel.Markers, NOT the WorldModel snapshot. EVERY pin type is
+    // perception-gated on the game's own marker.IsVisible() (main-HUD audit L3): the sighted local map hides any
+    // pin whose IsVisible() is false — quest pins toggled Hidden by scripting (MarkOnLocalMap.SetHidden), owners
+    // not yet revealed/awareness-passed (LocalMapMarkerPart), dead/unconscious owners (AddLocalMapMarker) — and
+    // hidden pins STAY in LocalMapModel.Markers (SetHidden never detaches), so an ungated walk enumerates exactly
+    // the withheld ones. Suppressed owner entities are skipped too, matching LocalMapVM.SetMarkers. (The loot-pin
+    // half of this gate was verified in-game earlier: two undiscovered GoodLoot caches surfaced with
+    // IsVisible()==false.) Exit markers are deliberately excluded: area exits are surfaced as their real
+    // (activatable) world objects in the Exits category. Creature/Unit markers are excluded too — they belong to
+    // the party/enemies/neutrals cycles.
     private static List<ScanItem> MarkerList(Vector3 refPos)
     {
         var list = new List<ScanItem>();
@@ -503,15 +543,23 @@ internal static class Scanner
         {
             if (m == null) continue;
             var type = m.GetMarkerType();
+            if (type != LocalMapMarkType.Loot && type != LocalMapMarkType.Poi
+                && type != LocalMapMarkType.DestinationMark && type != LocalMapMarkType.VeryImportantThing) continue;
             if (!LocalMapModel.IsInCurrentArea(m.GetPosition())) continue;
-            // Undiscovered loot pins are a spoiler leak — gate them on the game's own perception check.
-            if (type == LocalMapMarkType.Loot) { if (SafeMarkerVisible(m)) list.Add(new ProxyMarker(m)); continue; }
-            if (type == LocalMapMarkType.Poi || type == LocalMapMarkType.DestinationMark
-                || type == LocalMapMarkType.VeryImportantThing)
-                list.Add(new ProxyMarker(m));
+            if (MarkerHidden(m)) continue;
+            list.Add(new ProxyMarker(m));
         }
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
+    }
+
+    // The full sighted-map gate for one pin: the game's own perception check (LocalMapCommonMarkerVM feeds
+    // IsVisible() to the view's SetActive) plus the Suppressed-entity filter from LocalMapVM.SetMarkers.
+    private static bool MarkerHidden(ILocalMapMarker m)
+    {
+        if (!SafeMarkerVisible(m)) return true;
+        try { return m.GetEntity()?.Suppressed == true; }
+        catch { return true; } // unreadable owner → treat as hidden, the safe side
     }
 
     // marker.IsVisible() is a perception check; guard it so a marker whose check throws doesn't sink the whole list
@@ -571,8 +619,11 @@ internal static class Scanner
         if (_selectedKey == null) return null;
         // Landmark selections (the points-of-interest category) aren't in the WorldModel registry — re-wrap the live
         // marker so Home-plant and the O re-announce keep working on them; null once it leaves the current area's set.
+        // Re-apply the sighted-map gate here too (main-HUD audit L3): hidden pins remain enumerable in Markers, so a
+        // selection made while visible must go stale the moment the game hides it — otherwise I (TravelTo) keeps
+        // working on a pin the sighted map has withdrawn.
         if (_selectedKey is ILocalMapMarker marker)
-            return LocalMapModel.Markers.Contains(marker) ? new ProxyMarker(marker) : null;
+            return LocalMapModel.Markers.Contains(marker) && !MarkerHidden(marker) ? new ProxyMarker(marker) : null;
         // Everything else keys on its backing entity — the persistent registry re-finds the SAME stable proxy in
         // O(1); null once it despawns or the area changes.
         return WorldModel.Find(_selectedKey);

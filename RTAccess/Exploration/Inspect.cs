@@ -17,9 +17,12 @@ namespace RTAccess.Exploration;
 /// area scanner's review selection; inspect.cursor (the ' key) inspects the tile cursor's occupant. An empty
 /// source just says "Nothing to inspect" (it never consults the other source).
 ///
-/// In RT, opening Inspect IS the knowledge reveal — both <see cref="Kingmaker.UI.MVVM.VM.Tooltip.Templates"/>
-/// inspect-template ctors call <c>InspectUnitsManager.ForceRevealUnitInfo</c> (the 2-arg one chains the 1-arg)
-/// — so there is no knowledge to "respect" or cheat past: we just do exactly what the game's own inspect does.
+/// Visibility gate (audit L1): the game only ever inspects units the sighted player can already SEE and click —
+/// <c>EntityVisibilityForPlayerController</c> hides the view of fog-covered / stealth-unspotted / invisible /
+/// <c>Features.Hidden</c> units, and <c>SetVisible(false)</c> also disables their click colliders, so no sighted
+/// inspect path exists for them. The <c>ForceRevealUnitInfo</c> call inside the inspect-template ctor is a
+/// consequence of inspecting a visible unit, not a license to inspect hidden ones — so <see cref="Run"/> requires
+/// the same lens the scanner uses (<c>IsPlayerFaction || IsVisibleForPlayer</c>) before raising the event.
 /// We raise the same <see cref="IUnitClickUIHandler"/> event the console inspect button raises, which the live
 /// <c>InGameInspectVM</c> turns into the template (built with proper reactive data) and a visible panel; then we
 /// read that template aloud via <see cref="TooltipReader.GetFull(TooltipBaseTemplate)"/>. That gives byte-for-byte
@@ -44,6 +47,10 @@ internal static class Inspect
     private static void Run(BaseUnitEntity unit)
     {
         if (unit == null) { Speak(Loc.T("inspect.none")); return; }
+        // Parity gate (audit L1): a unit the sighted player cannot see (fog / stealth-unspotted / invisible /
+        // scripted-hidden — all folded into IsVisibleForPlayer via View.IsVisible) must read as an empty tile,
+        // and its NAME must not leak either — so answer exactly like a null occupant, not with inspect.cant.
+        if (!(unit.IsPlayerFaction || unit.IsVisibleForPlayer)) { Speak(Loc.T("inspect.none")); return; }
         if (!InspectUnitsHelper.IsInspectAllow(unit)) { Speak(Loc.T("inspect.cant", new { name = unit.CharacterName })); return; }
 
         // Drive the game's own inspect. This is the only handler of the event (InspectVM), so the sole effects are

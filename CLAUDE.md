@@ -149,8 +149,10 @@ Load-bearing knowledge about how the game world works (all verified in-harness):
   (there is no `LockpickVM`).
 - **Inspect readout**: raise `EventBus.RaiseEvent<IUnitClickUIHandler>(h => h.HandleUnitConsoleInvoke(unit))`,
   then read `…SurfaceHUDVM.InspectVM.Tooltip.Value` via `TooltipReader` (`Exploration/Inspect.cs`, key K).
-  Opening Inspect **force-reveals** the unit persistently, so reading it aloud is sighted parity — no
-  knowledge gating to preserve.
+  **Gate on `IsPlayerFaction || IsVisibleForPlayer` first** — the game only inspects units the sighted player
+  can already see and click (`EntityVisibilityForPlayerController` hides fog/stealth/invisible/`Features.Hidden`
+  units AND disables their click colliders); the template's `ForceRevealUnitInfo` is a consequence of inspecting
+  a visible unit, not a license to inspect hidden ones (main-HUD audit L1).
 - **Reading VM text is field-first, not property-first.** Owlcat VMs expose their strings as `public
   readonly` **fields** — usually `ReactiveProperty<string>` (unwrap `.Value`) — not C# properties, so a
   `GetProperty`-only reflection scrape silently misses them; check field *or* property. Beware too that

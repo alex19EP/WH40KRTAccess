@@ -6,6 +6,14 @@
 > **15 findings confirmed, 1 refuted** (see appendix). Each verifier's corrections are folded into the finding
 > text below and override the original candidate wording.
 >
+> **Status (2026-07-08, same day): ALL 15 findings implemented, compile-clean.** The 5 parity leaks are
+> gated, the 9 smaller completeness gaps are closed, and #4 landed as the full WrathAccess-ported
+> `FormationScreen`/`FormationField` (preset radio + WASD 2-D editing field with pick-up/place, Shift+WASD
+> glide with member-crossing cues, Comma review + Slash plant, Alt+digit grab, restore/preserve/close).
+> A 20-agent adversarial review of the implementation confirmed 8 distinct follow-up defects (worst: spoken
+> ability hotkeys off-by-one when an overdrive ability sits in the bar; "Paused" chatter on every pausing
+> UI window) — all fixed in the same change set.
+>
 > **Scope.** The main-game (surface) HUD during **real-time exploration** — everything a sighted player sees
 > while walking around an area out of turn-based combat, out of dialogs, out of full-screen windows. Excluded:
 > the turn-based combat HUD (see `docs/combat-hud-parity-audit.md`), space/starship combat and the system/warp
@@ -14,7 +22,7 @@
 
 ## Executive summary
 
-The mod is **broadly at parity** for real-time exploration: the large majority of the 257 sighted-HUD information items across the passive-narration, exploration-scanning, action-bar, party-portrait, overtip and notification surfaces already reach a blind player — the full game-log corpus via `LogTap`, the whole warning/toast strip (including `addToLog:false` toasts), barks, loading-screen banners and hints, level-up and weapon-set announcers, the visibility-correct scanner / tile-cursor / sonar stack, the complete action-bar decision readout, the service-window button strip, tutorial and deck-transition screens, and the on-demand K gauges. There are **10 verified completeness gaps** (2 high, 6 medium, 2 low). The two high-severity ones are structural: **quest/objective notification banners are never spoken** — no game-log thread exists for quests, so the otherwise-universal `LogTap` channel *cannot* carry them (the single highest-value passive-narration gap on the surface HUD) — and **area-exit destinations are never named**, so the Exits category the scanner already lists cannot disambiguate which exit leads where. There are **5 verified parity leaks** (1 high, 3 medium, 1 low), and the systemic pattern differs from the combat audit: the proxy/scanner lens correctly folds the game's whole sighted-visibility model (`IsVisibleForPlayer` → fog + stealth + invisibility + `Features.Hidden`), but the **self-built raw-grid channels bypass it** — the Quote-key inspect resolver (high: an ungated fog/stealth oracle that persistently force-reveals never-seen units), the tile-cursor occupant read, the room map, and the wall tones all gate (at most) on the *tile's* fog state while the game gates on the *unit's own* visibility — and the points-of-interest list skips the game's `ILocalMapMarker.IsVisible()` for every non-loot pin type. **All findings below are open as of 2026-07-08.**
+The mod is **broadly at parity** for real-time exploration: the large majority of the 257 sighted-HUD information items across the passive-narration, exploration-scanning, action-bar, party-portrait, overtip and notification surfaces already reach a blind player — the full game-log corpus via `LogTap`, the whole warning/toast strip (including `addToLog:false` toasts), barks, loading-screen banners and hints, level-up and weapon-set announcers, the visibility-correct scanner / tile-cursor / sonar stack, the complete action-bar decision readout, the service-window button strip, tutorial and deck-transition screens, and the on-demand K gauges. There are **10 verified completeness gaps** (2 high, 6 medium, 2 low). The two high-severity ones are structural: **quest/objective notification banners are never spoken** — no game-log thread exists for quests, so the otherwise-universal `LogTap` channel *cannot* carry them (the single highest-value passive-narration gap on the surface HUD) — and **area-exit destinations are never named**, so the Exits category the scanner already lists cannot disambiguate which exit leads where. There are **5 verified parity leaks** (1 high, 3 medium, 1 low), and the systemic pattern differs from the combat audit: the proxy/scanner lens correctly folds the game's whole sighted-visibility model (`IsVisibleForPlayer` → fog + stealth + invisibility + `Features.Hidden`), but the **self-built raw-grid channels bypass it** — the Quote-key inspect resolver (high: an ungated fog/stealth oracle that persistently force-reveals never-seen units), the tile-cursor occupant read, the room map, and the wall tones all gate (at most) on the *tile's* fog state while the game gates on the *unit's own* visibility — and the points-of-interest list skips the game's `ILocalMapMarker.IsVisible()` for every non-loot pin type. **All findings below were implemented the same day — see the status note above.**
 
 ---
 
@@ -82,10 +90,10 @@ The exit overtip's destination title is one of the few **persistent** text eleme
 
 ## (2) Parity leaks (Rule 2) — ranked by severity
 
-> **Status: all five leaks below are OPEN as of 2026-07-08.** The shared root cause for L1/L2/L4/L5 is that the
-> self-built raw-grid channels bypass the visibility model the mod's own proxy/scanner lens already mirrors
+> **Status: all five leaks FIXED (2026-07-08).** The shared root cause for L1/L2/L4/L5 was that the
+> self-built raw-grid channels bypassed the visibility model the mod's own proxy/scanner lens already mirrors
 > correctly (`IsPlayerFaction || IsVisibleForPlayer`, which folds fog + stealth + invisibility + `Features.Hidden`
-> via `View.IsVisible`).
+> via `View.IsVisible`); each now gates on that lens (or the fog probe, for the geometry channels).
 
 ### High severity
 

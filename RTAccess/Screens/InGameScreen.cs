@@ -15,6 +15,7 @@ using Kingmaker.Mechanics.Entities;                  // AbstractUnitEntity
 using Kingmaker.UnitLogic;                           // HasMechanicFeature() extension (PartMechanicFeaturesExtension)
 using Kingmaker.UnitLogic.Enums;                     // MechanicsFeatureType.HideRealHealthInUI
 using Kingmaker.UI.Common;                           // IsDirectlyControllable() extension
+using Kingmaker.UI.Models.UnitSettings;              // MechanicActionBarSlotEmpty (overdrive keybind filter)
 using Kingmaker.UI.Selection;                        // SelectionManagerBase (Hold/Stop/SelectAll)
 using Kingmaker.Blueprints.Root.Strings;             // UIStrings (reuse the game's localized HUD labels)
 using Kingmaker.UI.Models.SettingsUI;                // UISettingsRoot (keybind Description labels)
@@ -86,9 +87,31 @@ namespace RTAccess.Screens
             yield return new ElementAction(ActionIds.Back, Message.Raw("Back"), _ =>
             {
                 if (!Navigation.HasFocus) return; // unfocused → let the yield reach the game (pause menu)
+                // #3: an open variant/convert flyout claims Escape first — mirroring the sighted
+                // ActionBarConvertedPCView, whose Escape closes the flyout. Close() runs the parent slot's
+                // own CloseConvert, so the variant rows drop out of the next render.
+                if (CloseOpenConverts())
+                {
+                    Tts.Speak(Loc.T("slot.variants_closed"), interrupt: true);
+                    return;
+                }
                 Navigation.Blur();
                 Tts.Speak(Loc.T("nav.exploration"), interrupt: true);
             });
+        }
+
+        // Close every open variant/convert flyout on the bar; true when any was open. Nothing in the game
+        // enforces a single open flyout (each slot toggles its own; only turn start / unbind mass-close), so
+        // Escape sweeps them all rather than guessing which one the player means (review finding).
+        private static bool CloseOpenConverts()
+        {
+            bool any = false;
+            foreach (var (s, _) in BarSlots())
+            {
+                var c = s?.ConvertedVm?.Value;
+                if (c != null && !c.IsDisposed) { c.Close(); any = true; }
+            }
+            return any;
         }
 
         // Tab off either end of the HUD lands the keys back in exploration — say so (ScreenName is null by
@@ -216,19 +239,41 @@ namespace RTAccess.Screens
         // All action-bar slots in a stable order — current weapon set, abilities, consumables, heroic acts,
         // desperate measures, overdrive. RT has no unified slot list (the bar is split into part VMs); this
         // mirrors the set the game itself refreshes in SurfaceActionBarVM.UpdateSlotsCommandHandler.
-        private static IEnumerable<ActionBarSlotVM> BarSlots()
+        // Each slot is paired with the game's own direct-activation keybinding NAME for that bar section
+        // (main-HUD audit #10: ActionBarSlotPCView.GetBindName — Weapon/Ability/Consumable + the index WITHIN
+        // its own section over the raw list, matching the game's per-part SetKeyBinding(i) loops; those bare
+        // 1–0 hotkeys still reach the game for a blind player, so the slot node advertises them). Heroic-act,
+        // desperate-measure and overdrive slots never receive a binding — null.
+        private static IEnumerable<(ActionBarSlotVM vm, string bind)> BarSlots()
         {
             var bar = ActionBar();
             if (bar == null) yield break;
             var set = bar.Weapons?.CurrentSet?.Value;
-            if (set?.AllSlots != null) foreach (var s in set.AllSlots) yield return s;
-            if (bar.Abilities?.Slots != null) foreach (var s in bar.Abilities.Slots) yield return s;
-            if (bar.Consumables?.Slots != null) foreach (var s in bar.Consumables.Slots) yield return s;
+            if (set?.AllSlots != null)
+            { int i = 0; foreach (var s in set.AllSlots) yield return (s, $"ActionBarWeaponButton{i++:D2}"); }
+            if (bar.Abilities?.Slots != null)
+            {
+                // The game does NOT keybind the raw Slots list: SurfaceActionBarPartAbilitiesBaseView
+                // .GetGridSlots filters out a slot duplicating the augments-overdrive ability (same KeyName)
+                // BEFORE SetKeyBinding numbers the rest — so that duplicate gets no key and must not shift
+                // the numbering, or every later spoken hotkey fires the wrong ability (review finding).
+                var od = bar.Abilities.OverdriveSlotVM?.MechanicActionBarSlot;
+                string odKey = od != null && !(od is MechanicActionBarSlotEmpty) ? od.KeyName : null;
+                int i = 0;
+                foreach (var s in bar.Abilities.Slots)
+                {
+                    bool odDup = odKey != null && s?.MechanicActionBarSlot?.KeyName == odKey;
+                    yield return (s, odDup ? null : $"ActionBarAbilityButton{i:D2}");
+                    if (!odDup) i++;
+                }
+            }
+            if (bar.Consumables?.Slots != null)
+            { int i = 0; foreach (var s in bar.Consumables.Slots) yield return (s, $"ActionBarConsumableButton{i++:D2}"); }
             var momentum = bar.SurfaceMomentumVM;
-            if (momentum?.HeroicActSlots != null) foreach (var s in momentum.HeroicActSlots) yield return s;
-            if (momentum?.DesperateMeasureSlots != null) foreach (var s in momentum.DesperateMeasureSlots) yield return s;
+            if (momentum?.HeroicActSlots != null) foreach (var s in momentum.HeroicActSlots) yield return (s, null);
+            if (momentum?.DesperateMeasureSlots != null) foreach (var s in momentum.DesperateMeasureSlots) yield return (s, null);
             var overdrive = bar.Abilities?.OverdriveSlotVM;
-            if (overdrive != null) yield return overdrive;
+            if (overdrive != null) yield return (overdrive, null);
         }
 
         // A real, usable slot: not a non-current-weapon-set skeleton (IsFake), not empty, backed by a
@@ -248,11 +293,23 @@ namespace RTAccess.Screens
             // factory replays them (every other slot uses the generic hover + its own click).
             var overdrive = ActionBar()?.Abilities?.OverdriveSlotVM;
             int i = 0;
-            foreach (var s in BarSlots())
+            foreach (var (s, bind) in BarSlots())
             {
                 if (!Usable(s)) continue;
                 b.AddItem(ControlId.Referenced(s, "hud:act:" + i++),
-                    ActionBarNodes.Slot(s, isOverdrive: ReferenceEquals(s, overdrive)));
+                    ActionBarNodes.Slot(s, isOverdrive: ReferenceEquals(s, overdrive), bindName: bind));
+                // #3 (main-HUD audit) — an OPEN variant/convert flyout renders its choices as ordinary slot
+                // rows right after their parent (immediate mode: they appear the frame OnMainClick opens the
+                // flyout and vanish when it closes). Each row casts through its own converted slot's
+                // OnMainClick, exactly like the sighted flyout buttons; Escape closes (see GetActions).
+                var conv = s.ConvertedVm?.Value;
+                if (conv != null && !conv.IsDisposed)
+                    for (int j = 0; j < conv.Slots.Count; j++)
+                    {
+                        var vs = conv.Slots[j];
+                        if (Usable(vs)) b.AddItem(ControlId.Referenced(vs, "hud:actvar:" + i + ":" + j),
+                            ActionBarNodes.Slot(vs));
+                    }
             }
             b.PopContext();
         }
@@ -299,6 +356,9 @@ namespace RTAccess.Screens
         {
             var g = Game.Instance;
             if (g == null) return;
+            // This keypress speaks its own confirmation below — mark the exact edge it causes as already
+            // spoken so the passive PauseAnnouncer doesn't double it (main-HUD audit #5).
+            RTAccess.Accessibility.PauseAnnouncer.SuppressNext(!g.IsPaused);
             // The pause-mode change settles a frame later, so reading g.IsPaused right after the set is stale —
             // announce the state we just asked for, not the not-yet-updated getter.
             bool willPause = !g.IsPaused;

@@ -7,6 +7,7 @@ using Kingmaker.Blueprints.Root;                     // BlueprintRoot (Warhammer
 using Kingmaker.Blueprints.Root.Strings;             // UIStrings (Tooltips.EndsTurn / SpendAllMovementPoints)
 using Kingmaker.Code.UI.MVVM.VM.ActionBar;           // ActionBarSlotVM
 using Kingmaker.UI.Common;                           // UIUtility.GetCurrentSelectedUnit
+using Kingmaker.UI.Models.UnitSettings;              // MechanicActionBarSlotItem (quick-slot stack count)
 using Kingmaker.UnitLogic.Abilities;                 // AbilityData
 using Kingmaker.UnitLogic.Abilities.Blueprints;      // AbilityTargetAnchor
 using Kingmaker.UnitLogic.Abilities.Components;      // WarhammerEndTurn, CheckBuffForMPSpendTooltip
@@ -34,8 +35,10 @@ namespace RTAccess.UI
         /// <summary>One action-bar slot. <paramref name="isOverdrive"/> tags the augmentation-overdrive
         /// slot, the only one with a themed hover/click in the game (SurfaceActionBarPartAbilitiesPCView
         /// SetHoverSound/SetClickSound); its themed click LAYERS on OnMainClick's own mechanic sound,
-        /// matching the game.</summary>
-        public static NodeVtable Slot(ActionBarSlotVM vm, bool isOverdrive = false)
+        /// matching the game. <paramref name="bindName"/> is the game's own direct-activation keybinding
+        /// name for this slot's bar position (ActionBarAbility/Consumable/WeaponButtonNN — null for the
+        /// momentum/overdrive slots, which have none), spoken so the fast bare-key channel is discoverable.</summary>
+        public static NodeVtable Slot(ActionBarSlotVM vm, bool isOverdrive = false, string bindName = null)
         {
             Func<bool> enabled = () => vm?.IsPossibleActive?.Value ?? false;
             Func<string> title = () => Title(vm);
@@ -46,6 +49,9 @@ namespace RTAccess.UI
                 {
                     new NodeAnnouncement(title, live: true, kind: AnnouncementKinds.Label),
                     new NodeAnnouncement(() => Detail(vm), kind: AnnouncementKinds.Value),
+                    // The game's own hotkey for this slot (main-HUD audit #10) — resolved exactly as the
+                    // sighted label is (ActionBarSlotPCView.SetKeyBindLabel), so rebinds read correctly.
+                    new NodeAnnouncement(() => HotkeyPart(bindName), kind: AnnouncementKinds.Value),
                     // Targeting / active state — LIVE, so arming an ability (or the game's async settle)
                     // announces itself while the slot is focused. Silent when neither.
                     new NodeAnnouncement(() => ToggleState(vm), live: true, kind: AnnouncementKinds.Value),
@@ -54,10 +60,24 @@ namespace RTAccess.UI
                 SearchText = title,
                 OnActivate = () =>
                 {
-                    if (enabled()) { vm?.OnMainClick(); return; }
+                    if (enabled())
+                    {
+                        // #3 (main-HUD audit): OnMainClick on a HasVariants ability TOGGLES a convert flyout
+                        // instead of casting (OnShowConvertRequest / HandleConvertRequest's else-branch) —
+                        // silent on screen-reader without this. Announce the open (with the choice count; the
+                        // rows render right after this slot) and the close, so Enter never reads as a no-op.
+                        bool wasOpen = vm?.ConvertedVm?.Value != null;
+                        vm?.OnMainClick();
+                        var conv = vm?.ConvertedVm?.Value;
+                        if (conv != null && !wasOpen)
+                            Tts.Speak(Loc.T("slot.variants_open", new { count = conv.Slots.Count }), interrupt: true);
+                        else if (conv == null && wasOpen)
+                            Tts.Speak(Loc.T("slot.variants_closed"), interrupt: true);
+                        return;
+                    }
                     // The game only raises a warning for some refusals; give the greyed slot's own
                     // reason (or a plain "disabled") so Enter always says something.
-                    var why = UnavailableReason(vm?.AbilityData);
+                    var why = UnavailableReason(AbilityOf(vm));
                     Tts.Speak(why != null
                         ? Loc.T("slot.unavailable", new { reason = why })
                         : Loc.T("state.disabled"), interrupt: true);
@@ -75,6 +95,31 @@ namespace RTAccess.UI
         {
             try { return vm?.MechanicActionBarSlot?.GetTitle() ?? ""; }
             catch { return ""; }
+        }
+
+        // The slot's ability for the detail readout. The VM's own AbilityData getter covers ability and
+        // item slots but NOT the convert-flyout rows (MechanicActionBarSlotSpontaneusConvertedSpell is not
+        // a MechanicActionBarSlotAbility — its ability lives in the public Spell field), which left variant
+        // rows with no range/AP/why-disabled detail at all (review finding).
+        private static AbilityData AbilityOf(ActionBarSlotVM vm)
+        {
+            if (vm == null) return null;
+            return vm.AbilityData
+                ?? (vm.MechanicActionBarSlot as MechanicActionBarSlotSpontaneusConvertedSpell)?.Spell;
+        }
+
+        // The spoken form of the slot's game hotkey — the exact resolution the sighted corner label uses
+        // (UIKeyboardTexts.GetStringByBinding over the live binding), so a player rebind reads correctly.
+        // Null (silent) when the slot has no binding name or the binding resolves to no key.
+        private static string HotkeyPart(string bindName)
+        {
+            if (string.IsNullOrEmpty(bindName)) return null;
+            try
+            {
+                var label = UIKeyboardTexts.Instance.GetStringByBinding(Game.Instance.Keyboard.GetBindingByName(bindName));
+                return string.IsNullOrWhiteSpace(label) ? null : Loc.T("slot.hotkey", new { key = label });
+            }
+            catch { return null; }
         }
 
         // The live targeting/active marker (the old State()'s only volatile piece, split out as the live
@@ -106,8 +151,11 @@ namespace RTAccess.UI
                 int ap = vm.ActionPointCost.Value;
                 if (ap > 0) Append(sb, Loc.T(ap == 1 ? "slot.action_point" : "slot.action_points", new { ap }));
 
-                var ab = vm.AbilityData;
+                var ab = AbilityOf(vm);
                 if (ab != null) AppendAbilityDetails(sb, vm, ab);
+                // An item slot with no AbilityData never reaches AppendAbilityDetails — its counter still shows.
+                else if (vm.MechanicActionBarSlot is MechanicActionBarSlotItem && !vm.IsReload.Value)
+                    AppendItemCount(sb, vm);
 
                 if (vm.IsReload.Value)
                     Append(sb, Loc.T("slot.ammo", new { current = vm.CurrentAmmo.Value, max = vm.MaxAmmo.Value }));
@@ -126,6 +174,14 @@ namespace RTAccess.UI
                     AppendVeil(sb, ab);      // predicted after-cast veil (psyker powers)
                     AppendEndTurn(sb, ab);   // "ends turn" / "spends all movement" cue
                 }
+
+                // #3 the convert/variant cue — spoken only for slots where Enter genuinely OPENS the choice
+                // list (OnMainClick's auto-open cases are ability slots; on an ITEM slot Enter uses the item
+                // and its convert options stay unreachable, so announcing "has variants" there promises a
+                // list that never comes — review finding).
+                if ((vm.HasConvert?.Value ?? false) && (vm.IsCanConvert?.Value ?? false)
+                    && vm.MechanicActionBarSlot is MechanicActionBarSlotAbility)
+                    Append(sb, Loc.T("slot.has_variants"));
 
                 // Why it's greyed out — the game's own reason (not enough AP, on cooldown, out of range, …),
                 // so a disabled slot says the cause instead of a bare "disabled".
@@ -175,15 +231,30 @@ namespace RTAccess.UI
                     case AbilityTargetAnchor.Point: Append(sb, ab.IsAOE ? Loc.T("slot.area_effect") : Loc.T("slot.targets_point")); break;
                 }
 
-                // Limited uses (charges / per-day resource); -1 == at-will. Ammo weapons already read their
-                // ammo above, so don't also say "N uses left" for them.
+                // Limited uses. Ammo weapons already read their ammo above, so don't also say "N uses left".
                 if (!vm.IsReload.Value)
                 {
-                    int uses = -1; try { uses = ab.GetAvailableForCastCount(); } catch { }
-                    if (uses >= 0) Append(sb, Loc.T(uses == 1 ? "slot.use_left" : "slot.uses_left", new { uses }));
+                    if (vm.MechanicActionBarSlot is MechanicActionBarSlotItem) AppendItemCount(sb, vm);
+                    else
+                    {
+                        // Ability charges / per-day resource; -1 == at-will.
+                        int uses = -1; try { uses = ab.GetAvailableForCastCount(); } catch { }
+                        if (uses >= 0) Append(sb, Loc.T(uses == 1 ? "slot.use_left" : "slot.uses_left", new { uses }));
+                    }
                 }
             }
             catch { }
+        }
+
+        // A quick-slot ITEM's sighted counter is GetResource() — the STACK count when stacked, else the
+        // item's charges — mirrored live in the VM's ResourceCount (main-HUD audit #7). The old
+        // GetAvailableForCastCount() read only Charges and misreported a stack of single-charge medikits as
+        // "1 use left". Sentinels: -1 = uncounted item, 0 = the item left the quick slots; the sighted badge
+        // hides when ≤ 0, so speak only a positive count.
+        private static void AppendItemCount(StringBuilder sb, ActionBarSlotVM vm)
+        {
+            int count = vm.ResourceCount.Value;
+            if (count > 0) Append(sb, Loc.T(count == 1 ? "slot.use_left" : "slot.uses_left", new { uses = count }));
         }
 
         // The game's localized "why greyed out" text, evaluated from where the caster will act (its desired

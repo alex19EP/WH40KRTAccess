@@ -114,8 +114,19 @@ namespace RTAccess.Accessibility
         {
             var e = StaticPart()?.EtudeCounterVM;
             if (e == null || !e.IsShowing.Value) return;
-            string counter = e.ShowCounter.Value ? e.Counter.Value : "";
-            parts.Add(Loc.T("gauge.objective", new { label = e.Label.Value, counter }));
+            // Fail/success flip (main-HUD audit #6): the sighted view swaps the counter for a red FAIL label /
+            // a success icon AND hides the digit container — so speak the state word and never the stale digits.
+            bool failed = e.IsSystemFailEnabled.Value;
+            bool succeeded = e.IsSystemSuccessEnabled.Value;
+            string counter = !failed && !succeeded && e.ShowCounter.Value ? e.Counter.Value : "";
+            // A Slider-flag-only etude routes its value exclusively through Progress (ShowCounter false,
+            // ShowProgress requires a positive target) — speak it as a rounded percent so it isn't silent.
+            if (counter.Length == 0 && !failed && !succeeded && e.ShowProgress.Value)
+                counter = Loc.T("gauge.objective_percent", new { percent = Mathf.RoundToInt(e.Progress.Value * 100f) });
+            string line = Loc.T("gauge.objective", new { label = e.Label.Value, counter });
+            if (failed) line += ", " + Loc.T("gauge.objective_failed");
+            else if (succeeded) line += ", " + Loc.T("gauge.objective_succeeded");
+            parts.Add(line);
         }
     }
 }

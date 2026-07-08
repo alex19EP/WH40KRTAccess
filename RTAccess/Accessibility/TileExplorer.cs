@@ -173,12 +173,12 @@ internal static class TileExplorer
 
                 // Commit through the shared act funnel (shared guard + refusal speech); it voices the specific
                 // failure, we give the success cue.
-                if (RTAccess.Combat.CommandDispatch.MoveTo(node)) Speaker.Speak("Moving.", interrupt: true);
+                if (RTAccess.Combat.CommandDispatch.MoveTo(node)) Speaker.Speak(Loc.T("path.moving"), interrupt: true);
             }
             else
             {
-                if (game.IsPaused) { Speaker.Speak("Paused, unpause to move.", interrupt: true); return; }
-                if (GetAnchor() == null) { Speaker.Speak("No character selected.", interrupt: true); return; }
+                if (game.IsPaused) { Speaker.Speak(Loc.T("path.paused_no_move"), interrupt: true); return; }
+                if (GetAnchor() == null) { Speaker.Speak(Loc.T("path.no_character"), interrupt: true); return; }
                 UnitCommandsRunner.MoveSelectedUnitsToPoint(node.Vector3Position);
                 Speaker.Speak(MovingAnnounce(), interrupt: true);
             }

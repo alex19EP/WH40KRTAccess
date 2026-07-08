@@ -42,6 +42,45 @@ namespace RTAccess.Input
             InputManager.Register("buffer.detail", "Read details of the current review line", InputCategory.Global,
                 () => { if (InAGame()) RTAccess.Buffers.BufferControls.Detail(); }).AddBinding(KeyCode.T, alt: true);
 
+            // ---- Formation editor field (Formation category — live ONLY while FormationScreen's WASD
+            // field is the focused Tab stop, see FormationScreen.InputCategories; ranked above Global there,
+            // so Alt+digits shadow the party-select hotkeys only inside the field). WASD step the 2-D
+            // cursor; Shift+WASD glide continuously (empty handlers — FormationField.Tick polls them via
+            // InputManager.Held); Comma/Shift+Comma review members; Slash plants the cursor on the reviewed
+            // member; C re-centres; Alt+1..6 grab the Nth member of the window's character list.
+            InputManager.Register("formation.up", "Formation cursor forward", InputCategory.Formation,
+                () => RTAccess.Screens.FormationScreen.FocusedField?.MoveStep(0, 1)).AddBinding(KeyCode.W).Repeating();
+            InputManager.Register("formation.down", "Formation cursor back", InputCategory.Formation,
+                () => RTAccess.Screens.FormationScreen.FocusedField?.MoveStep(0, -1)).AddBinding(KeyCode.S).Repeating();
+            InputManager.Register("formation.left", "Formation cursor left", InputCategory.Formation,
+                () => RTAccess.Screens.FormationScreen.FocusedField?.MoveStep(-1, 0)).AddBinding(KeyCode.A).Repeating();
+            InputManager.Register("formation.right", "Formation cursor right", InputCategory.Formation,
+                () => RTAccess.Screens.FormationScreen.FocusedField?.MoveStep(1, 0)).AddBinding(KeyCode.D).Repeating();
+            InputManager.Register("formation.glide_up", "Formation glide forward", InputCategory.Formation,
+                () => { }).AddBinding(KeyCode.W, shift: true);
+            InputManager.Register("formation.glide_down", "Formation glide back", InputCategory.Formation,
+                () => { }).AddBinding(KeyCode.S, shift: true);
+            InputManager.Register("formation.glide_left", "Formation glide left", InputCategory.Formation,
+                () => { }).AddBinding(KeyCode.A, shift: true);
+            InputManager.Register("formation.glide_right", "Formation glide right", InputCategory.Formation,
+                () => { }).AddBinding(KeyCode.D, shift: true);
+            InputManager.Register("formation.cycle_next", "Review next formation member", InputCategory.Formation,
+                () => RTAccess.Screens.FormationScreen.FocusedField?.CycleMember(1)).AddBinding(KeyCode.Comma).Repeating();
+            InputManager.Register("formation.cycle_prev", "Review previous formation member", InputCategory.Formation,
+                () => RTAccess.Screens.FormationScreen.FocusedField?.CycleMember(-1)).AddBinding(KeyCode.Comma, shift: true).Repeating();
+            InputManager.Register("formation.jump", "Formation cursor to reviewed member", InputCategory.Formation,
+                () => RTAccess.Screens.FormationScreen.FocusedField?.JumpToReviewed()).AddBinding(KeyCode.Slash);
+            InputManager.Register("formation.center", "Formation cursor to centre", InputCategory.Formation,
+                () => RTAccess.Screens.FormationScreen.FocusedField?.CenterCursor()).AddBinding(KeyCode.C);
+            for (int f = 0; f < 6; f++)
+            {
+                int idx = f;
+                InputManager.Register("formation.pick" + (idx + 1), "Grab formation member " + (idx + 1),
+                    InputCategory.Formation,
+                    () => RTAccess.Screens.FormationScreen.FocusedField?.PickMember(idx))
+                    .AddBinding((KeyCode)((int)KeyCode.Alpha1 + idx), alt: true).Grouped("formation");
+            }
+
             // L — open the message-log review (a child overlay: channel tabs + newest-first history, with
             // per-line tooltip / glossary drill-in). Global + self-gated so it opens in surface/space and over
             // windows/dialogue; bare L is free — GameKeybinds moved the game's Encyclopedia onto Ctrl+L.

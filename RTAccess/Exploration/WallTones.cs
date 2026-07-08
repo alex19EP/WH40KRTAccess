@@ -59,6 +59,12 @@ internal static class WallTones
     private static bool _haveLast;
     private static float _sinceMoved = MoveGrace;
 
+    // Cached fog classification of the cursor tile (main-HUD audit L5) — sampled only when the planted cursor's
+    // node changes (rate-capped), mirroring FogCue's readback discipline, so the per-frame tick never blocks.
+    private static CustomGridNodeBase _fogNode;
+    private static bool _fogNeverSeen;
+    private static float _fogTimer;
+
     private enum Playback { Off, WhenMoving, Continuous }
 
     private static Playback Mode
@@ -93,6 +99,12 @@ internal static class WallTones
             var node = play ? CursorNode() : null;
             if (node == null) { FadeOut(dt); return; }
 
+            // Parity gate (main-HUD audit L5): a cursor parked in — or stepped through — never-seen fog must not
+            // have the surrounding wall geometry sonified; the sighted map draws pure blackness there. Fade to
+            // silence exactly like a menu open. Accepted residual: the 5 m ray can still read a short distance
+            // into fog from an explored tile near the boundary (the ray itself is not per-tile fog-checked).
+            if (CursorNeverSeen(node, dt)) { FadeOut(dt); return; }
+
             EnsureBuilt(ToneSet);
             float vol = Volume;
             float k = SmoothK(dt);
@@ -126,7 +138,24 @@ internal static class WallTones
 
     /// <summary>Drop the voices on area change / feature reset so nothing stale survives; also clear the motion
     /// tracker so the first frame in the new area doesn't see a huge cursor jump and briefly play in When-moving.</summary>
-    public static void Reset() { Teardown(); _haveLast = false; _sinceMoved = MoveGrace; }
+    public static void Reset() { Teardown(); _haveLast = false; _sinceMoved = MoveGrace; _fogNode = null; _fogNeverSeen = false; }
+
+    // Is the cursor tile never-seen fog? FogProbe.Classify is a synchronous GPU readback, so it must stay
+    // keypress-driven: an UNPLANTED cursor tracks the party (whose own tile is always revealed) and is never
+    // probed; a planted cursor is sampled only when its node changes, rate-capped, with the classification
+    // cached between moves — the same discipline as FogCue.Tick.
+    private static bool CursorNeverSeen(CustomGridNodeBase node, float dt)
+    {
+        _fogTimer -= dt;
+        if (!MapCursor.Has) { _fogNode = null; _fogNeverSeen = false; return false; }
+        if (!ReferenceEquals(node, _fogNode) && _fogTimer <= 0f)
+        {
+            _fogTimer = 0.1f;
+            _fogNode = node;
+            _fogNeverSeen = FogProbe.Classify((Vector3)node.position) == FogProbe.FogState.NeverSeen;
+        }
+        return _fogNeverSeen;
+    }
 
     // Grid raycast: walk the cardinal from the cursor node until the edge is cut (wall/fence) or the next tile is
     // non-walkable / off-grid; the wall sits ~half a cell past the last open tile. Returns +inf when clear to Range.

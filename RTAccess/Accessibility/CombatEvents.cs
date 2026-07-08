@@ -53,6 +53,9 @@ internal sealed class CombatEvents
     // ---- Threshold-cue state (S7; see PollThresholds) — last observed band, cue fires on the crossing. ----
     private bool _turnTimerLow;
     private int _bossHpBucket = -1;   // last 25% boss-HP band (floor(progress*4)); -1 = boss bar not shown
+    private bool _etudeFailed;        // last-seen etude-counter FAIL/SUCCESS flip state (rising-edge cues)
+    private bool _etudeSucceeded;
+    private bool _etudeSeen;          // baseline taken — the first sight of an already-flipped state never cues
 
     /// <summary>Pumped once per frame from <c>Main.OnUpdate</c>: run the lifecycle/threshold polls, then flush
     /// every queued line (log taps + poll cues, in arrival order) as passive speech.</summary>
@@ -167,6 +170,7 @@ internal sealed class CombatEvents
         {
             _turnTimerLow = false;
             _bossHpBucket = -1;
+            _etudeFailed = _etudeSucceeded = _etudeSeen = false;
             return;
         }
 
@@ -191,6 +195,26 @@ internal sealed class CombatEvents
             _bossHpBucket = bucket;
         }
         else _bossHpBucket = -1;
+
+        // Etude counter FAIL/SUCCESS flip (main-HUD audit #6): raised over the EventBus with no game-log
+        // line, so LogTap structurally can't carry it; the sighted cue is a red label / success icon swap
+        // plus a semantics-free stinger. Rising-edge only, with a first-sight baseline (like the boss-HP
+        // poll) so loading a save / re-entering an area with an already-flipped counter narrates nothing —
+        // that state wasn't an event (review finding); the K gauge readout carries the persistent state.
+        var etude = sp.EtudeCounterVM;
+        if (etude != null && etude.IsShowing.Value)
+        {
+            bool ef = etude.IsSystemFailEnabled.Value, es = etude.IsSystemSuccessEnabled.Value;
+            if (_etudeSeen)
+            {
+                if (ef && !_etudeFailed) Enqueue(Loc.T("cue.objective_failed", new { label = etude.Label.Value }));
+                else if (es && !_etudeSucceeded) Enqueue(Loc.T("cue.objective_succeeded", new { label = etude.Label.Value }));
+            }
+            _etudeFailed = ef;
+            _etudeSucceeded = es;
+            _etudeSeen = true;
+        }
+        else { _etudeFailed = _etudeSucceeded = false; _etudeSeen = false; }
     }
 
     // Damage, healing, deaths AND buff/debuff gains were read here off the EventBus; they now all come from the

@@ -155,6 +155,10 @@ namespace RTAccess.Screens
             // Party picker (GroupChangerContextVM, Surface OR Space) — layer 27; the window GroundOperation
             // POIs raise before loading the ground map, and capital-area party changes elsewhere.
             Register(new GroupChangerScreen());
+            // Party-formation window (SurfaceStaticPartVM.FormationVM — HUD menu / Esc menu / Ctrl+N) —
+            // layer 16, Exclusive. The WrathAccess-ported preset radio + WASD editing field with member
+            // review and Alt+digit grab (main-HUD audit #4).
+            Register(new FormationScreen());
             // New Game wizard (MainMenuVM.NewGameVM) — layer 5, above the menu sidebar it's launched from.
             Register(new NewGameScreen());
             // Character generation (MainMenuVM.CharGenContextVM.CharGenVM) — layer 15, full-screen flow.

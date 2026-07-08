@@ -184,6 +184,10 @@ public static class Main {
         // never interrupt). WarningReader is reactive (no tick).
         CombatEvents.Instance.Tick();
 
+        // Pause / unpause edges of the global clock — Space pause, the three autopauses, scripted pauses, and
+        // the silent force-unpause on combat entry (main-HUD audit #5). Passive → queued. See PauseAnnouncer.
+        Accessibility.PauseAnnouncer.Tick();
+
         // Loading screen: announce the tip/description on show (via a view postfix) and the post-load
         // "press any key to continue" prompt (a silent barrier for blind players). Edge-detected; any key dismisses it.
         LoadingScreenReader.Update();

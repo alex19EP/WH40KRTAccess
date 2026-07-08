@@ -6,6 +6,7 @@ using Kingmaker.GameCommands;                             // AreaTransitionHelpe
 using Kingmaker.PubSubSystem;                             // IVariativeInteractionUIHandler
 using Kingmaker.PubSubSystem.Core;                        // EventBus
 using Kingmaker.View.MapObjects;                          // InteractionDoorPart/LootPart/SkillCheckPart, AreaTransitionPart
+using Kingmaker.View.MapObjects.Traps;                    // TrapObjectView (trap ↔ disarm-device link)
 using RTAccess.Accessibility;                             // InteractableDescriber (name/verb reuse)
 using UnityEngine;
 
@@ -178,6 +179,34 @@ internal sealed class ProxyMapObject : ScanItem
             if (view != null)
             {
                 try { if (VariativeInteractionVM.HasVariativeInteraction(view)) bits.Add("locked"); }
+                catch { /* best-effort */ }
+            }
+
+            // Trap ↔ disarm-device link (main-HUD audit #8): the game draws a ground spline connecting the pair
+            // whenever EITHER end is revealed AND EITHER end awareness-passed AND EITHER end armed
+            // (TrapObjectView.UpdateLinkLine — all three conditions are either-end ORs; mirror them exactly).
+            // Voice the topology from both ends, so the mechanism ten tiles away that neutralizes the trap in
+            // your path — often the safe alternative to an in-place disarm — is discoverable.
+            if (view is TrapObjectView trapView)
+            {
+                try
+                {
+                    // On the DEVICE end LinkedTrap points at its trap; on the TRAP end Device points back.
+                    var other = trapView.LinkedTrap != null ? trapView.LinkedTrap : trapView.Device;
+                    var a = trapView.Data;
+                    var b = other != null ? other.Data : null;
+                    if (b != null
+                        && (a.IsRevealed || b.IsRevealed)
+                        && (a.IsAwarenessCheckPassed || b.IsAwarenessCheckPassed)
+                        && (a.TrapActive || b.TrapActive))
+                    {
+                        var where = InteractableDescriber.DirectionAndDistance(
+                            MapCursor.PlayerPosition, other.ViewTransform.position);
+                        bits.Add(trapView.LinkedTrap != null
+                            ? Loc.T("trap.controls", new { where })   // this end is the device
+                            : Loc.T("trap.device", new { where }));   // this end is the trap
+                    }
+                }
                 catch { /* best-effort */ }
             }
 

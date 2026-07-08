@@ -34,5 +34,10 @@ namespace RTAccess.Input
         /// dialogue / loading. A category of its own so they ride neither <see cref="Exploration"/> (in-area
         /// only) nor <see cref="UI"/> (every menu and modal).</summary>
         Windows,
+        /// <summary>The formation editor's field keys (WASD cursor, glide, member review/pick) — declared by
+        /// <see cref="RTAccess.Screens.FormationScreen"/> ONLY while its editing field is the focused Tab
+        /// stop, so WASD stay free on the screen's list/buttons and everywhere else. Ranked above Global, so
+        /// the field's Alt+digit member-grab shadows the party-select hotkeys while it is live (WA parity).</summary>
+        Formation,
     }
 }

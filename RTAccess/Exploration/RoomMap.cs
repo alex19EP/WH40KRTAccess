@@ -161,11 +161,18 @@ internal static class RoomMap
     private static Room _announced;
     private static Room _pending;
     private static float _pendingSince;
+    // Cached fog classification for the announce gate — probed only when the position actually changed
+    // (WallTones' readback discipline), so a cursor parked in never-seen fog costs ONE readback, not a
+    // 4 Hz loop (review finding). Accepted trade-off, same as WallTones: fog lifting around a stationary
+    // cursor re-announces on its next move.
+    private static Vector3 _fogPos;
+    private static bool _fogNeverSeen;
+    private static bool _fogKnown;
 
     private static bool AnnounceEnabled =>
         ModSettings.GetSetting<BoolSetting>("exploration.announce_rooms")?.Get() ?? true;
 
-    private static void ResetAnnounce() { _announced = null; _pending = null; }
+    private static void ResetAnnounce() { _announced = null; _pending = null; _fogKnown = false; }
 
     private static void TickAnnounce()
     {
@@ -179,6 +186,19 @@ internal static class RoomMap
         // Dwell: the new room must be the stable pick for DwellSeconds before we speak it.
         if (room != _pending) { _pending = room; _pendingSince = Time.unscaledTime; return; }
         if (Time.unscaledTime - _pendingSince < DwellSeconds) return;
+
+        // Parity gate (main-HUD audit L4): the map is built fog-free from raw walkability, but never-seen
+        // ground is pure blackness to a sighted player — don't narrate room ids/classes as the cursor sweeps
+        // through unexplored fog. The readback runs only when the probed position CHANGED (cached
+        // otherwise), so a parked cursor costs one probe; re-arming the dwell keeps the room un-latched, so
+        // stepping the cursor (or entering on foot) once the fog lifts still announces.
+        if (!_fogKnown || (pos - _fogPos).sqrMagnitude > 1e-4f)
+        {
+            _fogPos = pos;
+            _fogKnown = true;
+            _fogNeverSeen = FogProbe.Classify(pos) == FogProbe.FogState.NeverSeen;
+        }
+        if (_fogNeverSeen) { _pendingSince = Time.unscaledTime; return; }
 
         _announced = room;
         _pending = null;
