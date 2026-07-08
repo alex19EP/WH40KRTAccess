@@ -43,7 +43,6 @@ namespace RTAccess.Screens
             return loot?.ExitLocationWindowVM?.Value;
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

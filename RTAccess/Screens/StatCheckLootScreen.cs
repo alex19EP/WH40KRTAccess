@@ -46,7 +46,6 @@ namespace RTAccess.Screens
             return _poiView != null ? _poiView.ViewModel?.StatCheckLootPointOfInterestVM : null;
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

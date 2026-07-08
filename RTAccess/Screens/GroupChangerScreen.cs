@@ -36,7 +36,6 @@ namespace RTAccess.Screens
                 ?? ctx?.SpaceVM?.StaticPartVM?.GroupChangerContextVM?.GroupChangerVm?.Value;
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

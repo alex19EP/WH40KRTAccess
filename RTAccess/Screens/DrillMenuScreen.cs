@@ -40,7 +40,6 @@ namespace RTAccess.Screens
                 _ => ParentScreen?.RemoveChild(this));
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

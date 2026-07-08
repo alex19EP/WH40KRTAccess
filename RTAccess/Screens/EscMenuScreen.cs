@@ -44,7 +44,6 @@ namespace RTAccess.Screens
         private static EscMenuVM Vm()
             => Game.Instance?.RootUiContext?.CommonVM?.EscMenuContextVM?.EscMenu?.Value;
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

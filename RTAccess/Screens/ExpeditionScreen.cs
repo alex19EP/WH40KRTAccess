@@ -33,7 +33,6 @@ namespace RTAccess.Screens
             return _view != null ? _view.ViewModel : null;
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

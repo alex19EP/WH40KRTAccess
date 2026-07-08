@@ -88,7 +88,6 @@ namespace RTAccess.Screens
             if (!ReferenceEquals(page, _spokenPage)) { _spokenPage = page; Speak(vm); }
         }
 
-        public override bool BuildsGraph => true;
 
         // Same transcript shape as ordinary dialogue: one silent, positions-off scope holding the passage lines,
         // then the choices. Focus lands at the top of the passage; Down reaches the choices.

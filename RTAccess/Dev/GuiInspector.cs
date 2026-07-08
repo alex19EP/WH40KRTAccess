@@ -3,14 +3,15 @@ using System;
 using System.Text;
 using RTAccess.Screens;
 using RTAccess.UI;
+using RTAccess.UI.Graph;
 
 namespace RTAccess.Dev
 {
     /// <summary>
-    /// Interpreted dump of the focused screen's element tree — the mod's OWN view, rendered the way the
-    /// navigator announces each node (label + role + state, via GetFocusText), with the currently-focused
-    /// node marked. The dev driver's /gui: lets me see what nav state the mod is in without the user's ears.
-    /// DEBUG-only.
+    /// Interpreted dump of the focused screen's GRAPH — the mod's OWN view, one line per node rendered
+    /// the way the announcer reads it (all announcement parts joined), with stop/region boundaries and
+    /// the currently-focused node marked. The dev driver's /gui: lets me see what nav state the mod is
+    /// in without the user's ears. DEBUG-only.
     /// </summary>
     internal static class GuiInspector
     {
@@ -20,33 +21,29 @@ namespace RTAccess.Dev
             var screen = ScreenManager.Current;
             if (screen == null) return "(no active screen)\n";
 
-            var focused = Navigation.Current;
             sb.Append("screen: ").Append(screen.Key).Append(" | ").Append(screen.ScreenName ?? "");
-            if (focused == null) sb.Append("  (nothing focused)");
+            var nav = Navigation.Active as GraphNavigator;
+            var render = nav?.CurrentRender;
+            if (render == null) { sb.Append("  (no render)\n"); return sb.ToString(); }
+            if (!nav.HasFocus) sb.Append("  (nothing focused)");
             sb.Append('\n');
 
-            foreach (var child in screen.Children) DumpElement(child, 1, focused, sb);
+            object stop = new object(), region = new object(); // sentinels ≠ any real key
+            foreach (var node in render.Order)
+            {
+                if (!Equals(node.StopKey, stop)) { stop = node.StopKey; sb.Append("-- stop: ").Append(stop).Append('\n'); }
+                if (!Equals(node.RegionKey, region)) { region = node.RegionKey; if (region != null) sb.Append("   -- region: ").Append(region).Append('\n'); }
+                sb.Append(nav.HasFocus && Equals(nav.FocusedNodeId, node.Id) ? "> " : "  ");
+                sb.Append(SafeText(node));
+                sb.Append("  [").Append(node.Id).Append("]\n");
+            }
             return sb.ToString();
         }
 
-        private static void DumpElement(UIElement el, int depth, UIElement focused, StringBuilder sb)
+        // Nodes resolve live game data when rendering announcements — never let one throw kill the dump.
+        private static string SafeText(GraphNode node)
         {
-            if (el == null) return;
-            sb.Append(' ', depth * 2);
-            sb.Append(ReferenceEquals(el, focused) ? "> " : "  ");
-            string text = SafeText(el);
-            if (!string.IsNullOrEmpty(text)) sb.Append(text).Append("  ");
-            sb.Append('[').Append(el.GetType().Name);
-            if (!el.CanFocus) sb.Append(" ·structural");
-            sb.Append("]\n");
-            if (el is Container c)
-                foreach (var child in c.Children) DumpElement(child, depth + 1, focused, sb);
-        }
-
-        // Some elements resolve live game data when rendering announcements — never let one throw kill the dump.
-        private static string SafeText(UIElement el)
-        {
-            try { return el.GetFocusText(); }
+            try { return GraphAnnouncer.LeafText(node); }
             catch (Exception e) { return "<err: " + e.Message + ">"; }
         }
     }

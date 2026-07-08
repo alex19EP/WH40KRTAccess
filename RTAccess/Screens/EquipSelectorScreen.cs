@@ -52,7 +52,6 @@ namespace RTAccess.Screens
             return vm?.DollVM?.InventorySelectorWindowVM?.Value;
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

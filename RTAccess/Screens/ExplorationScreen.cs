@@ -55,7 +55,6 @@ namespace RTAccess.Screens
         // The game greys the tablet behind a dialog overlay while a POI dialog runs — gate our verbs the same.
         private static bool Locked(ExplorationVM vm) => vm.IsLockUIForDialog.Value;
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

@@ -60,7 +60,6 @@ namespace RTAccess.Screens
 
         private static SlotsGroupVM<ItemSlotVM> PartyGroup(LootVM vm) => vm.InventoryStash?.ItemSlotsGroup;
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

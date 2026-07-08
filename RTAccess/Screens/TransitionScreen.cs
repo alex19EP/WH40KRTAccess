@@ -67,7 +67,6 @@ namespace RTAccess.Screens
         private static int Travelable(TransitionVM vm)
             => vm.EntryVms.Count(e => e != null && e.IsInteractable.Value);
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

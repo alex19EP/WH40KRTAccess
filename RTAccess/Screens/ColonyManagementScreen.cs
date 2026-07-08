@@ -36,7 +36,6 @@ namespace RTAccess.Screens
 
         private static ColonyManagementVM Vm() => ServiceWindows()?.ColonyManagementVM?.Value;
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

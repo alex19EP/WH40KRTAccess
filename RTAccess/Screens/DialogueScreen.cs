@@ -157,7 +157,6 @@ namespace RTAccess.Screens
             TryNumberSelect(vm);
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

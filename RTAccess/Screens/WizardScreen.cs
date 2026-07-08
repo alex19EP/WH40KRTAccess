@@ -19,7 +19,6 @@ namespace RTAccess.Screens
 
         public override bool IsActive() => WizardVm() != null;
 
-        public override bool BuildsGraph => true;
 
         // Opening (and every phase change) lands on the page content — the phase content is the work
         // surface; the footer buttons stay later in Tab order.

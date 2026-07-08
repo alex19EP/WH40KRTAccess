@@ -46,7 +46,6 @@ namespace RTAccess.Screens
                     _ => box.OnDeclinePressed());
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

@@ -104,7 +104,6 @@ namespace RTAccess.Screens
             && Game.Instance != null
             && Game.Instance.CurrentMode == GameModeType.Default;
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

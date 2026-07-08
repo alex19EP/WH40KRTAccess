@@ -12,12 +12,10 @@ namespace RTAccess.UI.Announcements
     /// <see cref="Announcement"/> subclass: a global category <c>announcements.{key}</c> with an
     /// <c>enabled</c> toggle + <c>include_suffix</c> toggle (+ anything a static
     /// <c>RegisterSettings(CategorySetting)</c> on the announcement declares), hidden from the UI unless
-    /// the announcement carries <see cref="ShowInGlobalSettingsAttribute"/>. For EVERY concrete
-    /// <see cref="UIElement"/> with an <c>[AnnouncementOrder]</c>: per-element-type overrides at
-    /// <c>ui.{element}.announcements.{ann}.{setting}</c> — a <see cref="NullableBoolSetting"/> mirroring
-    /// each global setting (inherits the global until the user overrides it). <see cref="AnnouncementContext"/>
-    /// resolves per-element override → global → default. (WotR has no buffer/hotkey contexts; the
-    /// announcement-reorder feature is not ported yet.)
+    /// the announcement carries <see cref="ShowInGlobalSettingsAttribute"/>. For EVERY graph control
+    /// type: per-type overrides at <c>ui.{type}.announcements.{ann}.{setting}</c> — a
+    /// <see cref="NullableBoolSetting"/> mirroring each global setting (inherits the global until the
+    /// user overrides it), resolved by <see cref="PartEnabled"/>.
     /// </summary>
     public static class AnnouncementRegistry
     {
@@ -28,24 +26,16 @@ namespace RTAccess.UI.Announcements
             try { types = asm.GetTypes(); }
             catch (ReflectionTypeLoadException e) { types = e.Types.Where(t => t != null).ToArray(); }
 
-            // Globals first — per-element overrides reference them as fallbacks.
+            // Globals first — per-type overrides reference them as fallbacks.
             foreach (var t in types.Where(t => !t.IsAbstract && typeof(Announcement).IsAssignableFrom(t)))
             {
                 try { RegisterGlobal(t); }
                 catch (Exception e) { Main.Log?.Error("[ann] global register failed for " + t.Name + ": " + e.Message); }
             }
 
-            foreach (var t in types.Where(t => !t.IsAbstract && typeof(UIElement).IsAssignableFrom(t)
-                                               && !typeof(RTAccess.Screens.Screen).IsAssignableFrom(t) // screens aren't focusable elements
-                                               && t.GetCustomAttribute<AnnouncementOrderAttribute>(true) != null))
-            {
-                try { RegisterElementOverrides(t); }
-                catch (Exception e) { Main.Log?.Error("[ann] per-element register failed for " + t.Name + ": " + e.Message); }
-            }
-
-            // Graph control types (the registry): the same per-type override schema, keyed on the registry
-            // entry instead of a proxy class. Keys shared with legacy collapsed element keys ("toggle",
-            // "radio_button") land in the SAME categories — one settings identity across both systems.
+            // Graph control types (the registry): per-type override schema keyed on the registry entry.
+            // Keys shared with legacy collapsed element keys ("toggle", "radio_button") land in the SAME
+            // categories — the settings identity carried over from the element era.
             foreach (var ct in RTAccess.UI.ControlTypes.All)
             {
                 try { RegisterControlTypeOverrides(ct); }
@@ -157,46 +147,6 @@ namespace RTAccess.UI.Announcements
 
             annType.GetMethod("RegisterSettings", BindingFlags.Public | BindingFlags.Static,
                 null, new[] { typeof(CategorySetting) }, null)?.Invoke(null, new object[] { category });
-        }
-
-        private static void RegisterElementOverrides(Type elType)
-        {
-            var orderAttr = elType.GetCustomAttribute<AnnouncementOrderAttribute>(true);
-            if (orderAttr == null) return;
-
-            var elementKey = DeriveElementKey(elType);
-            var elementDisplay = DeriveElementDisplayName(elType);
-
-            // PositionAnnouncement is injected universally (any element with a parent), so every element
-            // gets an override entry for it even though it's not in the [AnnouncementOrder].
-            var annTypes = orderAttr.Types.Concat(new[] { typeof(PositionAnnouncement) }).Distinct().ToList();
-
-            foreach (var annType in annTypes)
-            {
-                var annKey = DeriveAnnouncementKey(annType);
-                var annDisplay = DeriveDisplayName(StripSuffix(annType.Name, "Announcement"));
-
-                // The global category RegisterGlobal created above — fetched directly via EnsureCategory
-                // (returns the existing one). We can't use ModSettings.GetSetting here: the path index isn't
-                // built until ModSettings.Initialize, which runs AFTER registration, and it indexes only leaves.
-                var global = ModSettingsRegistry.EnsureCategory("announcements." + annKey, "Announcements/" + annDisplay);
-
-                // Under an "Announcements" subnode, so each element node's root stays free for future
-                // element-specific (non-announcement) settings.
-                var perEl = ModSettingsRegistry.EnsureCategory(
-                    "ui." + elementKey + ".announcements." + annKey,
-                    "UI/" + elementDisplay + "/Announcements/" + annDisplay,
-                    // "ui" root segment skipped (empty); element node, the Announcements subnode, and the
-                    // per-announcement leaf each get a "settings"-table loc key (English fallback if absent).
-                    "/element." + elementKey + "/announcements_group/announcement." + annKey);
-
-                foreach (var child in global.Children)
-                {
-                    if (perEl.GetByKey(child.Key) != null) continue;
-                    var ov = CreateOverride(child);
-                    if (ov != null) perEl.Add(ov);
-                }
-            }
         }
 
         // Mirror a global setting as a Nullable* override that inherits from it. (Only Bool globals exist

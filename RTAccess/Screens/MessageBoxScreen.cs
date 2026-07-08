@@ -40,7 +40,6 @@ namespace RTAccess.Screens
             return cvm?.MessageBoxVM.Value;
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

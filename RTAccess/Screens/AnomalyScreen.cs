@@ -48,7 +48,6 @@ namespace RTAccess.Screens
 
         private static AnomalyVM Vm() => Game.Instance?.RootUiContext?.SpaceVM?.StaticPartVM?.AnomalyVM;
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

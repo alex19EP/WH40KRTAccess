@@ -78,7 +78,6 @@ namespace RTAccess.Screens
                 ?? rc?.SpaceVM?.StaticPartVM?.ServiceWindowsVM;
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

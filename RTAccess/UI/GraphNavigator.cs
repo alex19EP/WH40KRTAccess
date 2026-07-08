@@ -5,25 +5,21 @@ using RTAccess.UI.Graph;
 namespace RTAccess.UI
 {
     /// <summary>
-    /// The graph-based navigator: runs every screen on the key-graph core (<see cref="KeyGraph"/> over
-    /// <see cref="TreeGraphAdapter"/>), replacing the push-based announce discipline with pull-based
-    /// diffing — the graph is rebuilt per operation and per frame, focus is reconciled by identity, and
-    /// a focus change is announced exactly once no matter what caused it (input, a screen moving focus,
-    /// a content rebuild, or the game yanking a VM). Screens keep their retained Container trees and
-    /// their existing Navigation API; behavior policies (tree expand/collapse, sheet/table readouts,
-    /// tab semantics, tooltip fall-throughs, type-ahead) carry over from the retired push-based
-    /// navigator unchanged. Ported from WrathAccess's GraphNavigator with the RT adaptations: node-based
-    /// <see cref="HasFocus"/>, RT's three-slot sound model at the navigator chokepoints, the base
-    /// <see cref="Navigator.PumpFocus"/> riding graph focus (re-armed on <see cref="Attach"/>), RT's
-    /// tooltip chain (TooltipReader / GlossaryLinks / TooltipScreen) with the associated-element and
-    /// row-tooltip grafts, and the split Space tooltip action (ui.tooltip.space).
+    /// The graph-based navigator: runs every screen on the key-graph core (<see cref="KeyGraph"/>),
+    /// with pull-based announcement diffing — the graph is rebuilt per operation and per frame from
+    /// the screen's immediate-mode <see cref="Screens.Screen.Build"/>, focus is reconciled by
+    /// identity, and a focus change is announced exactly once no matter what caused it (input, a
+    /// screen moving focus, a content rebuild, or the game yanking a VM). Ported from WrathAccess's
+    /// GraphNavigator with the RT adaptations: cursor-key <see cref="HasFocus"/>, RT's three-slot
+    /// sound model at the navigator chokepoints, and the split Space tooltip action
+    /// (ui.tooltip.space).
     /// </summary>
     public sealed class GraphNavigator : Navigator
     {
         // One GraphState per LIVE screen (focus cursor, per-stop memory, tree expansion): a screen
         // covered by another (a tooltip reader, a dropdown submenu, any higher layer) keeps its state
         // and restores exactly where you were when focus returns; a POPPED screen's state is dropped
-        // (ScreenClosed), so reopening starts fresh — matching the old retained-tree lifecycle.
+        // (ScreenClosed), so reopening starts fresh.
         private readonly Dictionary<Screens.Screen, GraphState> _states =
             new Dictionary<Screens.Screen, GraphState>();
         private GraphState _state = new GraphState();
@@ -42,16 +38,10 @@ namespace RTAccess.UI
             _search.OnNoMatch = text => Speak(Loc.T("search.no_match", new { text }), interrupt: true);
         }
 
-        public override UIElement Current => _graph?.CurrentNode?.Id.Reference as UIElement;
-
-        // ADAPTATION (RT, no WA equivalent): node presence IS focus engagement. Current (the backing
-        // UIElement) is null on graph-native nodes (Id.Reference is a domain object, or nothing), so a
-        // Current-based HasFocus would report "unfocused" there — InputManager would yield the
-        // YieldsWhenUnfocused chords (Space = ui.tooltip.space, Escape = ui.back) to the game while our
-        // handler ALSO acts on the focused node: game pause + our tooltip, a double-fire. The cursor key
-        // is the engagement marker (Blur clears it; StartUnfocused screens have none until Tab seats
-        // one), so every HasFocus consumer (chord claiming, InGameScreen's category flip, the
-        // exploration gates) inherits the right answer through the Navigation.HasFocus chokepoint.
+        // ADAPTATION (RT, no WA equivalent): the cursor key is the engagement marker (Blur clears it;
+        // StartUnfocused screens have none until Tab seats one) — it survives attach/re-render, so
+        // every HasFocus consumer (chord claiming, InGameScreen's category flip, the exploration
+        // gates) inherits the right answer through the Navigation.HasFocus chokepoint.
         public override bool HasFocus => _state.CurKey != null;
 
         public override void Attach(Screens.Screen screen)
@@ -59,9 +49,6 @@ namespace RTAccess.UI
             bool same = ReferenceEquals(screen, Screen);
             Screen = screen;
             ClearSearch(announce: false);
-            // RT: a (re)attach re-arms the per-frame focus pump, so the (possibly restored) landing gets
-            // OnFocusEnter again — the base pump reads Current, which resolves through the graph here.
-            ResetFocusPump();
             if (!same)
             {
                 // Swap to this screen's own state (creating it on first attach). The differ memory
@@ -113,11 +100,13 @@ namespace RTAccess.UI
 
         public override object FocusedNodeReference => _graph?.CurrentNode?.Id.Reference;
 
-        // Graph-native screens declare fresh from live game state on every render (immediate mode);
-        // legacy screens' retained Container trees are compiled by the adapter until they migrate.
+        /// <summary>The live render + focused node id (DEBUG inspection — the /gui dump).</summary>
+        internal GraphRender CurrentRender => _graph?.Current;
+        internal ControlId FocusedNodeId => _graph?.CurrentNode?.Id;
+
+        // Screens declare fresh from live game state on every render (immediate mode).
         private GraphRender BuildRender(Screens.Screen screen)
         {
-            if (!screen.BuildsGraph) return TreeGraphAdapter.Build(screen);
             var b = new GraphBuilder(_state.Expanded); // groups consult the persistent expansion set
             screen.Build(b);
             return b.Build();
@@ -130,40 +119,27 @@ namespace RTAccess.UI
             _lastSpokenNode = null;
             _pendingFocus = null;
             _liveKey = null;
-            Screen?.SetFocusedChild(null);
         }
 
         /// <summary>The per-frame pull: rebuild + reconcile, establish initial focus when content appears,
         /// apply pending focus requests, and announce any focus-identity change exactly once. This single
-        /// path replaces the initial-focus debt, the per-callsite announce decisions, and the stranded-
-        /// panel special case of the old navigator.</summary>
+        /// path replaces per-callsite announce decisions.</summary>
         public override void EnsureFocus()
         {
             if (Screen == null || _graph == null) return;
 
             if (_state.CurKey == null && _pendingFocus == null)
             {
-                // Unfocused screens (exploration) stay unfocused until Tab — unless they remember focus
-                // (graph-native screens have no element tree; their engagement marker IS the cursor,
-                // which Blur cleared, so they simply stay out until Tab seats one).
-                if (Screen.StartUnfocused && (Screen.BuildsGraph || Screen.FocusedChild == null)) return;
-                if (Screen.BuildsGraph)
+                // Unfocused screens (exploration) stay unfocused until Tab seats a cursor.
+                if (Screen.StartUnfocused) return;
+                if (!_graph.Rerender()) return; // no content yet — Reconcile will seat the start node once there is
+                // Declared initial landing (a wizard's page content): seat the stop's landing node
+                // (remembered → selected member → first), BEFORE the differ announces below.
+                var stop = Screen.InitialFocusStop;
+                if (stop != null)
                 {
-                    if (!_graph.Rerender()) return; // no content yet — Reconcile will seat the start node once there is
-                    // Declared initial landing (a wizard's page content): seat the stop's landing node
-                    // (remembered → selected member → first), BEFORE the differ announces below.
-                    var stop = Screen.InitialFocusStop;
-                    if (stop != null)
-                    {
-                        var land = KeyGraph.StopLanding(_graph.Current, _graph.State, stop);
-                        if (land != null) _graph.Focus(land.Id);
-                    }
-                }
-                else
-                {
-                    var landing = InitialLanding();
-                    if (landing == null) return; // content not built yet — retry next frame
-                    if (!_graph.Focus(TreeGraphAdapter.IdFor(landing))) return;
+                    var land = KeyGraph.StopLanding(_graph.Current, _graph.State, stop);
+                    if (land != null) _graph.Focus(land.Id);
                 }
             }
             else
@@ -190,7 +166,6 @@ namespace RTAccess.UI
 
             var node = _graph.CurrentNode;
             if (node == null) return;
-            SyncFocusedChildren(node);
 
             if (_lastSpokenKey == null || !_lastSpokenKey.Equals(node.Id))
             {
@@ -240,7 +215,7 @@ namespace RTAccess.UI
             if (_graph == null) return;
             // An unfocused screen with nothing focused has nothing to announce — and Rerender would
             // auto-seat a phantom focus at the start node.
-            if (_state.CurKey == null && Screen != null && Screen.StartUnfocused && Screen.FocusedChild == null) return;
+            if (_state.CurKey == null && Screen != null && Screen.StartUnfocused) return;
             if (!_graph.Rerender()) return;
             var node = _graph.CurrentNode;
             if (node == null) return;
@@ -249,83 +224,13 @@ namespace RTAccess.UI
             _lastSpokenNode = node;
         }
 
-        public override void Focus(UIElement target, bool announce = true)
-        {
-            if (target == null || _graph == null) return;
-            var id = TreeGraphAdapter.IdFor(target);
-            if (_graph.Focus(id))
-            {
-                var node = _graph.CurrentNode;
-                SyncFocusedChildren(node);
-                if (announce) Speak(ComposeMove(_lastSpokenNode, node, entry: false)); // queued, like the old Focus
-                _lastSpokenKey = node.Id;
-                _lastSpokenNode = node;
-            }
-            else
-            {
-                // Not in the render yet (lazy build mid-frame) — apply on the next EnsureFocus.
-                _pendingFocus = id;
-                _pendingAnnounce = announce;
-            }
-        }
-
-        // The screen-entry landing: remembered/selected focus descended to the innermost element —
-        // the same restore rules the old navigator used (RepresentativeChild is shared via the base).
-        private UIElement InitialLanding()
-        {
-            var first = RepresentativeChild(Screen);
-            return first == null ? null : DescendTarget(first);
-        }
-
-        // Descend a container to its remembered/selected element (tree nodes only when expanded and
-        // remembering); mirrors the old AppendWithDescend/DescendFrom rules.
-        private static UIElement DescendTarget(UIElement element)
-        {
-            while (element is Container c)
-            {
-                bool isTreeNode = c.Shape == ContainerShape.Tree
-                    && c.Parent is Container parent && parent.Shape == ContainerShape.Tree;
-                UIElement next;
-                if (isTreeNode)
-                {
-                    if (!c.Expanded) break;
-                    next = RememberedOrSelected(c);
-                    if (next == null) break;
-                }
-                else
-                {
-                    next = RepresentativeChild(c);
-                    if (next == null) break;
-                }
-                c.SetFocusedChild(next);
-                element = next;
-            }
-            return element;
-        }
-
-        // Keep every container's FocusedChild in step with graph focus — screens read it (and the
-        // unfocused-screen restore depends on it), so the retained tree stays authoritative for memory.
-        private void SyncFocusedChildren(GraphNode node)
-        {
-            var e = node?.Id.Reference as UIElement;
-            while (e != null && e != Screen)
-            {
-                e.Parent?.SetFocusedChild(e);
-                e = e.Parent;
-            }
-        }
-
         // ---- sound (RT's three-slot model, played at the navigator chokepoints) ----
 
         // The hover sound for a focus MOVE (keypress-driven — rides exactly the interrupt speech paths).
-        // An element-backed node (the adapter path) reads the element's HoverSoundType, so themed hovers
-        // (Analog/Plastick) and the load-bearing NoSound convention (dense grids stay quiet) carry over;
-        // a graph-native node reads the vtable's opaque HoverSound slot (a boxed ButtonSoundsEnum —
-        // GraphTypes is BCL-only, so the cast lives here). Null ⇒ the generic hover.
+        // Reads the vtable's opaque HoverSound slot (a boxed ButtonSoundsEnum — GraphTypes is BCL-only,
+        // so the cast lives here). Null ⇒ the generic hover.
         private static void PlayHover(GraphNode node)
         {
-            var el = node?.Id.Reference as UIElement;
-            if (el != null) { RTAccess.UiSound.Hover(el.HoverSoundType); return; }
             RTAccess.UiSound.Hover(node?.Vtable.HoverSound as Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum?);
         }
 
@@ -353,8 +258,8 @@ namespace RTAccess.UI
                 case "ui.prev": return Tab(-1);
                 case "ui.home": return JumpEdge(first: true);
                 case "ui.end": return JumpEdge(first: false);
-                // Region jumps consume only when the focused node is IN a region (adapter FlowSheets
-                // stamp regions too) — elsewhere Ctrl+arrows bubble (no other action binds them; no-op).
+                // Region jumps consume only when the focused node is IN a region — elsewhere
+                // Ctrl+arrows bubble (no other action binds them; no-op).
                 case "ui.regionPrev": return _graph?.CurrentNode?.RegionKey != null && RegionJump(-1);
                 case "ui.regionNext": return _graph?.CurrentNode?.RegionKey != null && RegionJump(1);
                 case "ui.activate":
@@ -362,18 +267,14 @@ namespace RTAccess.UI
                     // Nothing focused → don't consume (RT's null-guard non-consume contract, so the
                     // chord arbitration keeps the game's Enter alive out in the world).
                     if (_graph?.CurrentNode == null) return false;
-                    if (VtableActivate()) return true;
-                    var el = Current;
-                    if (el != null && !TryActivate(el)) TryActivate(Associated(el));
+                    VtableActivate();
                     return true;
                 }
                 case "ui.secondary":
                 {
                     var node = _graph?.CurrentNode;
                     if (node == null) return false;
-                    if (node.Vtable.OnSecondary != null) { _graph.Secondary(); return true; }
-                    var el = Current;
-                    if (el != null && !TryContext(el)) TryContext(Associated(el));
+                    if (node.Vtable.OnSecondary != null) _graph.Secondary();
                     return true;
                 }
                 case "ui.back":
@@ -381,14 +282,11 @@ namespace RTAccess.UI
                 case "ui.tooltip":
                 case "ui.tooltip.space":
                 {
-                    // NODE-null (not Current-null) don't-claim guard: for Space this is what lets the
-                    // arbitration yield the game's Pause / End-turn while nothing is focused, without
-                    // going deaf on graph-native nodes whose Current (element) is legitimately null.
+                    // Node-null don't-claim guard: for Space this is what lets the arbitration yield
+                    // the game's Pause / End-turn while nothing is focused.
                     var node = _graph?.CurrentNode;
                     if (node == null) return false;
                     if (node.Vtable.OnTooltip != null) { _graph.Tooltip(); return true; }
-                    var el = Current;
-                    if (el != null) { OpenTooltipOrLinks(el); return true; }
                     Speak(Loc.T("nav.no_tooltip"), interrupt: true);
                     return true;
                 }
@@ -412,19 +310,11 @@ namespace RTAccess.UI
         {
             var focusNode = _graph?.CurrentNode;
             if (focusNode == null) return false;
-            var cur = Current; // the backing UIElement — null on a graph-native screen
 
-            // A focused slider/dropdown adjusts on Left/Right (priority over any navigation):
-            // vtable-declared adjust first (graph-native), then the legacy element actions.
+            // A focused slider/dropdown adjusts on Left/Right (priority over any navigation).
             if (dir == NavDirection.Left || dir == NavDirection.Right)
             {
-                int sign = dir == NavDirection.Right ? 1 : -1;
-                if (VtableAdjust(sign)) return true;
-                if (cur != null)
-                {
-                    string actionId = sign < 0 ? ActionIds.Decrease : ActionIds.Increase;
-                    if (cur.InvokeAction(actionId)) { Speak(cur.GetStateMessage().Resolve(), interrupt: true); return true; }
-                }
+                if (VtableAdjust(dir == NavDirection.Right ? 1 : -1)) return true;
             }
 
             // Edge-wired movement first (rows/grids/flattened tree rows all ride edges).
@@ -454,9 +344,9 @@ namespace RTAccess.UI
                 }
             }
 
-            // Nothing moved: consume edges inside trees/grids (old behavior); bubble from plain lists so
+            // Nothing moved: consume edges inside trees (old behavior); bubble from plain lists so
             // an unfocused screen's arrows fall through to the overlay.
-            return KeyGraph.InTree(focusNode) || cur?.Parent is FlowSheet || cur?.Parent is Table;
+            return KeyGraph.InTree(focusNode);
         }
 
         // Speak the focused group's post-toggle state (its full readout includes expanded/collapsed) and
@@ -465,7 +355,6 @@ namespace RTAccess.UI
         {
             var node = _graph.CurrentNode;
             if (node == null) return;
-            SyncFocusedChildren(node);
             Speak(GraphAnnouncer.LeafText(node), interrupt: true);
             _lastSpokenKey = node.Id;
             _lastSpokenNode = node;
@@ -515,24 +404,10 @@ namespace RTAccess.UI
             return LandOnStop(stops[ni]);
         }
 
-        // Land on a stop (Tab cycling): its remembered/selected element descended to the innermost — the
-        // same restore the old Tab used (the retained containers carry the memory).
+        // Land on a stop (Tab cycling): remembered position → SELECTED member → first node (the shared
+        // StopLanding — so Tab into a radio/tab group lands on the current pick, not the top).
         private bool LandOnStop(object stopKey)
         {
-            if (stopKey is Container c)
-            {
-                var landing = DescendTarget(RepresentativeChild(c) ?? (UIElement)c);
-                if (landing != null) FocusAndAnnounce(landing, interrupt: true);
-                return true;
-            }
-            if (stopKey is UIElement el)
-            {
-                FocusAndAnnounce(el, interrupt: true);
-                return true;
-            }
-
-            // Graph-native stop: remembered position → SELECTED member → first node (the shared
-            // StopLanding — so Tab into a radio/tab group lands on the current pick, not the top).
             var land = KeyGraph.StopLanding(_graph.Current, _graph.State, stopKey);
             if (land == null || !_graph.Focus(land.Id)) return true;
 
@@ -549,7 +424,7 @@ namespace RTAccess.UI
             var focusNode = _graph?.CurrentNode;
             if (focusNode == null) return false;
 
-            // In a tree (adapter or native): first/last sibling at the current depth.
+            // In a tree: first/last sibling at the current depth.
             if (KeyGraph.InTree(focusNode))
             {
                 var sib = _graph.MoveToSiblingEdge(first);
@@ -557,49 +432,10 @@ namespace RTAccess.UI
                 return true;
             }
 
-            var cur = Current;
-            if (cur == null)
-            {
-                // Graph-native: first/last along the vertical axis of the current structure.
-                var move = _graph.MoveToEdge(first ? GraphDir.Up : GraphDir.Down);
-                if (move.Moved) AnnounceMove(move);
-                return true;
-            }
-
-            if (cur.Parent is FlowSheet sheet)
-            {
-                if (!sheet.TryCoords(cur, out int r, out int c)) return true;
-                int nr = -1, nc = -1;
-                if (first)
-                {
-                    for (int row = 0; row < sheet.RowCount && nr < 0; row++)
-                    {
-                        int col = sheet.LeftmostVisitable(row);
-                        if (col >= 0) { nr = row; nc = col; }
-                    }
-                }
-                else
-                {
-                    for (int row = sheet.RowCount - 1; row >= 0 && nr < 0; row--)
-                        for (int col = sheet.ColCount - 1; col >= 0; col--)
-                            if (sheet.Visitable(row, col)) { nr = row; nc = col; break; }
-                }
-                if (nr < 0 || (nr == r && nc == c)) return true;
-                var cell = sheet.CellAt(nr, nc);
-                if (cell != null) FocusAndAnnounce(cell, interrupt: true);
-                return true;
-            }
-
-            var container = cur.Parent;
-            if (container != null
-                && (container.Shape == ContainerShape.VerticalList || container.Shape == ContainerShape.HorizontalList))
-            {
-                var target = first ? container.FirstFocusable() : container.LastFocusable();
-                if (target != null && target != cur) FocusAndAnnounce(target, interrupt: true);
-                return true;
-            }
-
-            return true; // focused but in no jumpable structure — consume, do nothing
+            // First/last along the vertical axis of the current structure.
+            var move = _graph.MoveToEdge(first ? GraphDir.Up : GraphDir.Down);
+            if (move.Moved) AnnounceMove(move);
+            return true;
         }
 
         private bool RegionJump(int dir)
@@ -610,28 +446,10 @@ namespace RTAccess.UI
             return true;
         }
 
-        // Focus an element via the graph and announce the move interrupting (a user-initiated move).
-        private void FocusAndAnnounce(UIElement target, bool interrupt)
-        {
-            if (target is Container tc && tc.Shape != ContainerShape.Tree)
-            {
-                var descended = DescendTarget(tc);
-                if (descended != null) target = descended;
-            }
-            if (!_graph.Focus(TreeGraphAdapter.IdFor(target))) return;
-            var node = _graph.CurrentNode;
-            SyncFocusedChildren(node);
-            if (interrupt) PlayHover(node);
-            Speak(ComposeMove(_lastSpokenNode, node, entry: false), interrupt);
-            _lastSpokenKey = node.Id;
-            _lastSpokenNode = node;
-        }
-
         private void AnnounceMove(MoveResult result, bool regionEntry = false)
         {
             var node = result.To;
             if (node == null) return;
-            SyncFocusedChildren(node);
             PlayHover(node);
             Speak(ComposeMove(result.From, node, entry: false, transitionLabel: result.TransitionLabel, regionEntry: regionEntry), interrupt: true);
             _lastSpokenKey = node.Id;
@@ -678,169 +496,17 @@ namespace RTAccess.UI
             return true;
         }
 
-        // ---- composition (GraphAnnouncer for lists/trees; ported sheet/table framing for grids) ----
+        // ---- composition ----
 
         private string ComposeMove(GraphNode from, GraphNode to, bool entry, string transitionLabel = null, bool regionEntry = false)
         {
-            var toEl = to.Id.Reference as UIElement;
-            var fromEl = from?.Id.Reference as UIElement;
-
-            if (toEl?.Parent is FlowSheet sheet)
-                return ComposeFlowCell(sheet, fromEl != null && fromEl.Parent == sheet ? fromEl : null, toEl, regionEntry || entry);
-            if (toEl?.Parent is Table table)
-                return ComposeTableCell(table, fromEl != null && fromEl.Parent == table ? fromEl : null, toEl);
-
             return GraphAnnouncer.Compose(entry ? null : from, to, transitionLabel);
         }
 
-        // Ported from the old AnnounceFlowCell: region on entry, column header on column change, row
-        // label on row change, associated-element readouts on row change; bar regions read the full
-        // focus message. fromCell == null means "entered from outside the sheet".
-        private string ComposeFlowCell(FlowSheet sheet, UIElement fromCell, UIElement toCell, bool forceEntry)
-        {
-            if (!sheet.TryCoords(toCell, out int nr, out int nc)) return toCell.GetFocusMessage().Resolve();
-            int r = -1, c = -1;
-            bool haveFrom = fromCell != null && sheet.TryCoords(fromCell, out r, out c);
-
-            var parts = new List<string>();
-            var region = sheet.RegionAt(nr);
-            bool entered = forceEntry || !haveFrom || region != sheet.RegionAt(r);
-
-            if (!haveFrom && !string.IsNullOrEmpty(sheet.Label)) parts.Add(sheet.Label); // entering the sheet
-
-            if (region != null && region.ReadCellFocusMessage)
-            {
-                if (entered && !string.IsNullOrEmpty(region.Label) && region.Label != toCell.GetLabelText())
-                    parts.Add(region.Label);
-                var msg = toCell.GetFocusMessage().Resolve();
-                parts.Add(string.IsNullOrWhiteSpace(msg) ? Loc.T("value.blank") : msg);
-                return string.Join(", ", parts);
-            }
-
-            bool rowChanged = !haveFrom || nr != r;
-            bool colChanged = haveFrom && nc != c;
-
-            if (rowChanged)
-            {
-                var assoc = sheet.ComposeAssociatedReadout(toCell, withRegionLabel: entered);
-                if (assoc != null) { parts.Add(assoc); return string.Join(", ", parts); }
-            }
-
-            if (entered && region != null && !string.IsNullOrEmpty(region.Label))
-                parts.Add(region.Label + ", " + region.TypeName);
-            if (colChanged) { var h = sheet.ColumnHeader(nr, nc); if (!string.IsNullOrEmpty(h)) parts.Add(h); }
-            if (rowChanged && nc != 0) { var rl = sheet.RowLabel(nr); if (!string.IsNullOrEmpty(rl)) parts.Add(rl); }
-            if (!string.IsNullOrEmpty(toCell.Role)) parts.Add(toCell.Role);
-            var text = toCell.GetLabelText();
-            parts.Add(string.IsNullOrWhiteSpace(text) ? Loc.T("value.blank") : text);
-            return string.Join(", ", parts);
-        }
-
-        // Ported from the old GridArrow framing: the group when it changes, the changed axis headers,
-        // the cell's role, then the cell ("blank" if empty). fromCell == null = entry from outside.
-        private string ComposeTableCell(Table table, UIElement fromCell, UIElement toCell)
-        {
-            if (!table.TryCoords(toCell, out int nr, out int nc)) return toCell.GetFocusMessage().Resolve();
-            int r = -1, c = -1;
-            bool haveFrom = fromCell != null && table.TryCoords(fromCell, out r, out c);
-
-            var parts = new List<string>();
-            if (!haveFrom && !string.IsNullOrEmpty(table.Label)) parts.Add(table.Label);
-            var role = table.RoleAt(nr, nc);
-
-            var group = table.GroupText(nr, nc);
-            if ((!haveFrom || group != table.GroupText(r, c)) && !string.IsNullOrEmpty(group) && role != CellRole.Group)
-                parts.Add(group);
-
-            if (role == CellRole.None)
-            {
-                if (!haveFrom || nc != c) { var h = table.ColumnHeaderText(nr, nc); if (!string.IsNullOrEmpty(h)) parts.Add(h); }
-                if (haveFrom && nr != r) { var h = table.RowHeaderText(nr, nc); if (!string.IsNullOrEmpty(h)) parts.Add(h); }
-            }
-
-            if (!string.IsNullOrEmpty(toCell.Role)) parts.Add(toCell.Role);
-            var cell = toCell.GetLabelText();
-            parts.Add(string.IsNullOrWhiteSpace(cell) ? Loc.T("value.blank") : cell);
-            return string.Join(", ", parts);
-        }
-
-        // ---- element helpers (for adapter screens) ----
-
-        private static void CollectVisible(Container c, List<UIElement> outList)
-        {
-            foreach (var child in c.Children)
-            {
-                if (child.CanFocus) outList.Add(child);
-                if (child is Container cc && cc.Shape == ContainerShape.Tree && cc.Expanded)
-                    CollectVisible(cc, outList);
-            }
-        }
-
-        // Run an element's primary action with its sound + in-place reannounce (RT's TryActivate:
-        // themed OwlcatButtons carry a click sound-TYPE the game replays via PlayButtonClickSound(type);
-        // everything else keeps the blueprint-typed ActivateSound — the type takes precedence).
-        private bool TryActivate(UIElement e)
-        {
-            if (e == null || !e.InvokeAction(ActionIds.Activate)) return false;
-            if (e.ClickSoundType is Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum ct)
-                RTAccess.UiSound.Click(ct);
-            else
-            {
-                var sound = e.ActivateSound; // game plays this in the view handler we bypass
-                if (sound != null) RTAccess.UiSound.Play(sound);
-            }
-            if (e.ReannounceOnActivate) Speak(e.GetStateMessage().Resolve(), interrupt: true);
-            return true;
-        }
-
-        private bool TryContext(UIElement e)
-        {
-            if (e == null || !e.InvokeAction(ActionIds.Context)) return false;
-            if (e.ReannounceOnContext) Speak(e.GetStateMessage().Resolve(), interrupt: true);
-            return true;
-        }
-
-        private static UIElement Associated(UIElement cell)
-            => cell?.Parent is FlowSheet fs ? fs.AssociatedElementForCell(cell) : null;
-
-        // Space on an element offers everything it can drill into: its own tooltip (plain text, or a
-        // brick TEMPLATE read via TooltipReader), any extra rendered SECTIONS it carries (an inventory
-        // item's compare-vs-equipped cards), PLUS any inline glossary <link> targets in its text —
-        // RT's tooltip chain. Two grafts from the graph-era
-        // upstream: a cell with no tooltip of its own falls through to (1) its row's ASSOCIATED element's
-        // template, then (2) the row-level tooltip a Table/FlowSheet row declared — so Space on a table
-        // VALUE cell reads the row's detail.
-        private void OpenTooltipOrLinks(UIElement el)
-        {
-            if (el == null) { Speak(Loc.T("nav.no_tooltip"), interrupt: true); return; }
-
-            var body = el.GetTooltipText();
-            if (string.IsNullOrWhiteSpace(body))
-            {
-                var tpl = el.GetTooltipTemplate();
-                if (tpl == null) { var assoc = Associated(el); if (assoc != null && assoc != el) tpl = assoc.GetTooltipTemplate(); }
-                if (tpl == null && el.Parent is Table grid) tpl = grid.RowTooltipForCell(el);
-                if (tpl == null && el.Parent is FlowSheet sheet) tpl = sheet.RowTooltipForCell(el);
-                if (tpl != null) body = RTAccess.Accessibility.TooltipReader.GetFull(tpl);
-            }
-
-            // Inline glossary terms embedded in the element's game text (dialogue cues wrap terms like
-            // "psyker" / "Golden Throne" as <link>s), resolved to their definitions.
-            var links = RTAccess.Accessibility.GlossaryLinks.Gather(el);
-
-            // Extra rendered sections the element carries (e.g. an inventory item's compare-vs-equipped cards).
-            var sections = el.GetTooltipSections();
-
-            // The shared chooser (single tooltip / drill menu / "No tooltip") — the same branch the
-            // graph-native factory OnTooltip slots go through, so both paths drill identically.
-            TooltipChooser.Open(el.GetLabelText(), body, sections, links);
-        }
-
-        // ---- type-ahead search (glue carried over from the retired push-based navigator; landing goes via the graph) ----
+        // ---- type-ahead search (landing goes via the graph) ----
 
         private readonly TypeAheadSearch _search = new TypeAheadSearch();
-        private readonly List<UIElement> _searchItems = new List<UIElement>();
-        private readonly List<GraphNode> _searchNodes = new List<GraphNode>(); // graph-native scope
+        private readonly List<GraphNode> _searchNodes = new List<GraphNode>(); // the focused stop's nodes
         private ControlId _searchFocusId; // where the last result landed (staleness check)
         private RTAccess.Screens.Screen _lastTypeaheadScreen;
         private int _searchHeldDir;
@@ -849,7 +515,7 @@ namespace RTAccess.UI
         public override void TickTypeahead()
         {
             if (Screen == null || Screen.CapturesRawInput || !Screen.AllowsTypeahead
-                || !FocusMode.Active || _graph?.CurrentNode == null) // node-based: Current (the element) is null on graph-native screens
+                || !FocusMode.Active || _graph?.CurrentNode == null)
             {
                 if (_search.IsSearchActive || _search.HasBuffer) ClearSearch(announce: false);
                 _lastTypeaheadScreen = Screen;
@@ -927,12 +593,6 @@ namespace RTAccess.UI
         private void TypeChar(char c)
         {
             RebuildSearchScope();
-            if (_searchItems.Count > 0)
-            {
-                _search.AddChar(c);
-                _search.Search(_searchItems.Count, i => _searchItems[i].GetLabelText(), SearchFocusResult);
-                return;
-            }
             if (_searchNodes.Count > 0)
             {
                 _search.AddChar(c);
@@ -959,27 +619,13 @@ namespace RTAccess.UI
 
         private void RebuildSearchScope()
         {
-            _searchItems.Clear();
             _searchNodes.Clear();
-            var scope = (UIElement)Current;
-            if (scope == null)
-            {
-                // Graph-native: the searchable scope is the focused node's Tab-stop.
-                var node = _graph?.CurrentNode;
-                if (node == null || _graph.Current == null) return;
-                foreach (var n in _graph.Current.Order)
-                    if (Equals(n.StopKey, node.StopKey) && !n.Vtable.ExcludeFromSearch)
-                        _searchNodes.Add(n);
-                return;
-            }
-            while (scope.Parent != null && scope.Parent != Screen && scope.Parent.Shape != ContainerShape.Panel)
-                scope = scope.Parent;
-            if (scope is Container c)
-            {
-                if (c.Shape == ContainerShape.Tree) CollectVisible(c, _searchItems);
-                else CollectSearchLeaves(c, _searchItems);
-            }
-            else if (scope.CanFocus) _searchItems.Add(scope);
+            // The searchable scope is the focused node's Tab-stop.
+            var node = _graph?.CurrentNode;
+            if (node == null || _graph.Current == null) return;
+            foreach (var n in _graph.Current.Order)
+                if (Equals(n.StopKey, node.StopKey) && !n.Vtable.ExcludeFromSearch)
+                    _searchNodes.Add(n);
         }
 
         private void SearchFocusNodeResult(int index)
@@ -994,39 +640,10 @@ namespace RTAccess.UI
             _searchFocusId = node.Id; // the staleness check clears results if focus moves off this
         }
 
-        private static void CollectSearchLeaves(Container c, List<UIElement> outList)
-        {
-            foreach (var child in c.Children)
-            {
-                if (child is Container cc)
-                {
-                    if (cc.Shape == ContainerShape.Tree)
-                    {
-                        if (cc.CanFocus) outList.Add(cc);
-                        if (cc.Expanded) CollectVisible(cc, outList);
-                    }
-                    else CollectSearchLeaves(cc, outList);
-                }
-                else if (child.CanFocus) outList.Add(child);
-            }
-        }
-
-        private void SearchFocusResult(int index)
-        {
-            if (index < 0 || index >= _searchItems.Count) return;
-            var target = _searchItems[index];
-            // A matched GROUP node lands on itself (never auto-descend); only a Bar descends to a leaf.
-            if (target is Container c && c.Shape != ContainerShape.Tree)
-                target = c.FirstFocusable() ?? target;
-            FocusAndAnnounce(target, interrupt: true);
-            _searchFocusId = _graph?.CurrentNode?.Id;
-        }
-
         private void ClearSearch(bool announce)
         {
             bool had = _search.IsSearchActive || _search.HasBuffer;
             _search.Clear();
-            _searchItems.Clear();
             _searchNodes.Clear();
             _searchFocusId = null;
             _searchHeldDir = 0;

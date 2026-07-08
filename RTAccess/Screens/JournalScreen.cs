@@ -77,7 +77,6 @@ namespace RTAccess.Screens
 
         // ---- build (immediate mode) ----
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

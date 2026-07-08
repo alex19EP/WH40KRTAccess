@@ -60,7 +60,6 @@ namespace RTAccess.Screens
         private static VariativeInteractionVM Vm()
             => Game.Instance?.RootUiContext?.SurfaceVM?.DynamicPartVM?.VariativeInteractionVM?.Value;
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {

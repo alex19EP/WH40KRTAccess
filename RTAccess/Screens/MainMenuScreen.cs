@@ -39,7 +39,6 @@ namespace RTAccess.Screens
             return true;
         }
 
-        public override bool BuildsGraph => true;
 
         public override void Build(GraphBuilder b)
         {
