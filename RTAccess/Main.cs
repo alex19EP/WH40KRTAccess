@@ -14,6 +14,10 @@ public static class Main {
     internal static ModLog Log;
     /// <summary>The mod's install directory (UMM modEntry.Path) — root for bundled assets (locale JSON, …).</summary>
     internal static string ModDir;
+    /// <summary>Master enable flag, toggled from the UMM UI (OnToggle). Defaults true (a freshly loaded mod is
+    /// enabled). The <see cref="Speaker"/> chokepoint gates all speech on this, so a UMM-disabled mod goes fully
+    /// silent even though its EventBus subscribers / Harmony postfixes stay wired.</summary>
+    internal static bool Enabled = true;
     // Engage focus mode once, on the first frame the game's keyboard exists (it doesn't yet at Load).
     private static bool _bootFocusPending = true;
 
@@ -32,59 +36,8 @@ public static class Main {
             // that reads a persisted toggle; the tree is mostly empty today, but the map-viewer overlay/scanner
             // prefs will hang off it. Initialize loads settings.json over the in-code defaults (+ Reindex inside).
             // Declare settings on the tree BEFORE Initialize so Reindex indexes them and Load applies saved values.
-            // exploration.camera_follow (Off/On, default On) gates the tile-cursor follow-cam (TileExplorer.ScrollTo).
-            var explCat = Settings.ModSettingsRegistry.EnsureCategory("exploration", "Exploration");
-            if (explCat.GetByKey("camera_follow") == null)
-                explCat.Add(new Settings.BoolSetting("camera_follow", "Camera follows cursor", true, "exploration.camera_follow"));
-            // Ambient sonar (Exploration/Sonar.cs) — the first spatial-audio system. GATED OFF by default: audio
-            // quality is un-self-verifiable, so it ships silent for the maintainer's ear-tuning pass (Off / When
-            // moving / Continuous). See docs/plans/echoing-charting-lovelace.md (audio pass, Phase G).
-            if (explCat.GetByKey("sonar") == null)
-                explCat.Add(new Settings.ChoiceSetting("sonar", "Sonar", new[]
-                {
-                    new Settings.Choice("off", "Off", "overlay.mode.off"),
-                    new Settings.Choice("when_moving", "When moving", "overlay.mode.when_moving"),
-                    new Settings.Choice("continuous", "Continuous", "overlay.mode.continuous"),
-                }, "off", "exploration.sonar"));
-            if (explCat.GetByKey("sonar_volume") == null)
-                explCat.Add(new Settings.IntSetting("sonar_volume", "Sonar volume", 60, 0, 100, 5, "exploration.sonar_volume"));
-            // Fog-of-war boundary cue (Exploration/FogCue.cs) — a brief tone as the cursor crosses the edge of the
-            // party's current sight. ON by default: it's a discrete event, not a continuous bed, so it ships live
-            // without the ear-tuning pass (no keybind — toggle it here). Pitch/length match WrathAccess's fog wavs.
-            if (explCat.GetByKey("fog_cue") == null)
-                explCat.Add(new Settings.BoolSetting("fog_cue", "Fog boundary cue", true, "exploration.fog_cue"));
-            // Room-change announcement (Exploration/RoomMap.cs) — speak "Room 12, large hall" as the party (or the
-            // planted cursor) crosses into a differently-classified room. ON by default: a discrete event, dwell-gated
-            // so a boundary graze doesn't flap. The label rides the pre-staged overlay.cursor.announce_rooms key.
-            if (explCat.GetByKey("announce_rooms") == null)
-                explCat.Add(new Settings.BoolSetting("announce_rooms", "Announce room changes", true, "overlay.cursor.announce_rooms"));
-            // Directional wall tones (Exploration/WallTones.cs) — the continuous "shape of the room" bed: four
-            // looping cardinal voices whose volume rises as a wall nears. Ships OFF: the continuous bed is
-            // ambient/fatiguing, so the maintainer opts in with the Ctrl+F1 toggle (Off → When moving →
-            // Continuous, same chord as WrathAccess) and the volume defaults low. See the audio pass, Phase H.
-            if (explCat.GetByKey("walltones") == null)
-                explCat.Add(new Settings.ChoiceSetting("walltones", "Wall tones", new[]
-                {
-                    new Settings.Choice("off", "Off", "overlay.mode.off"),
-                    new Settings.Choice("when_moving", "When moving", "overlay.mode.when_moving"),
-                    new Settings.Choice("continuous", "Continuous", "overlay.mode.continuous"),
-                }, "off", "exploration.walltones"));
-            if (explCat.GetByKey("walltones_volume") == null)
-                explCat.Add(new Settings.IntSetting("walltones_volume", "Wall tone volume", 25, 0, 100, 5, "exploration.walltones_volume"));
-            if (explCat.GetByKey("walltones_set") == null)
-                explCat.Add(new Settings.ChoiceSetting("walltones_set", "Wall tone set", new[]
-                {
-                    new Settings.Choice("1", "Set 1", "exploration.walltones_set.1"),
-                    new Settings.Choice("2", "Set 2", "exploration.walltones_set.2"),
-                }, "1", "exploration.walltones_set"));
-            // Spatial-audio realism toggles (read by Audio/Spatializer.Cue) — the object sonar's per-source 3D on
-            // top of pan: an interaural time delay (headphone left/right sharpness) and a rear low-pass (muffled =
-            // behind). Both default ON; separated so the maintainer can A/B each by ear. See the audio pass.
-            var audioCat = Settings.ModSettingsRegistry.EnsureCategory("audio", "Audio");
-            if (audioCat.GetByKey("itd") == null)
-                audioCat.Add(new Settings.BoolSetting("itd", "Interaural time delay (stereo depth)", true, "audio.itd"));
-            if (audioCat.GetByKey("front_back_filter") == null)
-                audioCat.Add(new Settings.BoolSetting("front_back_filter", "Front/back muffling", true, "audio.front_back_filter"));
+            // The in-code defaults (exploration + audio categories) live in Settings.Defaults — Load stays orchestration.
+            Settings.Defaults.Register();
             // UI = per-announcement settings (global toggles) + the graph control-type override registry
             // (ControlTypes.All). Creates the "announcements" + "ui" categories under the settings Root —
             // declared BEFORE Initialize like everything else.
@@ -108,7 +61,7 @@ public static class Main {
             Input.InputBindings.RegisterDefaults();
             Screens.ScreenManager.Initialize();
             HarmonyInstance = new Harmony(modEntry.Info.Id);
-            HarmonyInstance.PatchAll(Assembly.GetExecutingAssembly());
+            PatchAllIsolated();
             // Voice world-exploration state (chosen interactable + area/loading transitions). One persistent
             // subscriber for the whole session; unsubscribed in OnUnload.
             EventBus.Subscribe(ExplorationEvents.Instance);
@@ -149,14 +102,21 @@ public static class Main {
         return true;
     }
 
-    // Enable/disable from the UMM UI. Disabling must leave the player with a VANILLA keyboard: drop focus mode
-    // (so the KeyboardArbitration prefix stops claiming chords) and hand the game's service-window keys back to
-    // their bare letters (GameKeybinds.Revert un-does the Ctrl+letter rebind it persisted). Re-enabling re-engages
-    // focus mode; OnUpdate re-applies the rebind (Revert cleared GameKeybinds' applied-guard).
+    // Enable/disable from the UMM UI. Disabling must leave the player with a VANILLA keyboard AND silence: flip the
+    // Enabled flag (the Speaker chokepoint then drops every passive line — barks/warnings/conviction/quest/service-
+    // window/settings events keep firing on their EventBus subs + Harmony postfixes, but nothing reaches the synth),
+    // drop focus mode (so the KeyboardArbitration prefix stops claiming chords), cut any in-progress line, and hand
+    // the game's service-window keys back to their bare letters (GameKeybinds.Revert un-does the Ctrl+letter rebind
+    // it persisted). Re-enabling clears the gate + re-engages focus mode; OnUpdate re-applies the rebind (Revert
+    // cleared GameKeybinds' applied-guard).
     private static bool OnToggle(UnityModManager.ModEntry modEntry, bool enabled) {
         try {
+            Enabled = enabled;
             FocusMode.Set(enabled);
-            if (!enabled) Input.GameKeybinds.Revert();
+            if (!enabled) {
+                Input.GameKeybinds.Revert();
+                Speaker.Stop(); // cut the current line immediately; the Enabled gate blocks future ones
+            }
         } catch (Exception e) {
             Log.Error("OnToggle failed: " + e);
         }
@@ -171,68 +131,104 @@ public static class Main {
         catch { return false; }
     }
 
+    // Patch each [HarmonyPatch]-attributed class INDEPENDENTLY (mirrors PatchAll's type set, but per-class) so a
+    // single target that a game update renamed/reshaped throws only for its own tap — logged and skipped — instead
+    // of aborting the whole PatchAll and bricking the mod at boot. CreateClassProcessor(type).Patch() is a no-op
+    // (returns null) for non-patch types, so iterating every type is safe. TargetMethods()/bulk classes are handled
+    // by the class processor. A catastrophic "nothing patched" is surfaced loudly.
+    private static void PatchAllIsolated() {
+        int classes = 0, methods = 0, failed = 0;
+        foreach (var type in AccessTools.GetTypesFromAssembly(Assembly.GetExecutingAssembly())) {
+            try {
+                var patched = HarmonyInstance.CreateClassProcessor(type).Patch();
+                if (patched != null && patched.Count > 0) { classes++; methods += patched.Count; }
+            } catch (Exception e) {
+                failed++;
+                Log.Error("Harmony patch class '" + type.FullName + "' failed to apply (that feature is degraded, mod continues): " + e);
+            }
+        }
+        if (classes == 0)
+            Log.Error("Harmony: NO patch classes applied — the mod is largely inert (" + failed + " class(es) threw).");
+        else
+            Log.Log("Harmony: applied " + classes + " patch class(es) / " + methods + " method(s)" +
+                    (failed > 0 ? "; " + failed + " class(es) failed and were skipped." : "."));
+    }
+
+    // Log-once-per-signature guard around a per-frame tick: a throw in one subsystem is caught and logged (only the
+    // first time each distinct failure is seen, so a persistent per-frame throw can't flood the log) and the rest of
+    // the frame's ticks still run. Mirrors Screens.ScreenManager.Safe. Never let one subsystem mute the whole mod.
+    private static readonly System.Collections.Generic.HashSet<string> _tickErrorsSeen = new System.Collections.Generic.HashSet<string>();
+    private static void Safe(Action tick, string label) {
+        try { tick(); }
+        catch (Exception e) {
+            string sig = label + "|" + e.GetType().Name + "|" + e.Message;
+            if (_tickErrorsSeen.Add(sig))
+                Log?.Error("OnUpdate tick '" + label + "' threw (identical errors suppressed hereafter): " + e);
+        }
+    }
+
     private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt) {
 #if DEBUG
         // Run any queued /eval jobs on the main thread before our own per-frame work (dev harness).
-        RTAccess.Dev.DevServer.Instance.Pump();
+        Safe(() => RTAccess.Dev.DevServer.Instance.Pump(), "DevServer.Pump");
 #endif
 
         // Pick up a mid-session game-language change so our framework strings follow it.
-        Localization.LocalizationManager.Tick();
+        Safe(() => Localization.LocalizationManager.Tick(), "Localization");
 
         // Flush queued combat-event lines (log taps + lifecycle/threshold cues) in arrival order (passive →
         // never interrupt). WarningReader is reactive (no tick).
-        CombatEvents.Instance.Tick();
+        Safe(() => CombatEvents.Instance.Tick(), "CombatEvents");
 
         // Pause / unpause edges of the global clock — Space pause, the three autopauses, scripted pauses, and
         // the silent force-unpause on combat entry (main-HUD audit #5). Passive → queued. See PauseAnnouncer.
-        Accessibility.PauseAnnouncer.Tick();
+        Safe(() => Accessibility.PauseAnnouncer.Tick(), "PauseAnnouncer");
 
         // Loading screen: announce the tip/description on show (via a view postfix) and the post-load
         // "press any key to continue" prompt (a silent barrier for blind players). Edge-detected; any key dismisses it.
-        LoadingScreenReader.Update();
+        Safe(() => LoadingScreenReader.Update(), "LoadingScreenReader");
 
         // System-map proximity cues (the game's three HUD interference icons, edge-detected). No-op off the map.
-        SpaceEvents.Instance.Tick();
+        Safe(() => SpaceEvents.Instance.Tick(), "SpaceEvents");
 
         // The live world registry: diff the entity pools into stable per-entity scan proxies (units + map objects +
         // placed area effects), raising Added/Removed. Ticked BEFORE the input tick so the scanner's handlers read a
         // current-frame registry; the persistent proxies are what future object/sonar cues attach to. See
         // RTAccess.Exploration.WorldModel.
-        Exploration.WorldModel.Tick();
+        Safe(() => Exploration.WorldModel.Tick(), "WorldModel");
 
         // The room map: segment the area's walkable grid into orientation ROOMS ("Room 12, large hall") via a
         // persistence watershed, and announce room changes (dwell-gated). Self-latches its build on area-part change
         // (the grid streams in late) and rebuilds once per load. See RTAccess.Exploration.RoomMap.
-        Exploration.RoomMap.Tick();
+        Safe(() => Exploration.RoomMap.Tick(), "RoomMap");
 
         // Ambient sonar sweep: ping the perceivable things around the shared cursor with their recorded per-type
         // stems (the "feel the room" layer). Gated OFF by default (exploration.sonar); reads the current-frame
         // WorldModel registry above. See RTAccess.Exploration.Sonar.
-        Exploration.Sonar.Tick(dt);
+        Safe(() => Exploration.Sonar.Tick(dt), "Sonar");
 
         // Fog-boundary cue: a brief tone as the shared cursor crosses the edge of the party's current sight
         // (into fog / back into view). ON by default; fog-gated so it's inherently visual-parity-safe. See FogCue.
-        Exploration.FogCue.Tick(dt);
+        Safe(() => Exploration.FogCue.Tick(dt), "FogCue");
 
         // Live-track every sonar ping still sounding: re-pan / re-attenuate it in 3D against the moving cursor +
         // the item's nearest edge until it drains, so a source follows you instead of freezing. See SpatialSources.
-        Audio.SpatialSources.Tick();
+        Safe(() => Audio.SpatialSources.Tick(), "SpatialSources");
 
         // Directional wall tones: the continuous "shape of the room" bed — four looping cardinal voices whose volume
         // rises as a wall nears the shared cursor. Ships OFF (Ctrl+F1 toggles Off/When-moving/Continuous); volume
         // slews ~0.5 s so a tile step doesn't jump it. See RTAccess.Exploration.WallTones.
-        Exploration.WallTones.Tick(dt);
+        Safe(() => Exploration.WallTones.Tick(dt), "WallTones");
 
         // Ability targeting: the moment an action-bar ability arms (SetAbility → aiming), hand the keyboard from the
         // HUD to the cursor/scanner so the player can commit the aim (Enter at the cursor, I on the selection,
         // Backspace to cancel). See RTAccess.Exploration.Targeting.
-        Exploration.Targeting.Tick();
+        Safe(() => Exploration.Targeting.Tick(), "Targeting");
 
         // Accessible pre-combat deployment: while the game's preparation turn is active, the tile cursor's Enter
         // places the selected character and B starts the battle; announce entry (controls + budget) / exit. See
         // RTAccess.Exploration.DeploymentMode.
-        Exploration.DeploymentMode.Tick();
+        Safe(() => Exploration.DeploymentMode.Tick(), "DeploymentMode");
 
         // ---- Parallel accessible-UI framework (Phase 2) ----
         // Engage focus mode once the keyboard exists. Focus mode no longer blanket-mutes the game keyboard;
@@ -248,23 +244,23 @@ public static class Main {
         // own keybinding-settings path, so the mod's exploration verbs can own the bare letters and the game's
         // window/tutorial hints auto-update. Idempotent + self-guarded until settings/keyboard are ready. See
         // RTAccess.Input.GameKeybinds and docs/input-system-architecture-review.md.
-        Input.GameKeybinds.ApplyWindowOpenerRebinds();
-        Input.InputManager.Tick();        // poll our input → navigator (UI) / handlers
-        Screens.ScreenManager.Tick();     // resolve the screen stack from RootUiContext + attach the navigator
-        UI.Navigation.TickTypeahead();    // typed letters → type-ahead search (after dispatch)
+        Safe(() => Input.GameKeybinds.ApplyWindowOpenerRebinds(), "GameKeybinds"); // vacate C/I/J/… onto Ctrl+letter
+        Safe(() => Input.InputManager.Tick(), "InputManager");     // poll our input → navigator (UI) / handlers
+        Safe(() => Screens.ScreenManager.Tick(), "ScreenManager"); // resolve the screen stack + attach the navigator
+        Safe(() => UI.Navigation.TickTypeahead(), "Typeahead");    // typed letters → type-ahead search (after dispatch)
 
         // Announce the primary selection when it changes from a source the keyboard paths don't already speak
         // (mouse click, HUD portrait, or the game re-selecting on its own). Deduped against the explicit selectors
         // (which set the same guard) and silenced in turn-based combat. See RTAccess.Accessibility.SelectionAnnouncer.
-        SelectionAnnouncer.Tick();
+        Safe(() => SelectionAnnouncer.Tick(), "SelectionAnnouncer");
 
         // Announce a weapon-set swap (index + weapons now in hand). The game's ChangeWeaponSet (now on Ctrl+X after
         // the P/X/R relocation) gives no audio; this polls the controlled unit's active set and speaks the change.
-        WeaponSetAnnouncer.Tick();
+        Safe(() => WeaponSetAnnouncer.Tick(), "WeaponSetAnnouncer");
 
         // Passively announce when a party member becomes eligible to level up (the game only shows a silent
         // portrait badge). Edge-detected per unit, out-of-combat, passive. See RTAccess.Accessibility.LevelUpAnnouncer.
-        LevelUpAnnouncer.Tick();
+        Safe(() => LevelUpAnnouncer.Tick(), "LevelUpAnnouncer");
 
         // Service windows currently open via the mod's own HUD nav buttons (InGameScreen WindowButtons →
         // HandleOpenWindowOfType); ServiceWindowAnnounce voices the open. Their bare game keys (C/I/J/M/L/Y/V/B/N)
@@ -299,6 +295,15 @@ public static class Main {
     }
 
     private static bool OnUnload(UnityModManager.ModEntry modEntry) {
+        Enabled = false;
+        // Restore the player's Controls config: removing the mod while enabled must NOT leave C/I/J/M/L/Y/V/B/N/U/X
+        // permanently rebound to Ctrl+letter (the rebind was persisted to disk). Do this first, while the game's
+        // settings/keyboard systems are still up.
+        try { Input.GameKeybinds.Revert(); } catch (Exception e) { Log?.Error("OnUnload Revert failed: " + e); }
+        FocusMode.Set(false);
+#if DEBUG
+        RTAccess.Dev.DevServer.Instance.Stop(); // release the port-8772 socket + join the listener thread (hot-reload safe)
+#endif
         EventBus.Unsubscribe(ExplorationEvents.Instance);
         EventBus.Unsubscribe(BarkEvents.Instance);
         EventBus.Unsubscribe(WarningReader.Instance);

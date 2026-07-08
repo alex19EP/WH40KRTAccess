@@ -37,6 +37,19 @@ internal sealed class DevHttpServer
         _thread.Start();
     }
 
+    /// <summary>Stop the listener and join the accept thread, so a UMM hot-reload frees the port instead of
+    /// leaking the socket (the re-load's Start would otherwise throw SocketException). Idempotent. Clearing
+    /// <c>_running</c> before <c>_listener.Stop()</c> makes the SocketException that unblocks AcceptTcpClient
+    /// expected — the Loop swallows it silently.</summary>
+    public void Stop()
+    {
+        _running = false;
+        try { _listener?.Stop(); } catch { }        // unblocks AcceptTcpClient; the Loop sees !_running and exits quietly
+        try { _thread?.Join(1000); } catch { }      // background thread — a short join is enough
+        _listener = null;
+        _thread = null;
+    }
+
     private void Loop()
     {
         while (_running)

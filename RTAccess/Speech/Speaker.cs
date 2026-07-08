@@ -39,6 +39,10 @@ public static class Speaker
 
     public static void Speak(string text, bool interrupt = false)
     {
+        // Master gate: a UMM-disabled mod goes fully silent even though its EventBus subscribers and Harmony
+        // postfixes stay wired (barks/warnings/conviction/quest/service-window/settings events still fire, but
+        // nothing reaches the synth). Single chokepoint every passive + keypress path routes through. See Main.Enabled.
+        if (!Main.Enabled) return;
         if (string.IsNullOrWhiteSpace(text)) return;
         // Normalize line breaks to sentence breaks so the synth pauses instead of running lines together.
         text = text.Replace("\r\n", ". ").Replace("\n", ". ").Replace("\r", ". ");

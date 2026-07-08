@@ -105,6 +105,19 @@ internal sealed class DevServer
         }
     }
 
+    /// <summary>Tear down the HTTP server (release the port-8772 socket, join the accept thread) and stop tapping
+    /// the Speaker chokepoint. Called from Main.OnUnload so a UMM hot-reload doesn't leak the thread/socket and the
+    /// re-load's <see cref="Start"/> can bind the port cleanly. Idempotent; a no-op when the server never started.</summary>
+    public void Stop()
+    {
+        if (!_enabled) return;
+        Speaker.Observer = null; // stop feeding the /speech ring buffer
+        try { _http?.Stop(); } catch (Exception e) { Main.Log?.Warning("dev server stop: " + e.Message); }
+        _http = null;
+        _enabled = false;
+        Main.Log?.Log("Dev server stopped.");
+    }
+
     /// <summary>Run queued main-thread jobs. Call once per frame from the tick.</summary>
     public void Pump()
     {
