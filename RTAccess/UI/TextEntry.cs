@@ -52,7 +52,7 @@ namespace RTAccess.UI
             field.ActivateInputField();
             field.MoveTextEnd(false);
 
-            string current = string.IsNullOrEmpty(_last) ? "blank" : _last;
+            string current = string.IsNullOrEmpty(_last) ? Loc.T("value.blank") : _last;
             Tts.Speak(Loc.T("edit.begin", new { label = _label, value = current }), interrupt: true);
         }
 
@@ -80,8 +80,8 @@ namespace RTAccess.UI
             _endedFrame = UnityEngine.Time.frameCount;
             _field = null; _onChanged = null; _onEnd = null;
 
-            string val = string.IsNullOrEmpty(finalText) ? "blank" : finalText;
-            Tts.Speak(_label + ": " + val, interrupt: true);
+            string val = string.IsNullOrEmpty(finalText) ? Loc.T("value.blank") : finalText;
+            Tts.Speak(Loc.T("edit.end", new { label = _label, value = val }), interrupt: true);
             // Hand focus back to the nav element the user was on.
             Navigation.AnnounceCurrent();
         }

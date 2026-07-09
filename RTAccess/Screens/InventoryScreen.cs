@@ -91,18 +91,25 @@ namespace RTAccess.Screens
 
             // The stash pane is ONE stop — the search + filter/sort chrome belongs with the list it
             // operates on. Within it the chrome and the list are Ctrl+arrow REGIONS, so Ctrl+Up from
-            // deep in a 120-row list jumps straight back to the controls.
+            // deep in a 120-row list jumps straight back to the controls. One pane-wide context labels
+            // the stop (Tab entry says "Stash" whichever region focus lands in — first entry lands on
+            // the search edit, which otherwise never names the pane); the announcer dedupes it against
+            // the identically-labelled inner Stash list context, so items still read "Stash, list, …".
             b.BeginStop("stash");
+            b.PushContext(Loc.T("inv.stash"));
             BuildSearch(b, k, vm.StashVM);
             BuildStashControls(b, k, vm.StashVM);
             BuildStash(b, k, vm.StashVM);
+            b.PopContext();
         }
 
         // The header a sighted player reads beside the portrait: who's shown (name / level / wounds), the
         // prev/next member switch (the chrome's portrait arrows — also on Shift+A/D via PartyHotkeys), and
         // the pet/master swap (the game's m_PetButton). The readout is keyed per-unit (uk) so a switch
-        // re-homes and the differ re-reads it under focus; the switch buttons are keyed to the WINDOW (k)
-        // so focus stays on the button across the switch while ViewedCharacter.Tick announces who's shown.
+        // re-homes and the differ re-reads it under focus; ALL the switch buttons — prev/next AND the pet
+        // swap — are keyed to the WINDOW (k) so focus stays on the button across the switch while
+        // ViewedCharacter.Tick announces who's shown (the pet label reads the LIVE unit, so it flips to
+        // the other direction; a switch onto a unit with no pet axis drops the node and reconcile slides).
         private static void BuildCharacter(GraphBuilder b, string k, string uk, InventoryVM vm)
         {
             var unit = vm.Unit?.Value;
@@ -116,7 +123,7 @@ namespace RTAccess.Screens
             b.AddItem(ControlId.Structural(k + "char:next"), GraphNodes.Button(
                 () => Loc.T("char.next_member"), () => ViewedCharacter.SwitchMember(next: true)));
             if (ViewedCharacter.HasPetAxis(unit))
-                b.AddItem(ControlId.Structural(uk + "char:pet"), GraphNodes.Button(
+                b.AddItem(ControlId.Structural(k + "char:pet"), GraphNodes.Button(
                     () => ViewedCharacter.PetLabel(vm.Unit?.Value), () => ViewedCharacter.SwapPet(vm.Unit?.Value)));
             b.PopContext();
         }
@@ -314,8 +321,7 @@ namespace RTAccess.Screens
         // 120-slot list. Each is a combo box (Enter → a submenu of localized options) that drives the game's OWN
         // filter VM / sort command; both persist to UISettings and rebuild the visible collection, which the
         // next immediate-mode render reflects (the live value part re-announces the landing). A horizontal row,
-        // so Left/Right walks between the two boxes. (A search field lands in a later slice — it needs an
-        // accessible text-entry source.)
+        // so Left/Right walks between the two boxes. (The search field is its own region above — BuildSearch.)
         private static void BuildStashControls(GraphBuilder b, string k, InventoryStashVM stash)
         {
             var filter = stash?.ItemsFilter;
