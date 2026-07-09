@@ -1,6 +1,7 @@
 using System;
 using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.Dialog;                    // DialogContextVM
+using Kingmaker.Code.UI.MVVM.VM.GameOver;                  // GameOverVM
 using Kingmaker.Code.UI.MVVM.VM.GroupChanger;              // GroupChangerVM
 using Kingmaker.Code.UI.MVVM.VM.Loot;                      // LootVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;            // ServiceWindowsVM
@@ -60,5 +61,13 @@ namespace RTAccess.UI
 
         public static TransitionVM Transition()
             => FromLiveStaticPart<TransitionVM>(s => s.TransitionVM?.Value, s => s.TransitionVM?.Value);
+
+        // The defeat screen (GameModeType.GameOver). Surface exposes it as its own ReactiveProperty; Space
+        // routes it through the static-component dictionary (SpaceStaticComponentType.GameOver), so read it
+        // back with the same cast the game's own consumers use.
+        public static GameOverVM GameOver()
+            => FromLiveStaticPart<GameOverVM>(
+                s => s.GameOverVM?.Value,
+                s => s.TryGetComponentVM(SpaceStaticComponentType.GameOver) as GameOverVM);
     }
 }

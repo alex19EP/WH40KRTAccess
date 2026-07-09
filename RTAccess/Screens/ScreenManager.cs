@@ -197,6 +197,10 @@ namespace RTAccess.Screens
             // In-game pause/Escape menu (CommonVM.EscMenuContextVM.EscMenu) — layer 20, above contexts/windows,
             // below Settings(25)/MessageBox(30) (it raises a confirm box while staying open).
             Register(new EscMenuScreen());
+            // Defeat / game-over screen (GameModeType.GameOver, off the live Surface/Space static part) — layer 21,
+            // Exclusive: a terminal modal above the Esc menu, below the Save/Load window (22) its Load button opens.
+            // Reads the defeat reason and drives the game's own Quick Load / Load / Main Menu (+ Iron Man) actions.
+            Register(new GameOverScreen());
             // Save/Load window (CommonVM.SaveLoadVM) — layer 22, launched from the Esc menu or main menu.
             Register(new SaveLoadScreen());
             // Variative-interaction chooser (SurfaceDynamicPartVM.VariativeInteractionVM) — layer 24, an Exclusive
