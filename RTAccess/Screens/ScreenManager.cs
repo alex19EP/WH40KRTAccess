@@ -234,7 +234,12 @@ namespace RTAccess.Screens
             // action (HandleOpenCharacterInfoPage(LevelProgression)). Career pick → rank selections → commit.
             // See docs/plans/ranked-ascending-lamport.md.
             Register(new LevelUpScreen());
-            // TODO: Vendor, Encyclopedia + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
+            // Encyclopedia service window (CurrentServiceWindow == Encyclopedia, Surface OR Space) — layer 10.
+            // A mod-owned parallel of the game's two-panel window: the fully-expandable chapter/page tree +
+            // the selected page's typed content blocks (text/glossary/planet/astropath/book-event/class), with
+            // a knowledge-gated bestiary reader for unit blocks. Ported from the WrathAccess recipe.
+            Register(new EncyclopediaScreen());
+            // TODO: Vendor + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }
     }
