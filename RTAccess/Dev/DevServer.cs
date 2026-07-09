@@ -89,13 +89,14 @@ internal sealed class DevServer
         string p = Environment.GetEnvironmentVariable(PortEnv);
         if (!string.IsNullOrEmpty(p)) int.TryParse(p, out port);
 
-        // Tap every string the mod speaks through the Speaker chokepoint into the ring buffer.
-        Speaker.Observer = _speech.Add;
-
         try
         {
             _http = new DevHttpServer(port, HandleRequest);
             _http.Start();
+            // Tap the Speaker chokepoint into the ring buffer ONLY after a clean bind — so a failed Start (e.g. the
+            // port still held during a hot-reload) doesn't leave the tap dangling with _enabled false, which Stop's
+            // early-return would then never clear.
+            Speaker.Observer = _speech.Add;
             _enabled = true;
             Main.Log?.Log("Dev server on http://127.0.0.1:" + port + " (gate: " + how + "; POST /eval, GET /speech, POST /cheat, POST /dumpstate, GET /known)");
         }

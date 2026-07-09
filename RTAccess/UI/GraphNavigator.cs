@@ -127,11 +127,13 @@ namespace RTAccess.UI
         }
 
         // Dedupe the storm: while a bad transition-window state persists, Build throws every frame — log the
-        // first occurrence of each (screen, exception signature) and stay silent after so the log isn't flooded.
+        // first occurrence of each (screen, exception TYPE) and stay silent after so the log isn't flooded. Key on
+        // the type, NOT e.Message: a message embedding varying data (an entity name / index) would otherwise defeat
+        // the dedup and re-flood the log — the exact storm this guards against — and grow the set unboundedly.
         private readonly HashSet<string> _loggedBuildFailures = new HashSet<string>();
         private void LogBuildFailureOnce(Screens.Screen screen, System.Exception e)
         {
-            string key = (screen?.Key ?? "?") + "|" + e.GetType().Name + ":" + e.Message;
+            string key = (screen?.Key ?? "?") + "|" + e.GetType().Name;
             if (_loggedBuildFailures.Add(key))
                 Main.Log?.Error("Screen.Build threw for '" + (screen?.Key ?? "?") + "': " + e);
         }

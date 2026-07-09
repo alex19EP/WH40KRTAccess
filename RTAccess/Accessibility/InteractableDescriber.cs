@@ -322,9 +322,9 @@ internal static class InteractableDescriber
         var dir = Loc.T(dirKey);
         switch (cover)
         {
-            case LosCalculations.CoverType.Half: Append(sb, Loc.T("cover.half") + " " + dir); break;
-            case LosCalculations.CoverType.Full: Append(sb, Loc.T("cover.full") + " " + dir); break;
-            case LosCalculations.CoverType.Invisible: Append(sb, Loc.T("cover.blocked") + " " + dir); break;
+            case LosCalculations.CoverType.Half: Append(sb, Loc.T("cover.half_dir", new { dir })); break;
+            case LosCalculations.CoverType.Full: Append(sb, Loc.T("cover.full_dir", new { dir })); break;
+            case LosCalculations.CoverType.Invisible: Append(sb, Loc.T("cover.blocked_dir", new { dir })); break;
         }
     }
 
@@ -337,12 +337,12 @@ internal static class InteractableDescriber
         int dz = node.ZCoordinateInGrid - origin.ZCoordinateInGrid; // north(+) / south(-)
         if (dx == 0 && dz == 0) return Loc.T("geo.here");
         var sb = new StringBuilder();
-        if (dx > 0) sb.Append(dx).Append(' ').Append(Loc.T("aim.dir_e"));
-        else if (dx < 0) sb.Append(-dx).Append(' ').Append(Loc.T("aim.dir_w"));
+        if (dx != 0)
+            sb.Append(Loc.T("geo.offset", new { count = dx > 0 ? dx : -dx, dir = Loc.T(dx > 0 ? "aim.dir_e" : "aim.dir_w") }));
         if (dz != 0)
         {
             if (sb.Length > 0) sb.Append(", ");
-            sb.Append(dz > 0 ? dz : -dz).Append(' ').Append(Loc.T(dz > 0 ? "aim.dir_n" : "aim.dir_s"));
+            sb.Append(Loc.T("geo.offset", new { count = dz > 0 ? dz : -dz, dir = Loc.T(dz > 0 ? "aim.dir_n" : "aim.dir_s") }));
         }
         return sb.ToString();
     }

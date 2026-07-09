@@ -116,11 +116,22 @@ public static class Main {
             if (!enabled) {
                 Input.GameKeybinds.Revert();
                 Speaker.Stop(); // cut the current line immediately; the Enabled gate blocks future ones
+                StopExplorationAudio(); // silence the looping wall-tone / sonar beds (see below)
             }
         } catch (Exception e) {
             Log.Error("OnToggle failed: " + e);
         }
         return true;
+    }
+
+    // Silence the looping spatial-audio beds. The Enabled flag gates SPEECH, but the NAudio output thread keeps
+    // playing whatever voices sit in the mixer even after UMM stops calling OnUpdate — so a disabled/unloaded mod
+    // would otherwise leave the wall-tone drones sounding with no way to stop them short of re-enabling. WallTones.Reset
+    // removes the drone voices and re-arms a rebuild on re-enable (the same path an area change uses); SpatialSources
+    // stops chasing tracked sonar one-shots (they tail out on their own). Both features ship off by default.
+    private static void StopExplorationAudio() {
+        try { Exploration.WallTones.Reset(); } catch (Exception e) { Log?.Error("StopExplorationAudio walltones: " + e); }
+        try { Audio.SpatialSources.Clear(); } catch (Exception e) { Log?.Error("StopExplorationAudio spatial: " + e); }
     }
 
     // Game.Keyboard's getter constructs KeyboardAccess, which dereferences UISettingsRoot.Instance — null
@@ -157,11 +168,14 @@ public static class Main {
     // Log-once-per-signature guard around a per-frame tick: a throw in one subsystem is caught and logged (only the
     // first time each distinct failure is seen, so a persistent per-frame throw can't flood the log) and the rest of
     // the frame's ticks still run. Mirrors Screens.ScreenManager.Safe. Never let one subsystem mute the whole mod.
+    // Key on (label, exception TYPE) only — NOT e.Message. A persistent per-frame throw whose message embeds varying
+    // data (an entity name / index) would otherwise slip the dedup and re-flood the log (the storm this prevents) and
+    // grow the set unboundedly.
     private static readonly System.Collections.Generic.HashSet<string> _tickErrorsSeen = new System.Collections.Generic.HashSet<string>();
     private static void Safe(Action tick, string label) {
         try { tick(); }
         catch (Exception e) {
-            string sig = label + "|" + e.GetType().Name + "|" + e.Message;
+            string sig = label + "|" + e.GetType().Name;
             if (_tickErrorsSeen.Add(sig))
                 Log?.Error("OnUpdate tick '" + label + "' threw (identical errors suppressed hereafter): " + e);
         }
@@ -301,6 +315,7 @@ public static class Main {
         // settings/keyboard systems are still up.
         try { Input.GameKeybinds.Revert(); } catch (Exception e) { Log?.Error("OnUnload Revert failed: " + e); }
         FocusMode.Set(false);
+        StopExplorationAudio(); // stop the looping wall-tone / sonar beds before we tear the rest down
 #if DEBUG
         RTAccess.Dev.DevServer.Instance.Stop(); // release the port-8772 socket + join the listener thread (hot-reload safe)
 #endif
