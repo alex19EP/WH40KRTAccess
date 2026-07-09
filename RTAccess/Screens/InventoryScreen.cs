@@ -17,13 +17,16 @@ namespace RTAccess.Screens
 {
     /// <summary>
     /// The inventory service window (<see cref="InventoryVM"/>) as a graph-native screen: the currently-viewed
-    /// character's equipment doll, a defensive-stat readout, a party load/money summary, a Filters/Sort control
-    /// bar, and the shared party stash — all declared IMMEDIATE-MODE from the live VM on every render (no
-    /// content signature, no focus-capture/restore dance). Five REGIONS in one Tab-stop: the arrows walk each
-    /// in turn and Ctrl+Up/Down jumps between them. The stash is a plain LIST — one focusable row per item, its
-    /// label mirroring the card (name + badges + count); Type/Weight/Value are tooltip-only on the card, so they
-    /// stay on Space (the item's own tooltip). The game stash is a filtered/sorted flat list of icon cards (2-D
-    /// position is sort-order only), so a list — not a column table — is the faithful model.
+    /// character's equipment doll, a defensive-stat readout, a party load/money summary, and the shared party
+    /// stash with its search + filter/sort chrome — all declared IMMEDIATE-MODE from the live VM on every
+    /// render (no content signature, no focus-capture/restore dance). Five labelled Tab-STOPS, one per pane —
+    /// character, equipment, defenses, summary, stash — so Tab cycles the panes (wrapping; arrows never leave
+    /// one). The stash stop keeps its chrome (search, filters/sort) as Ctrl+arrow REGIONS above the list they
+    /// operate on. Initial focus stays on the graph start — the character readout — so opening speaks whose
+    /// inventory is shown. The stash is a plain LIST — one focusable row per item, its label mirroring the
+    /// card (name + badges + count); Type/Weight/Value are tooltip-only on the card, so they stay on Space
+    /// (the item's own tooltip). The game stash is a filtered/sorted flat list of icon cards (2-D position is
+    /// sort-order only), so a list — not a column table — is the faithful model.
     ///
     /// Doll slots read their item LIVE from the doll VM inside the node each render (re-fetching
     /// <c>DollVM.Armor</c> etc. every <see cref="Build"/>) and are keyed STRUCTURALLY by slot position + the
@@ -41,6 +44,10 @@ namespace RTAccess.Screens
         public override string Key => "service.inventory";
         public override string ScreenName => null; // ServiceWindowAnnounce speaks "Inventory" on open
         public override int Layer => 10;
+
+        // Tab wraps from the stash back around to the character pane — the service-window convention
+        // (CharacterInfo / Settings / SaveLoad do the same).
+        public InventoryScreen() { Wrap = true; }
 
         // Type-ahead OFF here: bare letters pass to the game (its search hotkey), and stash search is the
         // game's OWN field (BuildSearch), not our type-ahead. Shift+A/D character switching is the mod's own
@@ -77,10 +84,15 @@ namespace RTAccess.Screens
             var unit = vm.Unit?.Value;
             string uk = k + "u:" + (unit?.UniqueId ?? "") + ":";  // per-character keys re-home on a unit switch
 
-            BuildCharacter(b, k, uk, vm);
-            BuildEquipment(b, k, uk, vm.DollVM);
-            BuildDefenses(b, k, uk, vm);
-            BuildSummary(b, k, vm.StashVM);
+            BuildCharacter(b, k, uk, vm);        // stop: character
+            BuildEquipment(b, k, uk, vm.DollVM); // stop: equip
+            BuildDefenses(b, k, uk, vm);         // stop: defenses
+            BuildSummary(b, k, vm.StashVM);      // stop: summary
+
+            // The stash pane is ONE stop — the search + filter/sort chrome belongs with the list it
+            // operates on. Within it the chrome and the list are Ctrl+arrow REGIONS, so Ctrl+Up from
+            // deep in a 120-row list jumps straight back to the controls.
+            b.BeginStop("stash");
             BuildSearch(b, k, vm.StashVM);
             BuildStashControls(b, k, vm.StashVM);
             BuildStash(b, k, vm.StashVM);
@@ -95,7 +107,7 @@ namespace RTAccess.Screens
         {
             var unit = vm.Unit?.Value;
             if (unit == null) return;
-            b.SetRegion(k + "character");
+            b.BeginStop("character");
             b.PushContext(Loc.T("inv.character"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural(uk + "char:readout"),
                 GraphNodes.Text(() => ViewedCharacter.HeaderLine(vm.Unit?.Value)));
@@ -171,7 +183,7 @@ namespace RTAccess.Screens
         private static void BuildEquipment(GraphBuilder b, string k, string uk, InventoryDollVM doll)
         {
             if (doll == null) return;
-            b.SetRegion(k + "equip");
+            b.BeginStop("equip");
             b.PushContext(Loc.T("inv.equipment"), Loc.T("role.list"));
             BuildWeaponSets(b, uk, doll);
             AddDollSlot(b, uk, "armor", Loc.T("slot.armor"), doll.Armor, doll);
@@ -251,7 +263,7 @@ namespace RTAccess.Screens
         {
             var s = vm.LevelClassScoresVM?.AdditionalStatsVM;
             if (s == null) return;
-            b.SetRegion(k + "defenses");
+            b.BeginStop("defenses");
             b.PushContext(Loc.T("inv.defenses"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural(uk + "def:deflection"),
                 StatLine(() => Loc.T("stat.deflection", new { value = s.ArmorDeflection?.Value }), () => s.DeflectionTooltip?.Value));
@@ -283,7 +295,7 @@ namespace RTAccess.Screens
         private static void BuildSummary(GraphBuilder b, string k, InventoryStashVM stash)
         {
             if (stash == null) return;
-            b.SetRegion(k + "summary");
+            b.BeginStop("summary");
             b.PushContext(Loc.T("inv.inventory"), Loc.T("role.list"));
             var enc = stash.EncumbranceVM;
             if (enc != null)
