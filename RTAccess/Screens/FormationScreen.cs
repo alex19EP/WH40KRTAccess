@@ -77,10 +77,10 @@ namespace RTAccess.Screens
             var vm = Vm();
             if (vm == null) return;
 
-            // The formations, in the game's order — names come from the formation blueprints
-            // (game-localized, passed through). Selecting applies immediately, exactly like the sighted
-            // radio (the SelectionGroup reactive routes into GameCommandQueue.PartyFormationIndex).
-            var names = FormationNames();
+            // The formations, in the game's order. Selecting applies immediately, exactly like the sighted
+            // radio (the SelectionGroup reactive routes into GameCommandQueue.PartyFormationIndex). Labels:
+            // see FormationLabel — the game's own localized Name where it authored one, else a synthesized
+            // asset-identity fallback (the game shows these as shape icons and leaves most unnamed).
             b.BeginStop("list");
             b.PushContext(Loc.T("formation.list"), Loc.T("role.list"));
             int i = 0;
@@ -89,7 +89,7 @@ namespace RTAccess.Screens
                 if (item == null) { i++; continue; }
                 var it = item; // capture for the live closures
                 b.AddItem(ControlId.Referenced(it, "form:" + i), GraphNodes.ChoiceOption(
-                    () => it.FormationIndex >= 0 && it.FormationIndex < names.Count ? names[it.FormationIndex] : "",
+                    () => FormationLabel(it.FormationIndex),
                     () => it.IsSelected.Value,
                     () => it.SetSelectedFromView(true)));
                 i++;
@@ -126,14 +126,43 @@ namespace RTAccess.Screens
                 () => Loc.T("action.close"), () => Vm()?.Close()));
         }
 
-        // The predefined formations' display names, in order (parallel to the selector items by index).
-        private static List<string> FormationNames()
+        // The spoken label for the formation at <paramref name="index"/>. The game renders these as shape
+        // ICONS and names only some of them (BlueprintPartyFormation.Name, a LocalizedString): verified
+        // in-harness, #0-3 (Auto, Default, Triangle, Custom_01) are nameless in EVERY language — #0-2 carry
+        // no localization key and Custom_01's key is orphaned (absent from enGB/ruRU alike) — while the two
+        // custom shapes carry real names in all locales (e.g. "Star Formation" / "Построение звездой"). So
+        // we pass the game's own localized Name through when authored, else synthesize a stable, localizable
+        // label from the blueprint's asset identity — the only thing that tells the two look-alike column
+        // shapes (Auto vs Default) apart, since their geometry can't.
+        private static string FormationLabel(int index)
         {
-            var list = new List<string>();
-            var formations = Game.Instance?.BlueprintRoot?.Formations?.PredefinedFormations;
-            if (formations != null)
-                foreach (var f in formations) list.Add(f != null ? (string)f.Name : "");
-            return list;
+            var root = Game.Instance?.BlueprintRoot?.Formations;
+            if (root == null || index < 0) return "";
+            var formations = root.PredefinedFormations; // plain struct proxy (not a nullable value type)
+            if (index >= formations.Length) return "";
+            var f = formations[index];
+            if (f == null) return "";
+            string name = (string)f.Name;
+            return !string.IsNullOrWhiteSpace(name) ? name : AssetLabel(f.name, index);
+        }
+
+        // Fallback label for a formation the game never named, keyed off its blueprint asset name so it stays
+        // localizable and unique. Custom_NN → "Custom N" from the suffix; an unknown blueprint → a plain ordinal.
+        private static string AssetLabel(string asset, int index)
+        {
+            switch (asset)
+            {
+                case "Formation_Auto":     return Loc.T("formation.name.auto");
+                case "Formation_Default":  return Loc.T("formation.name.default");
+                case "Formation_Triangle": return Loc.T("formation.name.triangle");
+            }
+            const string customPrefix = "Formation_Custom_";
+            if (asset != null && asset.StartsWith(customPrefix, System.StringComparison.Ordinal))
+            {
+                var suffix = asset.Substring(customPrefix.Length).TrimStart('0');
+                return Loc.T("formation.name.custom", new { index = suffix.Length > 0 ? suffix : "0" });
+            }
+            return Loc.T("formation.item", new { index = index + 1 });
         }
     }
 }
