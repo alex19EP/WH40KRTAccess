@@ -306,6 +306,137 @@ namespace RTAccess.UI
             };
         }
 
+        // ---- the vendor family (the RT trade window: Profit-Factor-threshold buys + send-to-cargo;
+        // there is no item selling — cargo sells for reputation on the vendor's Reputation tab) ----
+
+        /// <summary>One item in the vendor's wares list. The label mirrors the vendor card (name +
+        /// badges); the card's Type and Cost texts ride as extra parts (the same values the screen
+        /// emits as sheet columns), and the lock state (reputation / Profit Factor) as a live part
+        /// using the game's OWN refusal strings. Enter = the sighted single click —
+        /// <see cref="ItemSlotVM.VendorTryMove"/>, which raises the game's transition window (the
+        /// quantity/confirm dialog VendorBuyScreen surfaces) — gated through the game's own
+        /// <c>CanBuy()</c> so a locked item speaks the game's warning instead (publicized private,
+        /// the exact gate <c>VendorTryBuyAll</c> uses). Backspace = the card's context menu (Buy =
+        /// whole stack instantly / Information), mirroring <c>VendorSlotPCView.SetupContextMenu</c>;
+        /// Space = the item's own card.</summary>
+        public static NodeVtable VendorWaresItem(ItemSlotVM slot)
+        {
+            Func<string> label = () => ItemLabel(slot);
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Item,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    GraphNodes.LabelPart(label),
+                    new NodeAnnouncement(() => slot.TypeName.Value),
+                    new NodeAnnouncement(() => VendorCostLabel(slot), live: true),
+                    new NodeAnnouncement(() => VendorLockLabel(slot), live: true),
+                },
+                SearchText = label,
+                OnActivate = () => { if (slot.CanBuy()) slot.VendorTryMove(split: false); },
+                OnSecondary = () => OpenWaresMenu(slot),
+                OnTooltip = () => OpenItemTooltip(slot),
+                HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
+                ActivateSound = Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick,
+            };
+        }
+
+        /// <summary>The vendor card's cost text: the current Profit Factor cost, with the crossed-out
+        /// pre-discount price folded in when the card shows the discount block. Empty when the card
+        /// hides the cost (0 — e.g. the item is already in a deal).</summary>
+        public static string VendorCostLabel(ItemSlotVM slot)
+        {
+            double cost = slot.CurrentCostPF.Value;
+            if (cost <= 0.0) return "";
+            string value = cost.ToString("0.#");
+            if (slot.HasDiscount && slot.PriceWithoutDiscountPF.Value > 0.0)
+                return Loc.T("vendor.cost_was", new { value, old = slot.PriceWithoutDiscountPF.Value.ToString("0.#") });
+            return Loc.T("vendor.cost", new { value });
+        }
+
+        // The lock state the card greys the slot for, spoken with the game's own refusal strings
+        // (the same texts CanBuy toasts). Empty when buyable.
+        private static string VendorLockLabel(ItemSlotVM slot)
+        {
+            if (Game.Instance?.Vendor?.VendorInventory == null) return "";
+            var flags = new List<string>();
+            if (slot.IsLockedByRep) flags.Add(UIStrings.Instance.Vendor.NotEnoughReputation.Text);
+            if (slot.IsLockedByCost) flags.Add(UIStrings.Instance.Vendor.NotEnoughProfitFactor.Text);
+            return string.Join(", ", flags);
+        }
+
+        // The vendor card's right-click menu, rebuilt from VM state exactly like OpenStashMenu (the
+        // live view's SetupContextMenu never runs for our parallel rows): Buy (the whole stack,
+        // instant — the game's own double-click/menu path with its lock warnings) + Information.
+        private static void OpenWaresMenu(ItemSlotVM slot)
+        {
+            var cm = UIStrings.Instance.ContextMenu;
+            var entities = new List<ContextMenuCollectionEntity>
+            {
+                new ContextMenuCollectionEntity(cm.Buy, slot.VendorTryBuyAll, slot.HasItem),
+                new ContextMenuCollectionEntity(cm.Information, () => OpenItemTooltip(slot), slot.HasItem),
+            };
+            ContextMenuNodes.Open(ItemLabel(slot), entities,
+                onEmpty: () => Tts.Speak(Loc.T("inv.no_actions"), interrupt: true));
+        }
+
+        /// <summary>One party-stash item shown at the vendor. There is NO selling — the stash exists
+        /// here so items can be converted to cargo (the sighted drag-to-drop-zone). Enter sends the
+        /// item to cargo via the game's own <see cref="InventoryHelper.TryMoveToCargo"/> (combat-gated,
+        /// plays the game's sound, queues the same <c>TransferItemsToCargo</c> command the drop zone
+        /// fires — the EventBus route is dead here: <c>VendorVM.IInventoryHandler.TryMoveToCargo</c> is
+        /// a no-op). Ineligible items advertise no action. Backspace = the verbs that actually function
+        /// at the vendor (Send to cargo / Split / Information); Space = the item's card.</summary>
+        public static NodeVtable VendorStashItem(ItemSlotVM slot)
+        {
+            string moved = null;
+            Func<string> label = () => ItemLabel(slot, withFavorite: true);
+            Action activate = slot.CanTransferToCargo
+                ? () =>
+                {
+                    var name = ItemName(slot);
+                    if (InventoryHelper.TryMoveToCargo(slot))
+                        moved = Loc.T("vendor.sent_to_cargo", new { name });
+                }
+                : (Action)null;
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Item,
+                Announcements = new List<NodeAnnouncement> { GraphNodes.LabelPart(label) },
+                SearchText = label,
+                OnActivate = activate,
+                StateText = activate != null ? () => moved : (Func<string>)null,
+                OnSecondary = () => OpenVendorStashMenu(slot),
+                OnTooltip = () => OpenItemTooltip(slot),
+                HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
+                ActivateSound = activate != null
+                    ? Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick
+                    : null,
+            };
+        }
+
+        // The stash menu variant for the vendor window: only the verbs whose routes are live here.
+        // OpenStashMenu's EventBus verbs (Equip/Drop/SendToCargo via IInventoryHandler) dead-end in
+        // VendorVM's empty handler stubs, so this menu drives working paths instead.
+        private static void OpenVendorStashMenu(ItemSlotVM slot)
+        {
+            var cm = UIStrings.Instance.ContextMenu;
+            var loot = UIStrings.Instance.LootWindow;
+            var entities = new List<ContextMenuCollectionEntity>
+            {
+                new ContextMenuCollectionEntity(loot.SendToCargo,
+                    () => InventoryHelper.TryMoveToCargo(slot),
+                    true, slot.CanTransferToCargo),
+                // Split — VendorVM DOES implement HandleTrySplitSlot (routes InventoryHelper.TrySplitSlot).
+                new ContextMenuCollectionEntity(cm.Split,
+                    () => EventBus.RaiseEvent<INewSlotsHandler>(h => h.HandleTrySplitSlot(slot)),
+                    slot.IsPosibleSplit),
+                new ContextMenuCollectionEntity(cm.Information, () => OpenItemTooltip(slot), slot.HasItem),
+            };
+            ContextMenuNodes.Open(ItemLabel(slot, withFavorite: true), entities,
+                onEmpty: () => Tts.Speak(Loc.T("inv.no_actions"), interrupt: true));
+        }
+
         // "Slot: item (badges)" / "Slot: empty" — the doll card's readout. Badges here are the pair the
         // doll card overlays: notable, and the can't-remove lock.
         private static string EquipSlotLabel(string slotName, EquipSlotVM slot)

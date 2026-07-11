@@ -239,7 +239,14 @@ namespace RTAccess.Screens
             // the selected page's typed content blocks (text/glossary/planet/astropath/book-event/class), with
             // a knowledge-gated bestiary reader for unit blocks. Ported from the WrathAccess recipe.
             Register(new EncyclopediaScreen());
-            // TODO: Vendor + the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
+            // Vendor / trade window (Surface OR Space StaticPartVM.VendorVM — a full-screen UI, not a
+            // ServiceWindowsType) — layer 24, Exclusive. Trade tab (PF-threshold buys, tiered wares,
+            // send-to-cargo stash) + Reputation tab (cargo-for-reputation exchange).
+            Register(new VendorScreen());
+            // The game's purchase quantity/confirm dialog (VendorTradePartVM.TransitionWindowVM), raised
+            // by a wares click or Buy all — layer 26, Exclusive, directly above the VendorScreen.
+            Register(new VendorBuyScreen());
+            // TODO: the long tail, per docs/plans/mirrored-surfacing-engelbart.md.
             Main.Log?.Log("ScreenManager: " + _registered.Count + " screens registered.");
         }
     }
