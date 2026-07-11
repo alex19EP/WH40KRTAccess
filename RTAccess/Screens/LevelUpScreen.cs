@@ -234,7 +234,7 @@ namespace RTAccess.Screens
 
                 string rkey = k + "rank:" + rank;
                 var rid = ControlId.Referenced(entry, rkey);
-                var rvt = GraphNodes.Group(() => RankLabel(entry, rank, taken, gaining));
+                var rvt = GraphNodes.Group(() => CareerNodes.RankLabel(entry, rank, taken, gaining));
                 rvt.OnExpand = () => _fold[rkey] = true;
                 rvt.OnCollapse = () => _fold[rkey] = false;
                 // Open the active ranks so the choices are one step away; land on the first of them.
@@ -246,7 +246,7 @@ namespace RTAccess.Screens
                 {
                     if (f == null) continue;
                     var feat = f; // capture
-                    b.AddItem(ControlId.Referenced(feat, rkey + ":feat:" + fi++), RankFeature(feat));
+                    b.AddItem(ControlId.Referenced(feat, rkey + ":feat:" + fi++), CareerNodes.RankFeature(feat));
                 }
 
                 int si = 0;
@@ -258,7 +258,7 @@ namespace RTAccess.Screens
                     // Materialize the lazy option list ONCE via the VM's own UpdateFeatures (it rebuilds
                     // the option VMs — much too heavy for a per-render call).
                     if (_materialized.Add(s)) s.UpdateFeatures();
-                    var svt = SelectionGroup(s);
+                    var svt = CareerNodes.SelectionGroup(s);
                     svt.OnExpand = () => _fold[skey] = true;
                     svt.OnCollapse = () => _fold[skey] = false;
                     // Default open while the pick is pending — LATCHED, so making the pick doesn't snap
@@ -269,7 +269,7 @@ namespace RTAccess.Screens
                     foreach (var opt in s.FilteredGroupList.OfType<BaseRankEntryFeatureVM>())
                     {
                         var o = opt; // capture
-                        b.AddItem(ControlId.Referenced(o, skey + ":opt:" + oi++), RankOption(o));
+                        b.AddItem(ControlId.Referenced(o, skey + ":opt:" + oi++), CareerNodes.RankOption(o));
                     }
                     b.EndGroup();
                 }
@@ -280,38 +280,17 @@ namespace RTAccess.Screens
             if (start != null) b.SetStart(start);
 
             b.BeginStop("status").AddItem(ControlId.Structural(k + "status"),
-                GraphNodes.Text(() => OutstandingText(cp)));
+                GraphNodes.Text(() => CareerNodes.OutstandingText(cp)));
             b.BeginStop("commit").AddItem(ControlId.Structural(k + "commit"),
                 GraphNodes.Button(() => Loc.T("levelup.commit"), () => Commit(cp), () => cp.CanCommit.Value));
             b.BeginStop("change").AddItem(ControlId.Structural(k + "change"),
                 GraphNodes.Button(() => Loc.T("levelup.change_career"), () => vm.SetCareerPath(null)));
         }
 
-        // A rank node's label reflects where it sits relative to this level-up: a rank being gained now (with
-        // "choice needed" while it still has an unmade pick — read live, so it drops as picks are made), an
-        // already-earned rank, or a not-yet-reachable one.
-        private static string RankLabel(CareerPathRankEntryVM re, int rank, bool taken, bool gaining)
-        {
-            if (gaining)
-            {
-                bool pending = re.Selections.Any(s => s != null && !s.SelectionMadeAndValid);
-                return Loc.T("levelup.rank_gaining", new { rank })
-                    + (pending ? ", " + Loc.T("levelup.choice_needed") : "");
-            }
-            return Loc.T(taken ? "levelup.rank_taken" : "levelup.rank_locked", new { rank });
-        }
-
         private static string ProgressHeader(CareerPathVM cp)
         {
             int rank = cp.Unit.Progression.GetPathRank(cp.CareerPath);
             return Loc.T("levelup.advancing", new { name = cp.Name, rank, max = cp.MaxRank });
-        }
-
-        private static string OutstandingText(CareerPathVM cp)
-        {
-            if (cp.CanCommit.Value) return Loc.T("levelup.ready");
-            int count = cp.AvailableSelections.Count(s => !s.SelectionMadeAndValid);
-            return Loc.T("levelup.outstanding", new { count });
         }
 
         // Commit via the game's own CareerPathVM.Commit (re-checks validity, applies the preview to the real
@@ -346,117 +325,8 @@ namespace RTAccess.Screens
             return def;
         }
 
-        // ---- node factories (the ProxyRankSelection / ProxyRankOption / ProxyRankFeature contracts,
-        // vtable-shaped; the VM-contract knowledge those proxies carried lives here now) ----
-
-        /// <summary>One pending level-up choice — a <see cref="RankEntrySelectionVM"/> (a talent / ability /
-        /// attribute pick from a career-path rank) as a collapsible group: the header reads the choice's
-        /// prompt (<see cref="RankEntrySelectionVM.GetHintText"/>) plus its live state (not chosen / chosen:
-        /// X / committed / choose earlier first). State reads LIVE off the VM reactives, so a made pick
-        /// speaks the new state when the header is (re)visited or watched.</summary>
-        private static NodeVtable SelectionGroup(RankEntrySelectionVM sel)
-        {
-            var vt = GraphNodes.Group(() => sel.GetHintText());
-            vt.Announcements = new List<NodeAnnouncement>(vt.Announcements)
-            {
-                new NodeAnnouncement(() => SelectionState(sel), live: true, kind: AnnouncementKinds.Value),
-            };
-            return vt;
-        }
-
-        private static string SelectionState(RankEntrySelectionVM sel)
-        {
-            var name = sel.SelectedFeature.Value?.DisplayName ?? "";
-            if (sel.EntryState.Value == RankEntryState.Committed) return Loc.T("levelup.committed", new { name });
-            if (sel.SelectionMade) return Loc.T("levelup.chosen", new { name });
-            if (sel.EntryState.Value == RankEntryState.WaitPreviousToSelect) return Loc.T("levelup.locked");
-            return Loc.T("levelup.not_chosen");
-        }
-
-        /// <summary>One selectable option under a selection group — a feature/talent/ability, or (for
-        /// <see cref="RankEntrySelectionStatVM"/>) an attribute/skill increase. Reads name + selected + (stat
-        /// delta and/or recommended) + enabled; Enter selects it via the game's own <c>Select()</c> (which
-        /// applies to the level-up preview and refreshes commit-ability) and re-announces "selected"
-        /// synchronously; Space drills into the full write-up.</summary>
-        private static NodeVtable RankOption(BaseRankEntryFeatureVM opt)
-        {
-            Func<bool> chosen = () => opt.FeatureState.Value == RankFeatureState.Selected
-                || opt.FeatureState.Value == RankFeatureState.Committed;
-            bool canSelect = opt.CanSelect(); // fresh per render (immediate mode)
-            return new NodeVtable
-            {
-                ControlType = ControlTypes.RadioButton,
-                Announcements = new List<NodeAnnouncement>
-                {
-                    GraphNodes.LabelPart(() => FeatureName(opt)),
-                    GraphNodes.SelectedPart(chosen),
-                    new NodeAnnouncement(() => OptionValue(opt), kind: AnnouncementKinds.Value),
-                    GraphNodes.DisabledPart(() => opt.CanSelect() || chosen()),
-                },
-                SearchText = () => FeatureName(opt),
-                // Picking flips the option in place — speak the new state synchronously (the
-                // ReannounceOnActivate convention, as CharGenNodes.SelectionItem does it).
-                StateText = canSelect ? (Func<string>)(() => chosen() ? Loc.T("state.selected") : null) : null,
-                OnActivate = canSelect ? (Action)(() => opt.Select()) : null,
-                OnTooltip = () => TooltipChooser.OpenTemplate(FeatureName(opt), opt.TooltipTemplate()),
-                ActivateSound = canSelect
-                    ? Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick
-                    : null,
-            };
-        }
-
-        /// <summary>A read-only feature node under a rank — an ability/talent/stat the rank grants
-        /// AUTOMATICALLY (no choice to make). Reads its name (+ recommended); Space drills into the full
-        /// write-up. Not activatable — the rank's state (taken / gaining / locked) is carried by the group
-        /// label.</summary>
-        private static NodeVtable RankFeature(BaseRankEntryFeatureVM f)
-        {
-            return new NodeVtable
-            {
-                ControlType = ControlTypes.Text,
-                Announcements = new List<NodeAnnouncement>
-                {
-                    GraphNodes.LabelPart(() => FeatureName(f)),
-                    new NodeAnnouncement(() => f.IsRecommended ? Loc.T("chargen.recommended") : null,
-                        kind: AnnouncementKinds.Value),
-                },
-                SearchText = () => FeatureName(f),
-                OnTooltip = () => TooltipChooser.OpenTemplate(FeatureName(f), f.TooltipTemplate()),
-            };
-        }
-
-        // Stat options name themselves by the attribute/skill they raise; everything else by DisplayName.
-        private static string FeatureName(BaseRankEntryFeatureVM f)
-            => (f is RankEntrySelectionStatVM st && !string.IsNullOrEmpty(st.StatDisplayName))
-                ? st.StatDisplayName : f.DisplayName ?? "";
-
-        private static string OptionValue(BaseRankEntryFeatureVM opt)
-        {
-            string s = null;
-            if (opt is RankEntrySelectionStatVM st)
-            {
-                s = st.StatIncreaseLabel.Value; // "+10" — the per-rank gain the game shows on each option
-                // Show the would-be result WHILE navigating (before the pick is staged). The game's own
-                // SummaryStatIncreaseLabel only reflects the preview once THIS option is staged — before that
-                // it reads "45 > 45" — so derive the target from current + increase instead. Worded "45 to 55"
-                // (locale) so TTS doesn't read the raw ">" arrow as "greater than". (UnitStat is the WINDOW's
-                // unit, not the preview, so the base doesn't drift as picks are staged.)
-                int cur = st.UnitStat?.ModifiedValue ?? 0;
-                int inc = ParseInc(st.StatIncreaseLabel.Value);
-                if (inc != 0) s += ", " + Loc.T("levelup.stat_result", new { from = cur, to = cur + inc });
-            }
-            if (opt.IsRecommended)
-                s = string.IsNullOrEmpty(s) ? Loc.T("chargen.recommended") : s + ", " + Loc.T("chargen.recommended");
-            return s;
-        }
-
-        // Parse the per-rank increase label ("+10" / "-2") into a signed integer; tolerant of stray glyphs.
-        private static int ParseInc(string label)
-        {
-            if (string.IsNullOrEmpty(label)) return 0;
-            int sign = label.Contains("-") ? -1 : 1;
-            var digits = new string(label.Where(char.IsDigit).ToArray());
-            return int.TryParse(digits, out var n) ? sign * n : 0;
-        }
+        // Rank-entry node factories (SelectionGroup / RankOption / RankFeature) live in the shared
+        // RTAccess.UI.CareerNodes — the ship Skills tab walks the same CareerPathVM machinery and the
+        // spoken contracts must not drift between the two flows.
     }
 }

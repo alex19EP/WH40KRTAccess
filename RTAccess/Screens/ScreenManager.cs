@@ -239,6 +239,14 @@ namespace RTAccess.Screens
             // the selected page's typed content blocks (text/glossary/planet/astropath/book-event/class), with
             // a knowledge-gated bestiary reader for unit blocks. Ported from the WrathAccess recipe.
             Register(new EncyclopediaScreen());
+            // Ship management service window (CurrentServiceWindow == ShipCustomization, Surface OR Space —
+            // also opens read-only during space combat) — layer 10. Four game-driven tabs (Components /
+            // Upgrade / Posts / Accolades) + the always-alive ship status summary; every action drives the
+            // game's queued commands. See docs/ship-management-ui-exploration.md.
+            Register(new ShipCustomizationScreen());
+            // The ship component picker (ShipUpgradeVm.ShipSelectorWindowVM), raised by Enter on a component
+            // slot — layer 12, Exclusive, directly above the ship screen (the EquipSelectorScreen shape).
+            Register(new ShipItemSelectorScreen());
             // Vendor / trade window (Surface OR Space StaticPartVM.VendorVM — a full-screen UI, not a
             // ServiceWindowsType) — layer 24, Exclusive. Trade tab (PF-threshold buys, tiered wares,
             // send-to-cargo stash) + Reputation tab (cargo-for-reputation exchange).

@@ -247,6 +247,28 @@ namespace RTAccess.UI
             };
         }
 
+        /// <summary>A combo box over a fixed option list (the inventory/ship filter-and-sort bars): value =
+        /// the current option (LIVE — a submenu pick or a filter change re-announces itself on the landing);
+        /// Enter opens a <see cref="RTAccess.Screens.ChoiceSubmenuScreen"/> to pick. Activate-only (no
+        /// Left/Right cycle), so in a control bar Left/Right walks between cells and in a list Left/Right
+        /// stays free for tree navigation.</summary>
+        public static NodeVtable Cycler(Func<string> label, Func<IReadOnlyList<string>> options,
+            Func<int> current, Action<int> select)
+        {
+            Func<string> value = () =>
+            {
+                var o = options?.Invoke();
+                int i = current?.Invoke() ?? -1;
+                return o != null && i >= 0 && i < o.Count ? o[i] : "";
+            };
+            return Dropdown(label, value, () =>
+            {
+                var o = options?.Invoke();
+                if (o == null || o.Count == 0) return;
+                RTAccess.Screens.ChoiceSubmenuScreen.Open(label(), o, current?.Invoke() ?? -1, i => select?.Invoke(i));
+            });
+        }
+
         /// <summary>A plain dropdown GAME setting (<see cref="SettingsEntityDropdownVM"/>).</summary>
         public static NodeVtable GameDropdown(SettingsEntityDropdownVM vm)
         {

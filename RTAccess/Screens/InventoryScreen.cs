@@ -233,7 +233,7 @@ namespace RTAccess.Screens
             if (usable.Count > 1)
             {
                 var opts = usable;
-                b.AddItem(ControlId.Structural(uk + "wset"), Cycler(
+                b.AddItem(ControlId.Structural(uk + "wset"), GraphNodes.Cycler(
                     () => Loc.T("inv.weapon_sets"),
                     () => opts.ConvertAll(s => Loc.T("inv.weapon_set", new { index = s.Index + 1 })),
                     () => Math.Max(0, opts.IndexOf(doll.CurrentSet?.Value)),
@@ -331,14 +331,14 @@ namespace RTAccess.Screens
             b.StartRow(k + "filtersrow");
 
             var filters = FilterOptions;
-            b.AddItem(ControlId.Structural(k + "filter"), Cycler(
+            b.AddItem(ControlId.Structural(k + "filter"), GraphNodes.Cycler(
                 () => Loc.T("inv.filters"),
                 () => filters.ConvertAll(t => LocalizedTexts.Instance.ItemsFilter.GetText(t)),
                 () => { var cf = stash?.ItemsFilter?.CurrentFilter; return cf != null ? Math.Max(0, filters.IndexOf(cf.Value)) : 0; },
                 i => { if (i >= 0 && i < filters.Count) filter.SetCurrentFilter(filters[i]); }));
 
             var sorters = SortOptions;
-            b.AddItem(ControlId.Structural(k + "sort"), Cycler(
+            b.AddItem(ControlId.Structural(k + "sort"), GraphNodes.Cycler(
                 () => Loc.T("inv.sort"),
                 () => sorters.ConvertAll(t => LocalizedTexts.Instance.ItemsFilter.GetText(t)),
                 () => Math.Max(0, sorters.IndexOf(stash.CurrentSorter.Value)),
@@ -346,26 +346,6 @@ namespace RTAccess.Screens
 
             b.EndRow();
             b.PopContext();
-        }
-
-        // A combo box over a fixed option list: value = the current option (LIVE — a submenu pick or a filter
-        // change re-announces itself on the landing); Enter opens a submenu to pick. Activate-only (no Left/Right
-        // cycle), so in the filters bar Left/Right walks between cells and in a list Left/Right stays free.
-        private static NodeVtable Cycler(Func<string> label, Func<IReadOnlyList<string>> options,
-            Func<int> current, Action<int> select)
-        {
-            Func<string> value = () =>
-            {
-                var o = options?.Invoke();
-                int i = current?.Invoke() ?? -1;
-                return o != null && i >= 0 && i < o.Count ? o[i] : "";
-            };
-            return GraphNodes.Dropdown(label, value, () =>
-            {
-                var o = options?.Invoke();
-                if (o == null || o.Count == 0) return;
-                ChoiceSubmenuScreen.Open(label(), o, current?.Invoke() ?? -1, i => select?.Invoke(i));
-            });
         }
 
         // The personal-inventory filter set (mirrors ItemsFilterPCView.m_SortedFiltersList) and the sort modes

@@ -53,9 +53,20 @@ internal sealed class WarningReader : IWarningNotificationUIHandler
         catch { return null; }
     }
 
+    // Same-frame identical-text dedupe: twin game subscribers can raise the SAME toast twice within one
+    // EventBus dispatch (the ship window's two ShipUpgradeSlotVM instances both toast every system-component
+    // upgrade result — docs/ship-management-ui-exploration.md, trap #5). Frame-scoped on purpose: a player
+    // re-triggering the same refusal on a later keypress lands on a later frame and is never suppressed.
+    private static int _lastFrame = -1;
+    private static string _lastText;
+
     private static void Speak(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        int frame = UnityEngine.Time.frameCount;
+        if (frame == _lastFrame && text == _lastText) return;
+        _lastFrame = frame;
+        _lastText = text;
         Speaker.Speak(text, interrupt: false); // reactive feedback — queue behind any current line
     }
 }
