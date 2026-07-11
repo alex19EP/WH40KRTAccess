@@ -6,12 +6,10 @@ using Kingmaker.Blueprints.Root.Strings;                      // UIStrings (cont
 using Kingmaker.Cargo;                                        // CargoHelper (auto-add-to-cargo gate)
 using Kingmaker.Code.UI.MVVM.VM.ContextMenu;                  // ContextMenuCollectionEntity (the game's menu model)
 using Kingmaker.Code.UI.MVVM.VM.Loot;    // InsertableLootSlotVM, InteractionSlotPartVM
-using Kingmaker.Code.UI.MVVM.VM.MessageBox;                   // DialogMessageBoxBase (search text entry)
 using Kingmaker.Code.UI.MVVM.VM.SelectorWindow;               // InventorySelectorWindowVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.Inventory;     // EquipSlotVM, InventoryDollVM
 using Kingmaker.Code.UI.MVVM.VM.Slots;   // ItemSlotVM, ItemGrade, ILootHandler, IInventoryHandler
 using Kingmaker.GameCommands;            // GameCommandQueueExtensions (AddRemoveItemAsFavorite)
-using Kingmaker.PubSubSystem;                                 // IDialogMessageBoxUIHandler
 using Kingmaker.PubSubSystem.Core;       // EventBus
 using Kingmaker.UI.Common;               // InventoryHelper
 using Kingmaker.UI.MVVM.VM.ServiceWindows.Inventory;          // EquipSelectorSlotVM (the OTHER namespace)
@@ -266,42 +264,6 @@ namespace RTAccess.UI
                 SearchText = label,
                 OnActivate = () => { if (equipped()) selector.Unequip(); else selector.Confirm(candidate); },
                 OnTooltip = () => TooltipChooser.OpenTemplate(label(), candidate.Tooltip.Value),
-                ActivateSound = Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick,
-            };
-        }
-
-        /// <summary>An edit field over a model string (the stash search): "label, edit, current-or-blank".
-        /// No control type — an explicit edit role part (the WA idiom; there's no edit ControlType). Enter
-        /// opens the game's own text-field message box (surfaced by MessageBoxScreen, which drives the live
-        /// field) pre-filled with the current text; Accept writes THROUGH the model setter — accepting an
-        /// emptied field clears the search — while Decline changes nothing (told apart via the box's button
-        /// callback, since Decline also reports empty text). The value part is LIVE, so the applied text
-        /// (or "blank") announces itself back on the field.</summary>
-        public static NodeVtable SearchField(Func<string> label, Func<string> current, Action<string> apply)
-        {
-            Func<string> value = () =>
-            {
-                var v = current?.Invoke();
-                return string.IsNullOrEmpty(v) ? Loc.T("value.blank") : v;
-            };
-            return new NodeVtable
-            {
-                Announcements = new List<NodeAnnouncement>
-                {
-                    GraphNodes.LabelPart(label),
-                    new NodeAnnouncement(() => Loc.T("role.edit"), kind: AnnouncementKinds.Role),
-                    new NodeAnnouncement(value, live: true, kind: AnnouncementKinds.Value),
-                },
-                SearchText = label,
-                OnActivate = () =>
-                {
-                    bool accepted = false;
-                    EventBus.RaiseEvent<IDialogMessageBoxUIHandler>(h => h.HandleOpen(
-                        Loc.T("inv.search_prompt"), DialogMessageBoxBase.BoxType.TextField,
-                        btn => accepted = btn == DialogMessageBoxBase.BoxButton.Yes, null, null, null,
-                        text => { if (accepted) apply?.Invoke(text ?? string.Empty); },
-                        inputText: current?.Invoke()));
-                },
                 ActivateSound = Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick,
             };
         }
