@@ -139,6 +139,10 @@ namespace RTAccess.Screens
             // Layer 0, mutually exclusive with ctx.ingame (IsSurface is false in space). Objects/Status/Actions
             // tab stops; SpaceEvents voices travel/scan/research. See docs/plans/orbital-listing-wilkes.md.
             Register(new SystemMapScreen());
+            // Sector map / warp-travel base context (GameModeType.GlobalMap, area is a BlueprintSectorMapArea) —
+            // Layer 0, mutually exclusive with the other base contexts (distinct area type). Systems/Status/Actions
+            // tab stops; WarpEvents voices warp/scan/route events. See docs/plans/warp-sector-map-accessibility.md.
+            Register(new SectorMapScreen());
             // The planet-exploration tablet (SpaceStaticPartVM.ExplorationVM.IsExploring — auto-opens on
             // landing) — layer 9, Exclusive: above the map, below service windows (10) / dialogue (15) /
             // loot (24) that stack on it. Scan, POIs, resources/miners, colony + projects. M2 of

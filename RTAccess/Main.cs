@@ -81,6 +81,10 @@ public static class Main {
             // per-frame proximity poll rides OnUpdate (SpaceEvents.Tick). Persistent subscriber; unsubscribed
             // below. See docs/plans/orbital-listing-wilkes.md (M1).
             EventBus.Subscribe(SpaceEvents.Instance);
+            // Voice sector-map / warp-travel state (entering/leaving warp, pause/resume, scan reveals, route
+            // charting) — the SpaceEvents sibling for the GlobalMap layer. Persistent subscriber; unsubscribed
+            // below. See docs/plans/warp-sector-map-accessibility.md.
+            EventBus.Subscribe(WarpEvents.Instance);
             // Build the review-buffer set (Alt+arrows query a unit's live HP/AP/defenses/buffs without losing
             // UI focus); resolvers read the live selected unit / combat target each refresh.
             Buffers.BufferManager.Instance.RegisterDefaults();
@@ -205,6 +209,10 @@ public static class Main {
         // System-map proximity cues (the game's three HUD interference icons, edge-detected). No-op off the map.
         Safe(() => SpaceEvents.Instance.Tick(), "SpaceEvents");
 
+        // Sector-map / warp-travel edge-state housekeeping (clears transient pause/scan flags off the map). The
+        // warp narration itself is event-driven. No-op off the sector map.
+        Safe(() => WarpEvents.Instance.Tick(), "WarpEvents");
+
         // The live world registry: diff the entity pools into stable per-entity scan proxies (units + map objects +
         // placed area effects), raising Added/Removed. Ticked BEFORE the input tick so the scanner's handlers read a
         // current-frame registry; the persistent proxies are what future object/sonar cues attach to. See
@@ -324,6 +332,7 @@ public static class Main {
         EventBus.Unsubscribe(WarningReader.Instance);
         EventBus.Unsubscribe(ConvictionEvents.Instance);
         EventBus.Unsubscribe(SpaceEvents.Instance);
+        EventBus.Unsubscribe(WarpEvents.Instance);
         Speaker.Stop();
         Speaker.Shutdown();
         HarmonyInstance?.UnpatchAll(HarmonyInstance.Id);
