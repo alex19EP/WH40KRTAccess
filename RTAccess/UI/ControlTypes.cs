@@ -34,6 +34,29 @@ namespace RTAccess.UI
             Common = () => RoleWord("button"),
         };
 
+        /// <summary>An action-bar slot (ability / weapon attack / consumable / heroic act). Same behavior
+        /// as a button but reordered around availability: it LEADS with the status word and slots the
+        /// why-not reason right after the name — "unavailable, {name}, out of range, button, …" — so a
+        /// player scanning a bar of mostly-greyed abilities hears whether a slot is usable (and why not)
+        /// before its detail. Shares the "button" settings key, so the per-button announcement toggles
+        /// cover it too (it is not a separate settings identity — not in <see cref="All"/>).</summary>
+        public static readonly ControlType ActionSlot = new ControlType
+        {
+            Key = "button",
+            Order = new[]
+            {
+                AnnouncementKinds.Enabled,   // "unavailable" status word — first
+                AnnouncementKinds.Label,     // the ability name
+                AnnouncementKinds.Reason,    // why it's unavailable — right after the name
+                AnnouncementKinds.Role,
+                AnnouncementKinds.Value,
+                AnnouncementKinds.Selected,
+                AnnouncementKinds.Tooltip,
+                AnnouncementKinds.Position,
+            },
+            Common = () => RoleWord("button"),
+        };
+
         public static readonly ControlType Toggle = new ControlType
         {
             Key = "toggle",

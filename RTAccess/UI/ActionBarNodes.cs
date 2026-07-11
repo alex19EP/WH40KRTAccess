@@ -11,6 +11,8 @@ using Kingmaker.UI.Models.UnitSettings;              // MechanicActionBarSlotIte
 using Kingmaker.UnitLogic.Abilities;                 // AbilityData
 using Kingmaker.UnitLogic.Abilities.Blueprints;      // AbilityTargetAnchor
 using Kingmaker.UnitLogic.Abilities.Components;      // WarhammerEndTurn, CheckBuffForMPSpendTooltip
+using Kingmaker.UnitLogic.FactLogic;                 // WarhammerCooldown (UntilEndOfCombat — the "once per battle" cue)
+using Kingmaker.Controllers.Enums;                   // PsychicPower (Minor/Major veil degradation)
 using RTAccess.UI.Graph;
 using UnityEngine;                                   // Vector3, Mathf
 
@@ -23,7 +25,10 @@ namespace RTAccess.UI
     ///     bar repopulating under focus (a character swap) re-reads the new occupant of the row;
     ///   • value   = AP cost, range/target-kind/uses, ammo, cooldown, veil, "ends turn" — read on focus —
     ///     plus a LIVE targeting/active part, so arming or the game's async settle announces under focus;
-    ///   • enabled = whether it's usable right now (<c>IsPossibleActive</c> — AP/cooldown/turn gates), LIVE;
+    ///   • enabled = the "unavailable" status word, spoken FIRST (the ActionSlot type leads with the
+    ///     Enabled kind), LIVE — with the game's own why-not reason ordered right after the name (Reason
+    ///     kind): "unavailable, {name}, out of range, …", so a player scanning a bar of mostly-greyed
+    ///     abilities hears whether a slot is usable, and why not, before its detail;
     ///   • activate = the VM's own click (<see cref="ActionBarSlotVM.OnMainClick"/>, which fires the ability
     ///     AND plays the game's slot-click sound — so no ActivateSound of ours on top). Enter on a greyed
     ///     slot speaks the game's own why-not instead of silence (the blocked-click fallback).
@@ -44,10 +49,22 @@ namespace RTAccess.UI
             Func<string> title = () => Title(vm);
             return new NodeVtable
             {
-                ControlType = ControlTypes.Button,
+                // ActionSlot (not plain Button): its speak order is "unavailable, <name>, <reason>, …",
+                // so an unusable ability announces its status first and the reason right after the name —
+                // skippable without waiting out its full detail.
+                ControlType = ControlTypes.ActionSlot,
                 Announcements = new List<NodeAnnouncement>
                 {
+                    // The status word LEADS (Enabled kind, first). Silent when usable, "unavailable" when
+                    // not. LIVE, but reads only the cheap IsPossibleActive — so an ability going un/available
+                    // under focus (AP spent, cooldown ticked) re-speaks it, without the per-frame cost of the
+                    // rule-triggering reason lookup (that stays on the non-live Reason part below).
+                    new NodeAnnouncement(() => UnavailableMarker(vm), live: true, kind: AnnouncementKinds.Enabled),
                     new NodeAnnouncement(title, live: true, kind: AnnouncementKinds.Label),
+                    // The why-not reason, ordered right after the name (ActionSlot's Reason kind). Silent
+                    // when usable; the game's own greyed-tooltip reason otherwise. Read on focus (not live)
+                    // — the reason getter triggers rules, so it must not run every frame.
+                    new NodeAnnouncement(() => UnavailableReasonText(vm), kind: AnnouncementKinds.Reason),
                     new NodeAnnouncement(() => Detail(vm), kind: AnnouncementKinds.Value),
                     // The game's own hotkey for this slot (main-HUD audit #10) — resolved exactly as the
                     // sighted label is (ActionBarSlotPCView.SetKeyBindLabel), so rebinds read correctly.
@@ -55,7 +72,6 @@ namespace RTAccess.UI
                     // Targeting / active state — LIVE, so arming an ability (or the game's async settle)
                     // announces itself while the slot is focused. Silent when neither.
                     new NodeAnnouncement(() => ToggleState(vm), live: true, kind: AnnouncementKinds.Value),
-                    GraphNodes.DisabledPart(enabled),
                 },
                 SearchText = title,
                 OnActivate = () =>
@@ -184,15 +200,11 @@ namespace RTAccess.UI
                 // shown when the ability consumes more than one round per use, e.g. a burst).
                 if (vm.AmmoCost.Value > 0)
                     Append(sb, Loc.T("slot.ammo_cost", new { cost = vm.AmmoCost.Value }));
-                if (vm.IsOnCooldown.Value)
-                {
-                    var cd = vm.CooldownText.Value;
-                    Append(sb, string.IsNullOrEmpty(cd) ? Loc.T("slot.on_cooldown") : Loc.T("slot.cooldown", new { turns = cd }));
-                }
 
                 if (ab != null)
                 {
-                    AppendVeil(sb, ab);      // predicted after-cast veil (psyker powers)
+                    AppendCooldown(sb, ab);  // base cooldown LENGTH (tooltip-faithful; live on-cooldown state rides the availability reason)
+                    AppendVeil(sb, ab);      // veil points added + minor/major degradation (tooltip-faithful)
                     AppendEndTurn(sb, ab);   // "ends turn" / "spends all movement" cue
                 }
 
@@ -203,17 +215,25 @@ namespace RTAccess.UI
                 if ((vm.HasConvert?.Value ?? false) && (vm.IsCanConvert?.Value ?? false))
                     Append(sb, Loc.T("slot.has_variants"));
 
-                // Why it's greyed out — the game's own reason (not enough AP, on cooldown, out of range, …),
-                // so a disabled slot says the cause instead of a bare "disabled".
-                if (ab != null && !(vm.IsPossibleActive?.Value ?? false))
-                {
-                    var why = UnavailableReason(ab);
-                    if (why != null) Append(sb, Loc.T("slot.unavailable", new { reason = why }));
-                }
+                // Why it's greyed out no longer trails here — it now LEADS the readout as the availability
+                // part (Availability(), Enabled kind). Kept out of Detail so the reason is spoken once.
             }
             catch { }
             return sb.Length > 0 ? sb.ToString() : null;
         }
+
+        // The leading "unavailable" status word (Enabled kind, spoken FIRST). Silent when the slot is
+        // usable. Reads only the cheap IsPossibleActive so it is safe to watch live (the reason lookup,
+        // which triggers rules, lives on the separate non-live part below).
+        private static string UnavailableMarker(ActionBarSlotVM vm)
+            => (vm?.IsPossibleActive?.Value ?? false) ? null : Loc.T("slot.unavailable_marker");
+
+        // Why the slot is greyed out, ordered right after the name (Reason kind). Silent when usable or
+        // when the game gives no reason; otherwise the game's own localized reason (not enough AP, on
+        // cooldown, out of range, …), evaluated from where the caster will act — the text the sighted
+        // greyed tooltip shows.
+        private static string UnavailableReasonText(ActionBarSlotVM vm)
+            => (vm?.IsPossibleActive?.Value ?? false) ? null : UnavailableReason(AbilityOf(vm));
 
         // Range (melee vs cells, + a minimum if the weapon has one), what it targets, and limited uses.
         private static void AppendAbilityDetails(StringBuilder sb, ActionBarSlotVM vm, AbilityData ab)
@@ -326,18 +346,46 @@ namespace RTAccess.UI
             catch { }
         }
 
-        // Predicted veil thickness after casting a psyker power — the sighted VeilThicknessVM.PredictedValue
-        // (current global veil + AbilityData.GetVeilThicknessPointsToAdd(isPrediction:true)). Veil is a global
-        // location value (AreaVailPart.Vail), not per-unit, so there's nothing to fog-gate. Flags when the cast
-        // would reach the critical threshold the game uses to escalate perils (CriticalVeilOnAllLocation).
+        // The cooldown the ability tooltip prints (TooltipTemplateAbility.AddCooldown): the base cooldown
+        // LENGTH — BlueprintAbility.CooldownRounds — or "once per battle" for an until-end-of-combat ability
+        // (WarhammerCooldown.UntilEndOfCombat), the exact split the tooltip's Cooldown brick makes. This is
+        // the static duration, NOT the live remaining countdown: whether it's on cooldown RIGHT NOW comes
+        // through the leading availability reason (the game's greyed why-not), matching how a sighted player
+        // reads it off the greyed slot rather than this brick.
+        private static void AppendCooldown(StringBuilder sb, AbilityData ab)
+        {
+            try
+            {
+                var bp = ab?.Blueprint;
+                if (bp == null) return;
+                if (bp.GetComponent<WarhammerCooldown>()?.UntilEndOfCombat ?? false)
+                { Append(sb, Loc.T("slot.cooldown_once")); return; }
+                int rounds = bp.CooldownRounds;
+                if (rounds > 0) Append(sb, Loc.T(rounds == 1 ? "slot.cooldown_round" : "slot.cooldown_rounds", new { rounds }));
+            }
+            catch { }
+        }
+
+        // The veil cost the ability tooltip shows for a psyker power: the points THIS cast adds (the number
+        // in the tooltip's psychic cost line, BlueprintAbility.GetVeilThicknessPointsToAdd) plus the game's
+        // own Minor/Major degradation label (TooltipTemplateAbility.GetVeil). We do NOT speak a predicted
+        // after-cast total — the game never prints one (it's the veil meter's moving slider, not text). The
+        // one thing we still flag is whether the cast would break the veil (perils escalate): faithful to
+        // the sighted player watching that predicted slider cross the critical marker on hover — computed
+        // from the global veil, never spoken as a raw number.
         private static void AppendVeil(StringBuilder sb, AbilityData ab)
         {
             try
             {
-                if (ab.Blueprint == null || !ab.Blueprint.IsPsykerAbility) return;
+                var bp = ab?.Blueprint;
+                if (bp == null || !bp.IsPsykerAbility) return;
+                int points = bp.GetVeilThicknessPointsToAdd();
+                if (points > 0) Append(sb, Loc.T("slot.veil_add", new { points }));
+                Append(sb, (string)(bp.PsychicPower != PsychicPower.Major
+                    ? UIStrings.Instance.Tooltips.MinorVeilDegradation
+                    : UIStrings.Instance.Tooltips.MajorVeilDegradation));
                 int current = Game.Instance?.TurnController?.VeilThicknessCounter?.Value ?? 0;
                 int predicted = current + ab.GetVeilThicknessPointsToAdd(isPrediction: true);
-                Append(sb, Loc.T("slot.veil_after", new { value = predicted }));
                 int critical = BlueprintRoot.Instance.WarhammerRoot.PsychicPhenomenaRoot.CriticalVeilOnAllLocation;
                 if (predicted >= critical) Append(sb, Loc.T("slot.veil_would_go_critical"));
             }

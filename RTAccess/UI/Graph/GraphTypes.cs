@@ -27,6 +27,11 @@ namespace RTAccess.UI.Graph
         public const string Enabled = "enabled";
         public const string Tooltip = "tooltip";
         public const string Position = "position";
+
+        /// <summary>A why-unavailable reason line, ordered immediately after the label (used by the
+        /// action-bar slot type: "unavailable, {name}, {reason}"). Distinct from <see cref="Enabled"/>
+        /// (the leading status word) so the two can sit apart in the readout.</summary>
+        public const string Reason = "reason";
     }
 
     /// <summary>
