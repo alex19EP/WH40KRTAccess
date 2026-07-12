@@ -5,6 +5,8 @@ using Kingmaker;
 using Kingmaker.AreaLogic.TimeSurvival;               // TimeSurvival ("survive N rounds" areas)
 using Kingmaker.Blueprints;                           // BlueprintScriptableObject.GetComponent<T>()
 using Kingmaker.Code.UI.MVVM.VM.ActionBar;            // ActionBarSlotVM (ship weapons/abilities are bar slots)
+using Kingmaker.Code.UI.MVVM.VM.SpaceCombat.Components; // ShipPostVM
+using Warhammer.SpaceCombat.StarshipLogic.Posts;      // Post (officer / skill / blocked state)
 using Kingmaker.Code.UI.MVVM.VM.Space;                // SpaceStaticComponentType
 using Kingmaker.Code.UI.MVVM.VM.SpaceCombat;          // SpaceCombatVM (+ service panel)
 using Kingmaker.EntitySystem.Entities;                // StarshipEntity
@@ -137,6 +139,29 @@ namespace RTAccess.Screens
                 }
             }
 
+            // -- Posts (Phase 4: the six bridge stations of the sighted posts panel). Each post reads as a
+            // header line — post name, officer, skill value, blocked/penalty state — followed by that
+            // officer's post abilities as ordinary slots (same aim flow as weapons). The header reads the
+            // live Post part, so a mid-battle block (boarding, fire) re-reads truthfully.
+            var posts = vm.ShipPostsPanelVM;
+            if (posts?.Posts != null && posts.Posts.Count > 0)
+            {
+                b.BeginStop("posts").PushContext(Loc.T("spacecombat.posts"), Loc.T("role.list"));
+                for (int p = 0; p < posts.Posts.Count; p++)
+                {
+                    var pvm = posts.Posts[p];
+                    if (pvm == null) continue;
+                    var captured = pvm; // loop-local for the closure
+                    b.AddLabel(ControlId.Structural("posts:head:" + p), () => PostLine(captured));
+                    var slots = pvm.AbilitiesGroup?.Slots;
+                    if (slots == null) continue;
+                    for (int i = 0; i < slots.Count; i++)
+                        if (UsableSlot(slots[i]))
+                            AddShipSlot(b, slots[i], "posts:" + p, i, null);
+                }
+                b.PopContext();
+            }
+
             // -- Battle (service panel: round/turn state, End turn, initiative order) --
             b.BeginStop("battle").PushContext(Loc.T("spacecombat.battle"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural("battle:status"), GraphNodes.Text(() => BattleStatusLine(ship)));
@@ -236,6 +261,66 @@ namespace RTAccess.Screens
                 return sb.Length > 0 ? sb.ToString() : null;
             }
             catch { return null; }
+        }
+
+        // One post header: "Master Helmsman, Abelard, Pilot 45[, blocked, 2 rounds][, penalty]" —
+        // what the sighted panel shows as portrait + skill badge + the lock overlay. The post name is
+        // position-keyed in the game's own strings (UIStrings.SpaceCombatTexts.PostStrings[index], the
+        // ShipCustomizationScreen recipe); everything else reads the live Post part (the VM's m_Post,
+        // reachable thanks to the publicized reference assemblies).
+        private static string PostLine(ShipPostVM pvm)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                string title = null;
+                try { title = Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.SpaceCombatTexts.GetPostStrings(pvm.Index).Title?.Text; }
+                catch { }
+                sb.Append(!string.IsNullOrEmpty(title) ? title : Loc.T("ship.post_n", new { index = pvm.Index + 1 }));
+
+                var post = pvm.m_Post;
+                if (post?.CurrentUnit != null)
+                {
+                    sb.Append(", ").Append(post.CurrentUnit.CharacterName).Append(", ");
+                    string skill = null;
+                    try { skill = Kingmaker.Blueprints.Root.LocalizedTexts.Instance.Stats.GetText(post.PostData.AssociatedSkill); }
+                    catch { }
+                    if (!string.IsNullOrEmpty(skill)) sb.Append(skill).Append(' ');
+                    sb.Append(post.CurrentSkillValue);
+                }
+                else sb.Append(", ").Append(Loc.T("spacecombat.post_vacant"));
+
+                if (pvm.IsPostBlocked.Value)
+                {
+                    sb.Append(", ").Append(Loc.T("spacecombat.post_blocked"));
+                    string dur = pvm.BlockDuration.Value;
+                    if (!string.IsNullOrEmpty(dur) && dur != "0")
+                        sb.Append(", ").Append(Loc.T("spacecombat.post_blocked_rounds", new { n = dur }));
+                }
+                if (post != null && post.CurrentUnit != null && post.HasPenalty)
+                    sb.Append(", ").Append(Loc.T("spacecombat.post_penalty"));
+                return sb.ToString();
+            }
+            catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.PostLine: " + e); return ""; }
+        }
+
+        /// <summary>The game's localized name for a player-ship post (position-keyed strings), for event
+        /// cues (see <see cref="Accessibility.SpaceCombatEvents"/>). Falls back to the numbered post.</summary>
+        internal static string PostTitle(Post post)
+        {
+            try
+            {
+                var hullPosts = Game.Instance?.Player?.PlayerShip?.Hull?.Posts;
+                int idx = hullPosts != null ? hullPosts.IndexOf(post) : -1;
+                if (idx >= 0)
+                {
+                    var t = Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.SpaceCombatTexts.GetPostStrings(idx).Title?.Text;
+                    if (!string.IsNullOrEmpty(t)) return t;
+                    return Loc.T("ship.post_n", new { index = idx + 1 });
+                }
+            }
+            catch { }
+            return Loc.T("spacecombat.posts");
         }
 
         private static bool UsableSlot(ActionBarSlotVM s)
