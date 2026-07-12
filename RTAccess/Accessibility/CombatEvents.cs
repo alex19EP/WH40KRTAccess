@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Kingmaker;                         // Game
+using Kingmaker.AreaLogic.TimeSurvival;  // TimeSurvival ("survive N rounds" areas)
+using Kingmaker.Blueprints;              // BlueprintScriptableObject.GetComponent<T>()
 using Kingmaker.Controllers.Combat;      // GetCombatStateOptional extension
 using Kingmaker.EntitySystem.Entities;   // BaseUnitEntity, MechanicEntity
 using Kingmaker.Mechanics.Entities;      // AbstractUnitEntity
@@ -48,6 +50,7 @@ internal sealed class CombatEvents
     // Turn identity is tracked by UniqueId, not object reference: CurrentUnit can return a fresh entity
     // instance for the same logical unit across frames, so a reference compare would re-announce mid-turn.
     private string _lastTurnUnitId;
+    private int _survivalRound = -1;   // last round the TimeSurvival rounds-left tail spoke for
     private bool _wasInCombat;
     private bool _wasInPrep;
 
@@ -102,7 +105,7 @@ internal sealed class CombatEvents
         {
             _wasInCombat = inCombat;
             Enqueue(Message.Localized("ui", inCombat ? "combat.started" : "combat.ended").Resolve());
-            if (!inCombat) { _lastTurnUnitId = null; _wasInPrep = false; }
+            if (!inCombat) { _lastTurnUnitId = null; _survivalRound = -1; _wasInPrep = false; }
         }
 
         // The remaining cues (whose-turn, deployment) are turn-based-only chrome. Reset the turn poll
@@ -125,6 +128,21 @@ internal sealed class CombatEvents
         // (InitiativeTrackerView.RoundChanged, round > 1) is voiced by WarningReader in the game's
         // language. Round 1 has no toast, but it coincides with "Battle begins" / combat start, and the
         // battle status line carries the labelled round for review.
+        //
+        // TimeSurvival areas ("survive N rounds") are the exception (Phase 6): their sighted counter
+        // ticks down beside the tracker and the game's round toast there is a bare NUMBER, so follow
+        // each round advance with the labelled count. Silent everywhere else.
+        int survRound = tc.CombatRound;
+        if (survRound != _survivalRound)
+        {
+            _survivalRound = survRound;
+            if (survRound > 1)
+            {
+                var ts = game.CurrentlyLoadedArea?.GetComponent<TimeSurvival>();
+                if (ts != null && !ts.UnlimitedTime)
+                    Enqueue(Message.Localized("ui", "spacecombat.rounds_left", new { n = ts.RoundsLeft }).Resolve());
+            }
+        }
 
         // Whose turn — announce on change of the acting unit, keyed by stable UniqueId. Ignoring null ids
         // (rather than tracking them) keeps _lastTurnUnitId pinned to the last real actor, so neither a

@@ -81,8 +81,13 @@ namespace RTAccess.Screens
                     b.AddItem(ControlId.Structural(k + "cargo:" + i), cvt);
                 }
 
+            b.PopContext();
+
             // The popup's own two buttons, with the game's own labels: OK = leave to the star system,
             // Attune = leave straight into the voidship upgrade window (shown only with a banked level).
+            // Their OWN Tab stop (user feedback from the live pass): Tab jumps rewards ↔ buttons directly,
+            // so closing the popup never means arrowing through the whole reward list first.
+            b.BeginStop("actions").PushContext(Loc.T("hud.actions"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural(k + "continue"), GraphNodes.Button(
                 () => GameText.Or(() => UIStrings.Instance.SettingsUI.DialogOk, "spacecombat.exit_battle"),
                 () => Vm()?.ExitBattle(false)));

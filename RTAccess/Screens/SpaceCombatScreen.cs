@@ -173,6 +173,11 @@ namespace RTAccess.Screens
             var game = Game.Instance;
             Func<string> endTurnLabel = () => GameText.Or(
                 () => Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.HUDTexts.EndTurn, "turn.end");
+            // The "you still have moves" nudge the sighted panel pulses on the end-turn button rides the
+            // button itself (Phase 6): focusing End turn speaks "…, N actions still available" LIVE, so
+            // spending the last action under focus re-reads — the spoken twin of the pulsing highlight
+            // (CombatActionsCount = action holders with anything possible, movement included).
+            var svc = vm.SpaceCombatServicePanelVM;
             b.AddItem(ControlId.Structural("battle:endturn"), new NodeVtable
             {
                 ControlType = ControlTypes.Button,
@@ -180,18 +185,14 @@ namespace RTAccess.Screens
                 {
                     GraphNodes.LabelPart(endTurnLabel),
                     GraphNodes.DisabledPart(() => game.TurnController.CanEndTurn),
+                    new NodeAnnouncement(() => svc != null && svc.IsPlayerTurn.Value && svc.CombatActionsCount.Value > 0
+                        ? Loc.T("spacecombat.actions_left", new { n = svc.CombatActionsCount.Value })
+                        : null, live: true, kind: AnnouncementKinds.Value),
                 },
                 SearchText = endTurnLabel,
                 OnActivate = () => { if (game.TurnController.CanEndTurn) game.TurnController.TryEndPlayerTurnManually(); },
                 ActivateSound = null,
             });
-
-            // The "you still have moves" nudge the sighted panel pulses on the end-turn button
-            // (CombatActionsCount = action holders with anything possible, movement included).
-            var svc = vm.SpaceCombatServicePanelVM;
-            if (svc != null && svc.IsPlayerTurn.Value && svc.CombatActionsCount.Value > 0)
-                b.AddLabel(ControlId.Structural("battle:actions"),
-                    () => Loc.T("spacecombat.actions_left", new { n = svc.CombatActionsCount.Value }));
 
             // Initiative order — the shared tracker VM, rendered through the surface recipe so both
             // trackers read alike (faction, HP with the HideRealHealthInUI mask, current/order markers,
