@@ -579,8 +579,9 @@ namespace RTAccess.UI
         // Space on a stash item: its own card (the LAST template), plus any LEADING compare-vs-equipped
         // templates as extra drill-in sections — mirrors the game's hover, which shows the item card
         // alongside the equipped items it would replace. Resolved live per press; links mined from the
-        // item's own template so inline glossary terms drill too.
-        private static void OpenItemTooltip(ItemSlotVM slot)
+        // item's own template so inline glossary terms drill too. (Internal: display-only item rows —
+        // the exit-battle rewards — reuse it for their Space read.)
+        internal static void OpenItemTooltip(ItemSlotVM slot)
         {
             var t = slot.Tooltip.Value;
             var own = t != null && t.Count > 0 ? t[t.Count - 1] : null;

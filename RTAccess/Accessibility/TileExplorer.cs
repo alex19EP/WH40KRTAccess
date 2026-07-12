@@ -156,6 +156,47 @@ internal static class TileExplorer
                 if (unit == null || unit != current || !unit.IsDirectlyControllable())
                 { Speaker.Speak(Loc.T("combat.select_active"), interrupt: true); return; }
 
+                // Ships ride the game's own two-click preview flow (CommandDispatch.ShipMoveStep): the arm
+                // press ALSO plants the game's move preview — the destination hologram a sighted co-pilot
+                // sees, plus the VIRTUAL position + facing, so cycling enemies while armed answers arcs and
+                // odds "from the planned cell, with the arrival heading". The second press runs the pinned
+                // move. A fresh arm always drops any stale pin first, so a lapsed confirm window can never
+                // turn an arming press into an instant commit; the game's own Esc cancel stays wired.
+                if (unit is StarshipEntity)
+                {
+                    if (_armedNode == node && (Time.unscaledTime - _armTime) <= ConfirmWindow)
+                    {
+                        _armedNode = null;
+                        var r = RTAccess.Combat.CommandDispatch.ShipMoveStep(node);
+                        if (r == RTAccess.Combat.CommandDispatch.ShipMoveResult.Committed)
+                            Speaker.Speak(Loc.T("path.moving"), interrupt: true);
+                        else if (r == RTAccess.Combat.CommandDispatch.ShipMoveResult.Planted)
+                        {
+                            // The path drifted between presses (budget/heading changed) — the game planted a
+                            // FRESH preview instead of confirming; stay armed and re-read the new verdict.
+                            _armedNode = node;
+                            _armTime = Time.unscaledTime;
+                            Speaker.Speak(RTAccess.Exploration.PathInfo.Preview(unit, node, out _)
+                                + " " + Loc.T("path.preview.press_again"), interrupt: true);
+                        }
+                        return;
+                    }
+                    _armedNode = node;
+                    _armTime = Time.unscaledTime;
+                    RTAccess.Combat.CommandDispatch.ShipMoveCancelLocal();
+                    var shipPreview = RTAccess.Exploration.PathInfo.Preview(unit, node, out bool shipCanMove);
+                    if (shipCanMove)
+                    {
+                        // Plant the ghost; on the rare engine disagreement its refusal already spoke — the
+                        // engine's word is authoritative, so ours stays unsaid.
+                        if (RTAccess.Combat.CommandDispatch.ShipMoveStep(node)
+                            != RTAccess.Combat.CommandDispatch.ShipMoveResult.Planted) return;
+                        Speaker.Speak(shipPreview + " " + Loc.T("path.preview.press_again"), interrupt: true);
+                    }
+                    else Speaker.Speak(shipPreview, interrupt: true);
+                    return;
+                }
+
                 // First press on this tile arms + previews the PATH (reachability + step count, from the game's own
                 // movable-area set); a second within the window commits. The arm is unconditional — the engine stays
                 // authoritative on commit — so even when the preview reads "out of range" a determined second press
@@ -250,10 +291,39 @@ internal static class TileExplorer
             { Speaker.Speak(Loc.T("vantage.not_in_combat"), interrupt: true); return; }
             if (!EnsurePlanted(out bool fresh)) return;
             if (fresh) { Announce(); return; }
-            var line = CombatReads.VantageFrom(MapCursor.Position, me);
+            // Cover/threat is surface tactics; a ship's "what if I went here" is the inertial path verdict
+            // (cost, arrival facing, stop legality) — the same line the move-to arming press speaks.
+            var line = me is StarshipEntity ship
+                ? RTAccess.Exploration.ShipPathInfo.Preview(ship, MapCursor.Node, out _)
+                : CombatReads.VantageFrom(MapCursor.Position, me);
             Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("vantage.no_enemies") : line, interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.ReadVantage failed: " + e); }
+    }
+
+    /// <summary>
+    /// Z — the movement-options summary for the acting unit's turn-based turn: surface units get the
+    /// reachable-area extent (<see cref="RTAccess.Exploration.PathInfo.MoveAreaSummary"/> — the spoken blue
+    /// move-highlight), starships get the end-position fan grouped by resulting facing
+    /// (<see cref="RTAccess.Exploration.ShipPathInfo.MoveSummary"/> — the spoken path-marker fan). Cursor-
+    /// independent (it summarizes the whole turn, not a tile), pure read, combat-only; says why otherwise.
+    /// </summary>
+    public static void ReadMoveSummary()
+    {
+        try
+        {
+            if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys
+            var tc = Game.Instance?.TurnController;
+            if (tc == null || !tc.TurnBasedModeActive)
+            { Speaker.Speak(Loc.T("combat.not_turn_based"), interrupt: true); return; }
+            if (!tc.IsPlayerTurn) { Speaker.Speak(Loc.T("combat.not_your_turn"), interrupt: true); return; }
+            string line = tc.CurrentUnit is StarshipEntity ship
+                ? RTAccess.Exploration.ShipPathInfo.MoveSummary(ship)
+                : RTAccess.Exploration.PathInfo.MoveAreaSummary();
+            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("path.preview.out_of_movement") : line,
+                interrupt: true);
+        }
+        catch (Exception e) { Main.Log?.Error("TileExplorer.ReadMoveSummary failed: " + e); }
     }
 
     /// <summary>

@@ -78,6 +78,16 @@ internal static class AimRead
             if (ability == null) return null;
             var caster = ability.Caster as BaseUnitEntity;
 
+            // Starship weapon aim: the affected-target broadcast is not the source here (ship attacks run
+            // their own rulebook and the prediction includes the shield pool) — read the direct rules at
+            // the ship under the cursor instead. The name leads, mirroring the single-target headline below.
+            if (ability.StarshipWeapon != null)
+            {
+                var shipTarget = CursorTarget.Inside()?.TargetUnit as StarshipEntity;
+                var line = StarshipAim.Describe(caster as StarshipEntity, ability, shipTarget, verbose);
+                return line == null ? null : shipTarget.CharacterName + ", " + line;
+            }
+
             // The game's own SHOWN set: every captured target whose overtip the game would display (fog + faction +
             // range + LOS gate) — no more, no less. Values are the overtip's own projected numbers.
             var enemies = new List<Entry>();

@@ -176,6 +176,15 @@ internal static class InteractableDescriber
                 Append(sb, Loc.T("tile.unreachable"));
         }
 
+        // 2b. Ship reachability (space combat): the branch above rides UnitMovableAreaController, which never
+        //     runs for starships — a ship's turn budget lives in Navigation.ReachableTiles (kept fresh by the
+        //     game's StarshipPathController). Same additive cue, same word, plus the inertia-specific
+        //     "pass-through only" for cells the move fan crosses but cannot stop on. Suppressed while aiming,
+        //     like the cover overlay (the aim readout owns the cursor then).
+        if (seen && !abilityArmed && turn != null && turn.TurnBasedModeActive && turn.IsPlayerTurn
+            && turn.CurrentUnit is Kingmaker.EntitySystem.Entities.StarshipEntity actingShip)
+            Append(sb, RTAccess.Exploration.ShipPathInfo.TileReachabilityWord(actingShip, node));
+
         // 3. Offset from the anchor unit, in tiles (+Z = north, +X = east — matches the compass above).
         Append(sb, RelativeTile(node, anchor));
         return sb.ToString();

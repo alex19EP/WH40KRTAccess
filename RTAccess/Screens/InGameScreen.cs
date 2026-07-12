@@ -489,7 +489,9 @@ namespace RTAccess.Screens
             b.PopContext();
         }
 
-        private static string InitiativeLabel(InitiativeTrackerUnitVM vm)
+        // internal: SpaceCombatScreen renders the space initiative tracker (the same InitiativeTrackerUnitVM
+        // rows — starships are BaseUnitEntitys) through this exact recipe, so the two trackers read alike.
+        internal static string InitiativeLabel(InitiativeTrackerUnitVM vm)
         {
             try
             {
@@ -534,7 +536,7 @@ namespace RTAccess.Screens
         // The #10 round divider's label. The tracker's own end-of-round card VM (RoundVM.Round = RoundCounter+1)
         // carries the number; round 0 is the surprise round, which the game's card renders as literal "S"
         // (InitiativeTrackerEndOfRound.SetRound). Read live so it advances without a rebuild.
-        private static string RoundDividerLabel(InitiativeTrackerVM tracker)
+        internal static string RoundDividerLabel(InitiativeTrackerVM tracker)
         {
             try
             {

@@ -68,6 +68,8 @@ internal static class HoloSim
             && !DeploymentMode.Active
             && game.SelectedAbilityHandler?.Ability == null          // the game's HasAbility hover-sim gate
             && tc.CurrentUnit is BaseUnitEntity unit
+            && !(unit is StarshipEntity)                             // ships have no hover sim — the game shows
+                                                                     // path markers instead (ShipPathInfo owns that)
             && unit.IsInPlayerParty && unit.IsDirectlyControllable()
             && MapCursor.Has;
         if (!live) { Drop(vpc, contextLive: false); return; }

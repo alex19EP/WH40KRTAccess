@@ -41,6 +41,12 @@ public static class HitPredictor
     public static string Describe(BaseUnitEntity caster, AbilityData ability, BaseUnitEntity target, bool verbose = false)
     {
         if (caster == null || ability == null || target == null) return null;
+
+        // Starship weapons run a different rulebook (and their prediction includes the shield pool) —
+        // the surface cache below would read wrong/empty for them. See RTAccess.Combat.StarshipAim.
+        if (ability.StarshipWeapon != null && caster is StarshipEntity shipCaster && target is StarshipEntity shipTarget)
+            return RTAccess.Combat.StarshipAim.Describe(shipCaster, ability, shipTarget, verbose);
+
         try
         {
             // Evaluate from where the shot will actually be taken — the reticle's own reference frame.

@@ -44,7 +44,22 @@ internal sealed class WarningReader : IWarningNotificationUIHandler
         WarningNotificationFormat warningFormat = WarningNotificationFormat.Common, bool withSound = true)
     {
         Count++;
+        if (IsTurnChromeToast(text)) return;
         Speak(text);
+    }
+
+    // The initiative tracker's coop "your turn" banner (OnCurrentUnitChanged) duplicates CombatEvents'
+    // whose-turn cue, which carries more (name, movement, speed) — drop it. Its round banner ("Раунд 2" —
+    // RoundChanged) is deliberately KEPT: it is the round announcement (CombatEvents cues no round of its
+    // own), already localized in the game's language.
+    private static bool IsTurnChromeToast(string text)
+    {
+        try
+        {
+            string youTurn = Kingmaker.Blueprints.Root.Strings.UIStrings.Instance?.TurnBasedTexts?.YouTurn;
+            return !string.IsNullOrEmpty(youTurn) && text == youTurn;
+        }
+        catch { return false; }
     }
 
     private static string Localize(WarningNotificationType t)

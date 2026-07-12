@@ -292,6 +292,12 @@ namespace RTAccess.Input
             // home row. See RTAccess.Accessibility.TileExplorer.ReadVantage.
             InputManager.Register("read.vantage", "Read vantage from cursor tile", InputCategory.Exploration,
                 Ax.TileExplorer.ReadVantage).AddBinding(KeyCode.Semicolon).Grouped("cursor");
+            // Z — the turn's movement-options summary: surface = reachable-area extent (PathInfo.MoveAreaSummary,
+            // previously unwired), starship = the end-position fan grouped by resulting facing (the spoken
+            // path-marker fan; see ShipPathInfo). Bare Z is free — the old area-effects cycle vacated it (above).
+            // Combat-only; self-gates with the reason otherwise.
+            InputManager.Register("path.summary", "Read movement options (turn-based)", InputCategory.Exploration,
+                Ax.TileExplorer.ReadMoveSummary).AddBinding(KeyCode.Z).Grouped("cursor");
             // B — start the battle during the pre-combat deployment (preparation) phase. Self-gates: a no-op outside
             // deployment. Bare B is free (GameKeybinds moved cargo management to Ctrl+B). See DeploymentMode; Enter
             // places the selected character on the cursor tile while deploying (routed in InteractAtCursor).

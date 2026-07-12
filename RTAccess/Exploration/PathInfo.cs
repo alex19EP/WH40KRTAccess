@@ -41,6 +41,10 @@ internal static class PathInfo
         canMove = false;
         if (unit == null || dest == null || unit.View == null) return Loc.T("path.preview.cant_reach");
 
+        // Starships (torpedo salvos included) plan on the inertial ShipPath reachability, not the surface
+        // pathfind — the answer needs arrival facing / stop legality, not step counts. See ShipPathInfo.
+        if (unit is StarshipEntity ship) return ShipPathInfo.Preview(ship, dest, out canMove);
+
         // The game's authoritative reachable set for the current unit — null/empty when the unit has no movement this
         // turn (spent out, CantMove, not a controllable turn). Covers every "why can't I move at all" case for free.
         var area = Game.Instance?.UnitMovableAreaController?.CurrentUnitMovableArea;

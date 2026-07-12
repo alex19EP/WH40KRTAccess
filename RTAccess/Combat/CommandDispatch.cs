@@ -1,6 +1,7 @@
 using System;
 using Kingmaker;
 using Kingmaker.Controllers.Clicks.Handlers;  // ClickSurfaceDeploymentHandler (deploy-cell validation)
+using Kingmaker.Controllers.Units;            // UnitCommandsRunner (the ship two-click preview/confirm)
 using Kingmaker.EntitySystem;                 // EntityHelper (DistanceTo / DistanceToInCells)
 using Kingmaker.EntitySystem.Entities;
 using Kingmaker.Pathfinding;
@@ -160,6 +161,50 @@ public static class CommandDispatch
             if (best != null) pet.Commands.Run(new UnitTeleportParams(best.Vector3Position, isSynchronized: true));
         }
         catch (Exception e) { Main.Log?.Log("deploy pet reposition failed: " + e.Message); }
+    }
+
+    // ---- Ship movement: the game's own two-click preview flow (the planned-move hologram) ----
+
+    public enum ShipMoveResult { Planted, Committed, Refused }
+
+    /// <summary>One press of the ship move two-step — byte-for-byte the game's own grid click
+    /// (<c>UnitCommandsRunner.MoveSelectedUnitToPointTB</c>): a NEW destination plants the move preview —
+    /// the destination hologram a sighted co-pilot sees, the path/cost line, and the VIRTUAL position +
+    /// facing, so aim/arc reads answer "from the planned cell, with the arrival heading" while armed
+    /// (see <see cref="StarshipAim"/>) — and returns Planted. Pressing on the SAME planted destination
+    /// runs the pinned virtual move (the game's confirm — Committed). Refusals speak the game's reason.
+    /// The game's own Esc cancel stays wired (SetVirtualMoveCommand subscribes EscHotkeyManager).</summary>
+    public static ShipMoveResult ShipMoveStep(CustomGridNodeBase node)
+    {
+        var unit = ActingUnit();
+        if (unit == null || node == null) return ShipMoveResult.Refused;
+        try
+        {
+            unit.TryCreateMoveCommandTB(
+                new MoveCommandSettings { Destination = node.Vector3Position, DisableApproachRadius = true },
+                showMovePrediction: true, out var status);
+            switch (status)
+            {
+                case UnitHelper.MoveCommandStatus.SamePath:
+                    UnitCommandsRunner.TryRunVirtualMoveCommand();   // publicized private — the game's own confirm
+                    return ShipMoveResult.Committed;
+                case UnitHelper.MoveCommandStatus.NewCommandCreated:
+                    return ShipMoveResult.Planted;
+                default:
+                    Speaker.Speak(MoveFailure(status), interrupt: true);
+                    return ShipMoveResult.Refused;
+            }
+        }
+        catch (Exception e) { Main.Log?.Log("ship move step failed: " + e.Message); return ShipMoveResult.Refused; }
+    }
+
+    /// <summary>Drop any pinned move preview synchronously — the local body of the game's Esc/right-click
+    /// cancel (<c>CancelMoveCommandLocal</c>). Called before a fresh arm so a stale pin from a lapsed
+    /// confirm window can never turn an arming press into an instant commit.</summary>
+    public static void ShipMoveCancelLocal()
+    {
+        try { UnitCommandsRunner.CancelMoveCommandLocal(); }
+        catch (Exception e) { Main.Log?.Log("ship move cancel failed: " + e.Message); }
     }
 
     /// <summary>End the player's turn (no-op if the game won't allow it right now).</summary>
