@@ -285,18 +285,20 @@ internal static class InteractableDescriber
         return o.GetOptional<AreaTransitionPart>() != null;
     }
 
-    /// <summary>Append every active ground hazard / buff zone (fire, gas, a psychic cloud) whose real runtime shape
-    /// covers this tile, worded exactly as the area scanner reads them (name + "hazard"/"buff zone"). Sources the same
-    /// placed-zone proxies from <see cref="RTAccess.Exploration.WorldModel"/>, so on-unit auras are already excluded
+    /// <summary>Append every active ground hazard / buff zone (fire, gas, a psychic cloud) whose PAINTED pattern
+    /// covers this tile (<see cref="RTAccess.Exploration.ProxyAreaEffect.Covers"/> — the quantized CoveredNodes the
+    /// sighted decal draws and the game's pass-through rule tests, NOT the metric shape, which over-reports a rim
+    /// of unpainted cells; same rule as PathInfo.HazardWarning), worded exactly as the area scanner reads them
+    /// (name + "hazard"/"buff zone"). Sources the same placed-zone proxies from
+    /// <see cref="RTAccess.Exploration.WorldModel"/>, so on-unit auras are already excluded
     /// and each zone's own fog visibility (<see cref="RTAccess.Exploration.ScanItem.IsVisible"/>) still gates it.</summary>
     private static void AppendZones(StringBuilder sb, CustomGridNodeBase node)
     {
         try
         {
-            var pos = node.Vector3Position;
             foreach (var item in RTAccess.Exploration.WorldModel.Items)
             {
-                if (!(item is RTAccess.Exploration.ProxyAreaEffect zone) || !zone.IsVisible || !zone.Contains(pos))
+                if (!(item is RTAccess.Exploration.ProxyAreaEffect zone) || !zone.IsVisible || !zone.Covers(node))
                     continue;
                 var label = zone.Name;
                 if (!string.IsNullOrWhiteSpace(zone.Detail)) label += ", " + zone.Detail;

@@ -1,4 +1,5 @@
 using Kingmaker.EntitySystem.Entities;          // AreaEffectEntity
+using Kingmaker.Pathfinding;                    // CustomGridNodeBase (the Covers per-cell test)
 using Kingmaker.View.MapObjects.SriptZones;     // ScriptZoneCylinder, IScriptZoneShape (the "Sript" typo is the game's)
 using Kingmaker.View.Mechanics.ScriptZones;     // ScriptZoneBox (a DIFFERENT namespace than the cylinder on RT)
 using UnityEngine;
@@ -103,6 +104,17 @@ internal sealed class ProxyAreaEffect : ScanItem
     // WrathAccess itself fell back to). Classified once — the blueprint is fixed for the effect's life.
     private static string Classify(AreaEffectEntity ae)
         => IsHazard(ae) ? ScanTaxonomy.Hazards : ScanTaxonomy.BuffZones;
+
+    /// <summary>Does the zone's PAINTED pattern cover this cell? — the per-cell containment for tile readouts.
+    /// Tests <c>CoveredNodes</c>, the quantized grid pattern that is both what the HUD paints for the sighted
+    /// player and what the game's own pass-through mechanic tests (<c>RuleCalculatePassedAreaEffects</c>) —
+    /// same rule as <c>PathInfo.HazardWarning</c>. NOT the metric <see cref="ScanItem.Contains"/> shape test:
+    /// the raw shape overhangs the pattern by a rim of unpainted cells (a 3 m cylinder paints only ⌊3/1.35⌋ = 2),
+    /// and a directional pattern (cone/line) would degrade to its bounding circle. Distance/bearing keep the
+    /// metric shape — edge distance is approach guidance, only containment is quantized. The null-shape guard
+    /// mirrors PathInfo (<c>CoveredNodes</c> throws while the effect has no runtime shape yet).</summary>
+    internal bool Covers(CustomGridNodeBase node)
+        => node != null && _ae.View?.Shape != null && _ae.CoveredNodes.Contains(node);
 
     // Also the path preview's hazard filter (PathInfo.HazardWarning) — one definition of "dangerous zone".
     internal static bool IsHazard(AreaEffectEntity ae)
