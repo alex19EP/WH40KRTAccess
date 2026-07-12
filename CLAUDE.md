@@ -130,7 +130,7 @@ pin is history) — take core `Graph/*` fixes, tests, and screen recipes.
 
 **Keyboard ownership** is per-chord arbitration, not a blanket mute: `FocusMode` +
 `KeyboardArbitration` suppress only the chords the mod claims each frame, and `GameKeybinds`
-relocates the game's bare-letter service-window openers (C/I/J/M/L/Y/V/B/N) to Ctrl+letter via
+relocates the game's bare-letter service-window openers (C/I/J/M/L/Y/V/B/N/U) to Ctrl+letter via
 the game's own keybinding-settings path — freeing the bare letters for exploration verbs while the
 game's hint text auto-updates. See `docs/input-system-architecture-review.md`.
 
@@ -195,6 +195,10 @@ Load-bearing knowledge about how the game world works (all verified in-harness):
   accessible. Never reimplement a game flow from primitives.
 - **A proxy's spoken browse-label mirrors what the game shows ON THE CARD**; tooltip-only info stays
   on Space (read the item VIEW to see which fields are bound).
+- **Never reveal to blind players what a sighted player can't currently see.** Fog is a reveal overlay on a
+  fully-loaded level, so gate spatial/layout/occupant readouts on `FogProbe.Classify` (NeverSeen→"unexplored",
+  Explored→static layout no creatures, Visible→full). The inspect gate `IsPlayerFaction || IsVisibleForPlayer`
+  is the unit-level case of this same law.
 
 ## Conventions & gotchas
 - **Speech interrupt is decided by provenance, not timing.** `Speaker.Speak(text, interrupt)` defaults to
@@ -211,6 +215,11 @@ Load-bearing knowledge about how the game world works (all verified in-harness):
 - **Keep the custom raw-`Input` framework — do NOT migrate to the game's input system.** The game's keyboard
   layer is `KeyboardAccess` (itself a raw poller), not Rewired (which can't host new actions at runtime). This
   was settled with an adversarial review; full memo in `docs/input-system-architecture-review.md`.
+- **Never bind bare `Insert` or `CapsLock`** — they're NVDA's modifier keys; NVDA eats the keydown before the
+  game/mod ever sees it (the tile cursor was silently dead on Insert until moved off it). "Free in the game's
+  own keymap" ≠ usable in a screen-reader mod.
+- **New multi-zone screens use one `BeginStop` per zone (Tab cycles zones)**, not regions + Ctrl+arrows (the
+  legacy `InventoryScreen` style).
 
 ## Prior art & reference
 - Sibling mod **WrathAccess** (Pathfinder: Wrath of the Righteous, ~30k LOC) is the authoritative prior art
