@@ -40,18 +40,10 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal static class TileExplorer
 {
-    // Turn-based move-to is a two-step confirm: the first press arms (and announces the distance), a second press on
-    // the SAME tile within this window commits. It re-arms whenever the cursor moves or the window lapses, so a
-    // stale arm can never fire a move the player didn't just confirm.
-    private const float ConfirmWindow = 3f;
-    private static CustomGridNodeBase _armedNode;
-    private static float _armTime;
-
-    /// <summary>Drop cursor + confirm state on area change so a stale node from the previous area is never reused.</summary>
+    /// <summary>Drop the cursor on area change so a stale node from the previous area is never reused.</summary>
     public static void Reset()
     {
         MapCursor.Clear();
-        _armedNode = null;
     }
 
     // ---- registered handlers (InputCategory.Exploration; see InputBindings) ----
@@ -75,7 +67,6 @@ internal static class TileExplorer
         var node = GetAnchor()?.CurrentUnwalkableNode;
         if (node == null) { Speaker.Speak(Loc.T("cursor.no_reference"), interrupt: true); return; }
         MapCursor.Set(node);
-        _armedNode = null;   // the destination moved; never carry a pending confirm across a recenter
         ScrollTo(node);
         Announce();
     }
@@ -98,7 +89,6 @@ internal static class TileExplorer
             var next = NavmeshProbe.Neighbour(cur, dx, dz);
             if (next == null) { Speaker.Speak(Loc.T("cursor.edge"), interrupt: true); return; }
             MapCursor.Set(next);
-            _armedNode = null;   // any cursor step re-arms the move-to two-step confirm — no stale arm survives a move
             ScrollTo(next);
             Announce();
         }
@@ -157,43 +147,35 @@ internal static class TileExplorer
                 if (unit == null || unit != current || !unit.IsDirectlyControllable())
                 { Speaker.Speak(Loc.T("combat.select_active"), interrupt: true); return; }
 
-                // Every TB unit — walker or voidship — rides the game's own two-click preview flow
-                // (CommandDispatch.MoveStep): the arm press ALSO plants the game's move preview — the holo
-                // unit / destination hologram a sighted co-pilot sees, the path line + provoke markers, and
-                // the pinned VIRTUAL position (+ arrival facing for ships), so cycling enemies while armed
-                // answers cover, odds, and arcs "from the planned cell". The second press runs the pinned
-                // move. A fresh arm always drops any stale pin first, so a lapsed confirm window can never
-                // turn an arming press into an instant commit; the game's own Esc cancel stays wired.
-                if (_armedNode == node && (Time.unscaledTime - _armTime) <= ConfirmWindow)
+                // "You are here" beats the engine's unhelpful zero-length-path refusal for a press on the
+                // unit's own tile.
+                if (node == unit.CurrentUnwalkableNode)
+                { Speaker.Speak(Loc.T("path.preview.here"), interrupt: true); return; }
+
+                // Every TB unit — walker or voidship — rides the game's own two-click flow, STATELESS
+                // (CommandDispatch.MoveStep — no local arm, no confirm window; exactly the mouse loop): a press
+                // on a NEW destination plants the game's move preview — the holo unit / destination hologram a
+                // sighted co-pilot sees, the path line + provoke markers, and the pinned VIRTUAL position
+                // (+ arrival facing for ships), so cycling enemies while planted answers cover, odds, and arcs
+                // "from the planned cell" — and speaks the path preview; a press on the ALREADY-PLANTED
+                // destination runs the pinned move. The engine's own SamePath detection is the confirm, so the
+                // plan survives any amount of browsing / time between the presses (the old 3 s confirm window
+                // silently lapsed and forced a re-plant — the reported "it resets" bug), and if the path
+                // drifted between presses (budget changed) the engine RE-PLANTS instead of committing and the
+                // fresh verdict is spoken — a stale plan can never fire a move the player didn't just hear.
+                // Esc cancels via the game's own hotkey (SetVirtualMoveCommand subscribes it).
+                var r = RTAccess.Combat.CommandDispatch.MoveStep(node);
+                if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Committed)
                 {
-                    _armedNode = null;
-                    var r = RTAccess.Combat.CommandDispatch.MoveStep(node);
-                    if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Committed)
-                        Speaker.Speak(Loc.T("path.moving"), interrupt: true);
-                    else if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Planted)
-                    {
-                        // The path drifted between presses (budget/heading changed) — the game planted a
-                        // FRESH preview instead of confirming; stay armed and re-read the new verdict.
-                        _armedNode = node;
-                        _armTime = Time.unscaledTime;
-                        Speaker.Speak(RTAccess.Exploration.PathInfo.Preview(unit, node, out _)
-                            + " " + Loc.T("path.preview.press_again"), interrupt: true);
-                    }
-                    return;
+                    Speaker.Speak(Loc.T("path.moving"), interrupt: true);
                 }
-                _armedNode = node;
-                _armTime = Time.unscaledTime;
-                RTAccess.Combat.CommandDispatch.MoveCancelLocal();
-                var preview = RTAccess.Exploration.PathInfo.Preview(unit, node, out bool canMove);
-                if (canMove)
+                else if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Planted)
                 {
-                    // Plant the holo unit; on the rare engine disagreement its refusal already spoke — the
-                    // engine's word is authoritative, so ours stays unsaid.
-                    if (RTAccess.Combat.CommandDispatch.MoveStep(node)
-                        != RTAccess.Combat.CommandDispatch.MoveStepResult.Planted) return;
-                    Speaker.Speak(preview + " " + Loc.T("path.preview.press_again"), interrupt: true);
+                    // The engine accepted the plant, so the confirm hint always follows — even if our own
+                    // pricing disagrees, the engine's word rules. Refused: MoveStep already spoke the reason.
+                    Speaker.Speak(RTAccess.Exploration.PathInfo.Preview(unit, node, out _)
+                        + " " + Loc.T("path.preview.press_again"), interrupt: true);
                 }
-                else Speaker.Speak(preview, interrupt: true);
             }
             else
             {
@@ -207,8 +189,8 @@ internal static class TileExplorer
     }
 
     /// <summary>
-    /// Plant the cursor on an arbitrary world point (the scanner's Home/Slash "cursor to selection"), clear any
-    /// pending move confirm, follow the camera, and read the new tile. When the point is off-graph
+    /// Plant the cursor on an arbitrary world point (the scanner's Home/Slash "cursor to selection"), follow the
+    /// camera, and read the new tile. When the point is off-graph
     /// <see cref="MapCursor.Set(Vector3)"/> keeps the previous node and returns false — we say so rather than
     /// re-announcing the old tile as if the cursor had jumped to the selection (which would also leave the scanner
     /// measuring from, and move-to walking to, the wrong tile).
@@ -216,7 +198,6 @@ internal static class TileExplorer
     public static void PlantOn(Vector3 worldPos)
     {
         if (!MapCursor.Set(worldPos)) { Speaker.Speak(Loc.T("cursor.cant_place"), interrupt: true); return; }
-        _armedNode = null;
         var node = MapCursor.Node;
         if (node == null) { Speaker.Speak(Loc.T("cursor.no_reference"), interrupt: true); return; }
         ScrollTo(node);

@@ -186,14 +186,6 @@ public static class CommandDispatch
         catch (Exception e) { Main.Log?.Log("move step failed: " + e.Message); return MoveStepResult.Refused; }
     }
 
-    /// <summary>Drop any pinned move preview synchronously — the local body of the game's Esc/right-click
-    /// cancel (<c>CancelMoveCommandLocal</c>). Called before a fresh arm so a stale pin from a lapsed
-    /// confirm window can never turn an arming press into an instant commit.</summary>
-    public static void MoveCancelLocal()
-    {
-        try { UnitCommandsRunner.CancelMoveCommandLocal(); }
-        catch (Exception e) { Main.Log?.Log("move cancel failed: " + e.Message); }
-    }
 
     /// <summary>End the player's turn (no-op if the game won't allow it right now).</summary>
     public static void EndTurn()
