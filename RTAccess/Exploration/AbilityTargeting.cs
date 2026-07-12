@@ -1,6 +1,6 @@
 using Kingmaker;                                          // Game
 using Kingmaker.Controllers.Clicks.Handlers;              // ClickWithSelectedAbilityHandler
-using Kingmaker.EntitySystem.Entities;                    // BaseUnitEntity
+using Kingmaker.EntitySystem.Entities;                    // MechanicEntity, BaseUnitEntity
 using RTAccess.Speech;                                    // Speaker
 using UnityEngine;
 
@@ -25,21 +25,24 @@ internal sealed class AbilityTargeting
     /// <summary>True while an action-bar ability is armed and waiting for a target (the handler has an ability).</summary>
     public bool Active => Handler?.Ability != null;
 
-    /// <summary>Commit at a chosen target: a unit when the cursor / scanner item is on one (its GameObject), else the
-    /// world point. Lets the game's <c>OnClick</c> resolve the target, validate it, and either add it (multi-target,
-    /// more needed) or issue the cast. On refusal <c>OnClick</c> raises the game's own warning (spoken elsewhere) and
-    /// returns false, so we say nothing. We distinguish "one more target added" from "used" by whether the handler
-    /// is still armed afterwards (a single-target cast clears the pointer mode; a multi-target add re-arms).</summary>
-    public void CommitAt(BaseUnitEntity unit, Vector3 point)
+    /// <summary>Commit at a chosen target: a mechanic entity when the cursor / scanner item is on one — a unit OR
+    /// attackable destructible scenery (its view GameObject; the game's <c>GetTarget</c> resolves any
+    /// <c>MechanicEntityView</c>) — else the world point. Lets the game's <c>OnClick</c> resolve the target, validate
+    /// it, and either add it (multi-target, more needed) or issue the cast. On refusal <c>OnClick</c> raises the
+    /// game's own warning (spoken elsewhere) and returns false, so we say nothing. We distinguish "one more target
+    /// added" from "used" by whether the handler is still armed afterwards (a single-target cast clears the pointer
+    /// mode; a multi-target add re-arms).</summary>
+    public void CommitAt(MechanicEntity target, Vector3 point)
     {
         var h = Handler;
         if (h?.Ability == null) return;
-        var go = unit != null && unit.View != null ? unit.View.gameObject : null;
+        var go = target != null && target.View != null ? target.View.gameObject : null;
         if (!h.OnClick(go, point, 0)) return; // refused → the game spoke the reason; nothing to add
 
         bool moreTargets = h.Ability != null; // still armed → a multi-target ability wants the next target
+        var name = target is BaseUnitEntity u ? u.CharacterName : target?.Name;
         if (moreTargets) Speaker.Speak(MultiTargetProgress(h), interrupt: true);
-        else if (unit != null) Speaker.Speak(Loc.T("aim.firing_on", new { name = unit.CharacterName }), interrupt: true);
+        else if (!string.IsNullOrWhiteSpace(name)) Speaker.Speak(Loc.T("aim.firing_on", new { name }), interrupt: true);
         else Speaker.Speak(Loc.T("aim.ability_used"), interrupt: true);
     }
 

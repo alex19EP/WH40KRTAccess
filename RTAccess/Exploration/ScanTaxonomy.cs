@@ -22,6 +22,9 @@ internal static class ScanTaxonomy
     public const string Traps = "traps";
     public const string Mechanisms = "mechanisms";
     public const string Scenery = "scenery";
+    // Attackable destructible scenery (DestructibleEntity — fuel tanks, valves, destructible walls/cover):
+    // the things a sighted player shoots to open a path. Surfaced by ProxyDestructible while still standing.
+    public const string Destructibles = "destructibles";
     // Live area effects (Game.Instance.State.AreaEffects), surfaced by ProxyAreaEffect: a HAZARD is any zone that
     // can catch enemies (a damage/debuff field — route around it); a BUFF ZONE is an ally-exclusive aura.
     public const string Hazards = "hazards";

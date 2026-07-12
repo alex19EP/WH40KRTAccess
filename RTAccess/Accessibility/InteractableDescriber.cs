@@ -123,7 +123,24 @@ internal static class InteractableDescriber
         }
         else if (seen && unit == null)
         {
-            if (DestructibleEntity.FindByNode(node) != null) sb.Append(Loc.T("tile.obstacle"));
+            // A destructible on the tile reads by its own name + "destructible" when it can still be shot
+            // (the affordance a sighted player gets from its overtip health bar) — the tile cursor is how a
+            // blind player finds the fuel tank / wall the game wants shot. Destroyed or unattackable ones
+            // stay the generic obstacle word.
+            var destructible = DestructibleEntity.FindByNode(node);
+            if (destructible != null)
+            {
+                string dName = null;
+                try { dName = destructible.Name; } catch { /* nameless prop */ }
+                sb.Append(string.IsNullOrWhiteSpace(dName) ? Loc.T("tile.obstacle") : dName);
+                try
+                {
+                    if (destructible.CanBeAttackedDirectly
+                        && destructible.DestructionStages.Stage != Kingmaker.Enums.DestructionStage.Destroyed)
+                        Append(sb, Loc.T("object.destructible"));
+                }
+                catch { /* stage/attackability read is best-effort */ }
+            }
             else sb.Append(Loc.T(node.Walkable ? "tile.clear" : "tile.wall"));
         }
 

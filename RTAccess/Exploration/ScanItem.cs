@@ -1,5 +1,5 @@
 using System.Text;
-using Kingmaker.EntitySystem.Entities; // BaseUnitEntity (TargetUnit)
+using Kingmaker.EntitySystem.Entities; // BaseUnitEntity (TargetUnit), MechanicEntity (TargetEntity)
 using RTAccess.Accessibility; // InteractableDescriber (name/verb/compass reuse)
 using UnityEngine;
 
@@ -80,6 +80,13 @@ internal abstract class ScanItem
     /// <summary>The unit this thing IS (for the game's unit-targeted ability click, which wants the unit's
     /// <c>GameObject</c>); null for anything that isn't a unit — targeting then falls back to the world point.</summary>
     public virtual BaseUnitEntity TargetUnit => null;
+
+    /// <summary>The mechanic entity this thing IS as an ability target — a unit, or attackable destructible
+    /// scenery (a fuel tank / wall with hit points). The aim commit passes its view's GameObject to the game's
+    /// own click handler, which resolves any <c>MechanicEntityView</c>, so anything returned here is targeted
+    /// exactly like a hovered click. Null for non-targetable things (markers, zones) — targeting then falls
+    /// back to the world point. Default: the unit; <c>ProxyDestructible</c> widens.</summary>
+    public virtual MechanicEntity TargetEntity => TargetUnit;
 
     /// <summary>Whether this thing is a DEAD unit (a corpse). Corpses are dropped from the party/enemy/neutral review
     /// cycles and the unit category browse (you don't cycle to the dead — the game's own enemy navigation gates the

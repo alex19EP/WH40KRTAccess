@@ -59,7 +59,14 @@ internal static class WorldModel
             foreach (var o in state.MapObjects)
             {
                 if (o == null) continue;
-                if (!_items.ContainsKey(o)) Ensure(o, () => new ProxyMapObject(o));
+                // Destructible scenery (fuel tanks / valves / destructible walls) shares the MapObjects pool
+                // (EntityPool routes by type and DestructibleEntity : MapObjectEntity) but has no interaction
+                // parts — ProxyMapObject would filter it out as un-scannable. It gets its own attack-target
+                // proxy instead (see ProxyDestructible).
+                if (!_items.ContainsKey(o))
+                    Ensure(o, () => o is Kingmaker.EntitySystem.Entities.DestructibleEntity d
+                        ? new ProxyDestructible(d)
+                        : (ScanItem)new ProxyMapObject(o));
                 _present.Add(o);
             }
             // Placed ground zones only — skip on-unit auras (they follow a unit and there can be many, so they read

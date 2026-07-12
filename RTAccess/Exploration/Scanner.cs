@@ -67,6 +67,9 @@ internal static class Scanner
         ("taxonomy.searchpoints",   Source.Registry, it => it.HasNode(ScanTaxonomy.SearchPoints)),
         ("taxonomy.traps",          Source.Registry, it => it.HasNode(ScanTaxonomy.Traps)),
         ("taxonomy.mechanisms",     Source.Registry, it => it.HasNode(ScanTaxonomy.Mechanisms)),
+        // Attackable destructible scenery (fuel tanks / valves / destructible walls) — what a sighted player
+        // shoots to open a path (e.g. a fire-trap escape). Arm an attack, browse here, I fires on the selection.
+        ("taxonomy.destructibles",  Source.Registry, it => it.HasNode(ScanTaxonomy.Destructibles)),
         // No "scenery" category: a map object with no live interaction / exit / marker is no longer scannable
         // (see ProxyMapObject.IsScannable) and NodeSet has no Scenery fallback, so nothing produces that node.
         // Real interactions (incl. bark/examine volumes) land in their own bucket — bark → Mechanisms.

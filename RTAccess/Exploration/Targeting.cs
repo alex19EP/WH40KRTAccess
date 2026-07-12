@@ -23,21 +23,23 @@ internal static class Targeting
     /// instead of doing their normal job while this holds.</summary>
     public static bool Aiming => Ability.Active;
 
-    /// <summary>Enter: commit at the world cursor — the unit whose footprint it is inside, else the cursor point.</summary>
+    /// <summary>Enter: commit at the world cursor — the targetable entity (unit or destructible) whose footprint
+    /// it is inside, else the cursor point.</summary>
     public static void CommitAtCursor()
     {
         if (!Aiming) return;
         if (!MapCursor.Has) { Speaker.Speak(Loc.T("aim.move_cursor_first"), interrupt: true); return; }
         var target = CursorTarget.Inside();
-        Ability.CommitAt(target?.TargetUnit, MapCursor.Position);
+        Ability.CommitAt(target?.TargetEntity, MapCursor.Position);
     }
 
-    /// <summary>I: commit on the scanner's current review selection — its unit if it is one, else its point.</summary>
+    /// <summary>I: commit on the scanner's current review selection — its targetable entity (unit or attackable
+    /// destructible scenery) if it is one, else its point.</summary>
     public static void CommitOnSelection(ScanItem item)
     {
         if (!Aiming) return;
         if (item == null) { Speaker.Speak(Loc.T("aim.no_selection"), interrupt: true); return; }
-        Ability.CommitAt(item.TargetUnit, item.Position);
+        Ability.CommitAt(item.TargetEntity, item.Position);
     }
 
     /// <summary>Backspace: cancel the active aim.</summary>
@@ -56,10 +58,18 @@ internal static class Targeting
     public static string PredictLine(ScanItem item, bool verbose)
     {
         if (!Aiming) return null;
-        var target = item?.TargetUnit;
-        if (target == null) return null;
         var ability = Game.Instance?.SelectedAbilityHandler?.Ability;
         if (ability == null || !ability.CanTargetEnemies) return null;   // to-hit prediction is for attacks
+        var target = item?.TargetUnit;
+        if (target == null)
+        {
+            // Destructible scenery: the game forces a non-burst attack's hit chance to the cap
+            // (RuleCalculateHitChances — objects don't dodge), so mirror the overtip's hit-chance block with a
+            // flat "guaranteed" line rather than the unit maths; a burst pattern keeps its per-shot chances.
+            if (item?.TargetEntity is Kingmaker.EntitySystem.Entities.DestructibleEntity)
+                return Loc.T(ability.IsBurstAttack ? "aim.object_target" : "aim.object_target_sure");
+            return null;
+        }
         var caster = ability.Caster as BaseUnitEntity
                      ?? Game.Instance?.TurnController?.CurrentUnit as BaseUnitEntity;
         if (caster == null || caster == target) return null;
