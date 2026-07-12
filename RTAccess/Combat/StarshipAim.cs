@@ -42,14 +42,20 @@ internal static class StarshipAim
         if (!(target.IsPlayerFaction || target.IsVisibleForPlayer)) return null;   // fog parity
         try
         {
-            if (!ability.CanTarget(new TargetWrapper(target), out var reason)) return Refusal(reason);
+            // DESIRED position, not raw Position: while a move preview is pinned (the planned-move
+            // hologram — CommandDispatch.ShipMoveStep), the arc gate answers from the planned cell WITH
+            // the arrival heading (CanTargetFromDesiredPosition reads the virtual rotation too), exactly
+            // like the sighted overtips against the ghost. With nothing pinned both collapse to Position.
+            if (!ability.CanTargetFromDesiredPosition(new TargetWrapper(target), out var reason)) return Refusal(reason);
 
             var rule = Rulebook.Trigger(new RuleStarshipCalculateHitChances(caster, target, ability.StarshipWeapon));
+            var casterPos = caster.Position;
+            try { casterPos = Kingmaker.Game.Instance.VirtualPositionController.GetDesiredPosition(caster); } catch { }
             DamagePredictionData hull;
             ShieldDamageData shields;
             using (ContextData<DisableStatefulRandomContext>.Request())
             {
-                var pred = AbilityDataHelper.GetStarshipDamagePrediction(target, caster.Position, ability, ability.StarshipWeapon);
+                var pred = AbilityDataHelper.GetStarshipDamagePrediction(target, casterPos, ability, ability.StarshipWeapon);
                 hull = pred.resultDamage;
                 shields = pred.resultShields;
             }
@@ -92,7 +98,9 @@ internal static class StarshipAim
             {
                 var ad = slot?.ActiveAbility?.Data;
                 if (ad?.StarshipWeapon == null) continue;
-                if (!ad.CanTarget(new TargetWrapper(target), out _)) continue;
+                // Desired-position variant: with a move preview pinned, "which batteries bear" answers
+                // from the planned cell + arrival heading (the whole point of arming the move first).
+                if (!ad.CanTargetFromDesiredPosition(new TargetWrapper(target))) continue;
                 string label = GroupLabel(slot.Type);
                 if (label != null && !labels.Contains(label)) labels.Add(label);
             }

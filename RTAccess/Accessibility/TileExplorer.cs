@@ -156,6 +156,47 @@ internal static class TileExplorer
                 if (unit == null || unit != current || !unit.IsDirectlyControllable())
                 { Speaker.Speak(Loc.T("combat.select_active"), interrupt: true); return; }
 
+                // Ships ride the game's own two-click preview flow (CommandDispatch.ShipMoveStep): the arm
+                // press ALSO plants the game's move preview — the destination hologram a sighted co-pilot
+                // sees, plus the VIRTUAL position + facing, so cycling enemies while armed answers arcs and
+                // odds "from the planned cell, with the arrival heading". The second press runs the pinned
+                // move. A fresh arm always drops any stale pin first, so a lapsed confirm window can never
+                // turn an arming press into an instant commit; the game's own Esc cancel stays wired.
+                if (unit is StarshipEntity)
+                {
+                    if (_armedNode == node && (Time.unscaledTime - _armTime) <= ConfirmWindow)
+                    {
+                        _armedNode = null;
+                        var r = RTAccess.Combat.CommandDispatch.ShipMoveStep(node);
+                        if (r == RTAccess.Combat.CommandDispatch.ShipMoveResult.Committed)
+                            Speaker.Speak(Loc.T("path.moving"), interrupt: true);
+                        else if (r == RTAccess.Combat.CommandDispatch.ShipMoveResult.Planted)
+                        {
+                            // The path drifted between presses (budget/heading changed) — the game planted a
+                            // FRESH preview instead of confirming; stay armed and re-read the new verdict.
+                            _armedNode = node;
+                            _armTime = Time.unscaledTime;
+                            Speaker.Speak(RTAccess.Exploration.PathInfo.Preview(unit, node, out _)
+                                + " " + Loc.T("path.preview.press_again"), interrupt: true);
+                        }
+                        return;
+                    }
+                    _armedNode = node;
+                    _armTime = Time.unscaledTime;
+                    RTAccess.Combat.CommandDispatch.ShipMoveCancelLocal();
+                    var shipPreview = RTAccess.Exploration.PathInfo.Preview(unit, node, out bool shipCanMove);
+                    if (shipCanMove)
+                    {
+                        // Plant the ghost; on the rare engine disagreement its refusal already spoke — the
+                        // engine's word is authoritative, so ours stays unsaid.
+                        if (RTAccess.Combat.CommandDispatch.ShipMoveStep(node)
+                            != RTAccess.Combat.CommandDispatch.ShipMoveResult.Planted) return;
+                        Speaker.Speak(shipPreview + " " + Loc.T("path.preview.press_again"), interrupt: true);
+                    }
+                    else Speaker.Speak(shipPreview, interrupt: true);
+                    return;
+                }
+
                 // First press on this tile arms + previews the PATH (reachability + step count, from the game's own
                 // movable-area set); a second within the window commits. The arm is unconditional — the engine stays
                 // authoritative on commit — so even when the preview reads "out of range" a determined second press
