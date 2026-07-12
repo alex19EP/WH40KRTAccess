@@ -320,8 +320,14 @@ namespace RTAccess.UI
                 }
                 case "ui.back":
                     return Screen != null && Screen.InvokeAction(ActionIds.Back);
-                case "ui.tooltip":
                 case "ui.tooltip.space":
+                    // A screen may claim Space outright as the game's own contextual Space verb
+                    // (ActionIds.Space — the game binds Pause / End-turn / CollectAllLoot all to
+                    // Space): the loot screen's collect-all. Checked before the focus guard because
+                    // the game's own binds aren't focus-gated either; the tooltip read stays on F1.
+                    if (Screen != null && Screen.InvokeAction(ActionIds.Space)) return true;
+                    goto case "ui.tooltip";
+                case "ui.tooltip":
                 {
                     // Node-null don't-claim guard: for Space this is what lets the arbitration yield
                     // the game's Pause / End-turn while nothing is focused.

@@ -31,6 +31,10 @@ namespace RTAccess.UI
         public const string Activate = "activate";  // primary action (Enter / left click)
         public const string Context = "context";    // secondary action (Backspace / right click)
         public const string Back = "back";           // screen-level back/close (Escape)
+        // Screen-level Space verb — a screen claiming this mirrors the game's own contextual Space
+        // hotkey (the game binds Pause / End-turn / CollectAllLoot all to Space): the loot screen's
+        // collect-all. While claimed, the tooltip read stays available on F1 (ui.tooltip).
+        public const string Space = "space";
         public const string Increase = "increase";
         public const string Decrease = "decrease";
         public const string SetValue = "setValue";

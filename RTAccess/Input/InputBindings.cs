@@ -167,7 +167,9 @@ namespace RTAccess.Input
             // when the HUD is focused, but is a context-split (YieldsWhenUnfocused): out in the world with
             // nothing focused it yields to the game's Space (Pause / End-turn) instead of being eaten. F1 is
             // deliberately NOT split — it stays claimed so it never triggers the game's ActionBar consumable
-            // slot 1 (also F1) by accident. Both route to the same tooltip read in the navigator.
+            // slot 1 (also F1) by accident. Both route to the same tooltip read in the navigator — except
+            // that a screen may claim Space outright as the game's contextual Space verb (ActionIds.Space,
+            // e.g. the loot screen's collect-all); tooltip reading stays on F1 there.
             InputManager.Register("ui.tooltip", "Read tooltip", InputCategory.UI).AddBinding(KeyCode.F1);
             InputManager.Register("ui.tooltip.space", "Read tooltip (Space)", InputCategory.UI)
                 .AddBinding(KeyCode.Space).YieldsWhenUnfocused();

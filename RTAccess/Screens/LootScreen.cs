@@ -14,7 +14,8 @@ namespace RTAccess.Screens
     /// slots still holding an item emit (<see cref="ItemNodes.LootItem"/> — name/badges/tooltip, Enter takes the
     /// item to the party inventory) — taking an item drops its node from the next render, so focus slides to the
     /// nearest remaining item and announces it. Then a <b>Take all</b> stop (<see cref="LootVM.TryCollectLoot"/>
-    /// via the collector — collects normal items to inventory + trash to cargo, the game's own routing), and
+    /// via the collector — collects normal items to inventory + trash to cargo, the game's own routing), also
+    /// on <b>Space</b> from anywhere (the game's own CollectAllLoot hotkey — sighted parity), and
     /// Escape to close (<see cref="LootVM.Close"/>). Exclusive: while loot is open the mod owns the keyboard, so
     /// the always-active scanner/tile-cursor below don't eat the arrows. Layer 24, alongside the other
     /// world-interaction modals (Variative / Transition) — loot is triggered from exploration, so it never stacks
@@ -50,8 +51,16 @@ namespace RTAccess.Screens
         // "Close". (Leaving IS available on the explicit Leave/Take-all-and-leave buttons.)
         public override IEnumerable<ElementAction> GetActions()
         {
-            var key = IsZoneExit(Vm()) ? "loot.stay" : "action.close";
+            var vm = Vm();
+            var key = IsZoneExit(vm) ? "loot.stay" : "action.close";
             yield return new ElementAction(ActionIds.Back, Message.Localized("ui", key), _ => Vm()?.Close());
+            // Space = collect-all from anywhere on the screen, mirroring the game's own CollectAllLoot
+            // hotkey (default Space — the sighted button reads "Take all [Space]"; LootCollectorPCView
+            // binds it gated on NoLoot, same gate here). Same handler as the Take-all stop; the focused
+            // item's tooltip stays on F1 while this claims Space. Unadvertised on an empty window, so
+            // Space falls back to the navigator's tooltip read there.
+            if (vm != null && !vm.NoLoot.Value)
+                yield return new ElementAction(ActionIds.Space, Message.Localized("ui", "loot.take_all"), _ => TakeAll());
         }
 
         // Loot opens on the planet surface AND in the star-system/space context; resolve from whichever static
