@@ -149,6 +149,10 @@ namespace RTAccess.Screens
             // tab stops; turn/attack narration rides CombatEvents/LogTap. Phase 1 of
             // docs/plans/inertial-broadsiding-tsiolkovsky.md.
             Register(new SpaceCombatScreen());
+            // The space-combat victory popup (ExitBattlePopupVM.IsActive, a SpaceCombatVM child) — layer 21,
+            // Exclusive. XP / scrap / item / cargo rewards + the popup's own OK / Attune actions. Phase 5 of
+            // docs/plans/inertial-broadsiding-tsiolkovsky.md.
+            Register(new ExitBattlePopupScreen());
             // The planet-exploration tablet (SpaceStaticPartVM.ExplorationVM.IsExploring — auto-opens on
             // landing) — layer 9, Exclusive: above the map, below service windows (10) / dialogue (15) /
             // loot (24) that stack on it. Scan, POIs, resources/miners, colony + projects. M2 of
