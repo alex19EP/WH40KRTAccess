@@ -107,6 +107,7 @@
   "log.tab.events": "Events",
   "log.tab.dialogue": "Dialogue",
   "log.tab.combat": "Combat",
+  "log.follow_hidden": "Not currently visible.",
   "combat.mode_turn_based": "Turn-based mode",
   "combat.mode_real_time": "Real-time mode",
   "combat.turn": "{name}'s turn",

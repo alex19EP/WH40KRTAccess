@@ -21,7 +21,8 @@ namespace RTAccess.Screens
     /// tabs (All / Events / Dialogue / Combat via the same thread groupings the game's <c>CombatLogVM</c>
     /// uses); the selected channel's lines fill the content stop NEWEST-FIRST (so opening lands on "what
     /// just happened"), capped at <see cref="MaxLines"/>. Each line speaks its spaced-stripped text; Space
-    /// drills into the message's rich tooltip and any inline glossary links.
+    /// drills into the message's rich tooltip and any inline glossary links; Backspace follows the line's
+    /// unit (plants the tile cursor on it — the sighted left-click's camera jump), fog-gated.
     ///
     /// Graph-native and IMMEDIATE-MODE, which makes the log LIVE: new lines appear as they arrive — the
     /// old adapter version was a snapshot that needed a reopen to refresh. A line's key is its ABSOLUTE
@@ -137,7 +138,27 @@ namespace RTAccess.Screens
         {
             var vt = GraphNodes.Text(() => Clean(msg.Message));
             vt.OnTooltip = () => OpenDetail(msg);
+            // Backspace — the sighted LEFT-CLICK on a log line (CombatLogItemPCView.OnPointerClick scrolls
+            // the camera to the message's unit): plant the tile cursor on that unit instead — PlantOn scrolls
+            // the camera AND announces the tile, so the cursor verbs now answer from the line's subject.
+            // Only lines that carry a unit advertise the verb (system lines get the navigator's "nothing").
+            if (msg.Unit != null) vt.OnSecondary = () => FollowUnit(msg);
             return vt;
+        }
+
+        // Fog parity: the sighted click only MOVES THE CAMERA (fogged ground stays black), but planting the
+        // cursor speaks the exact tile — so a unit the player can't currently see (fog / stealth / scripted-
+        // hidden, or despawned since the line landed) refuses with a notice instead of leaking its position.
+        // Same unit-level gate as Inspect (IsPlayerFaction || IsVisibleForPlayer).
+        private static void FollowUnit(CombatLogMessage msg)
+        {
+            var unit = msg?.Unit;
+            if (unit == null || !(unit.IsPlayerFaction || unit.IsVisibleForPlayer))
+            {
+                Tts.Speak(Loc.T("log.follow_hidden"), interrupt: true);
+                return;
+            }
+            TileExplorer.PlantOn(unit.Position);
         }
 
         private static void OpenDetail(CombatLogMessage msg)
