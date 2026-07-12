@@ -271,6 +271,14 @@ public static class Main {
         Safe(() => Screens.ScreenManager.Tick(), "ScreenManager"); // resolve the screen stack + attach the navigator
         Safe(() => UI.Navigation.TickTypeahead(), "Typeahead");    // typed letters → type-ahead search (after dispatch)
 
+        // Holographic movement simulation: while it's the player's turn in TB combat, mirror the game's own
+        // hover-prediction pipeline at the tile cursor — automatic inside the movable area, anywhere SEEN while
+        // Ctrl is held (the sighted Ctrl+hover force) — by writing VirtualPositionController.VirtualPosition, so
+        // every position-dependent readout (cover overtips, hit chances, ability range, our vantage/aim reads)
+        // answers "as if I stood there". Runs after the input/screen ticks so it reconciles against this frame's
+        // cursor + focus state. See RTAccess.Combat.HoloSim.
+        Safe(() => Combat.HoloSim.Tick(), "HoloSim");
+
         // Announce the primary selection when it changes from a source the keyboard paths don't already speak
         // (mouse click, HUD portrait, or the game re-selecting on its own). Deduped against the explicit selectors
         // (which set the same guard) and silenced in turn-based combat. See RTAccess.Accessibility.SelectionAnnouncer.
