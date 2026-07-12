@@ -96,10 +96,14 @@ internal static class PathInfo
     /// Hazard zones on the walk. The game marks nothing on the path line itself — a sighted player simply SEES the
     /// painted area effects (fire patches, warp rifts, gas clouds) under it — so this is the spoken translation:
     /// " Ends in X." when the destination cell sits inside a hazard (the worst case — you finish the turn in it),
-    /// " Crosses Y." when only intermediate cells do. Same per-cell test the zones themselves run
-    /// (<c>AreaEffectEntity.Contains(node)</c>), hazards only (<see cref="ProxyAreaEffect.IsHazard"/> — ally-only
-    /// buff zones stay silent), fog-gated like the scanner's proxies, names deduped. The ORIGIN cell is skipped:
-    /// the zone you already stand in is not news the path preview owes you. Returns "" when the walk is clean.
+    /// " Crosses Y." when only intermediate cells do. The per-cell test is <c>CoveredNodes.Contains(node)</c> —
+    /// the QUANTIZED grid pattern that is both what the HUD paints and what the game's own pass-through rule
+    /// tests (<c>RuleCalculatePassedAreaEffects</c>). NOT <c>AreaEffectEntity.Contains</c>: that is the raw
+    /// SHAPE (a cylinder's metre-radius XZ disc), which overhangs the painted pattern — e.g. radius 3 m paints
+    /// only ⌊3/1.35⌋ = 2 cells — so the shape test cries hazard on a rim of cells that are neither painted nor
+    /// mechanically inside (the reported false positives). Hazards only (<see cref="ProxyAreaEffect.IsHazard"/> —
+    /// ally-only buff zones stay silent), fog-gated like the scanner's proxies, names deduped. The ORIGIN cell is
+    /// skipped: the zone you already stand in is not news the path preview owes you. "" when the walk is clean.
     /// </summary>
     private static string HazardWarning(List<GraphNode> nodes, CustomGridNodeBase dest)
     {
@@ -111,15 +115,17 @@ internal static class PathInfo
         {
             if (ae == null || !ae.IsInGame || ae.IsEnded || ae.IsInFogOfWar) continue;
             if (!ProxyAreaEffect.IsHazard(ae)) continue;
+            if (ae.View?.Shape == null) continue;   // no runtime shape → no covered cells (CoveredNodes would throw)
             string name = ae.Context?.SourceAbility?.Name;
             if (string.IsNullOrEmpty(name)) name = Loc.T("areaeffect.hazard");
-            if (dest != null && ae.Contains(dest))
+            var covered = ae.CoveredNodes;
+            if (dest != null && covered.Contains(dest))
             {
                 if (!endsIn.Contains(name)) endsIn.Add(name);
                 continue;   // "ends in" is the stronger fact; don't also report it as crossed
             }
             for (int i = 1; i < nodes.Count; i++)   // 1: skip the origin cell
-                if (nodes[i] is CustomGridNodeBase n && ae.Contains(n))
+                if (nodes[i] is CustomGridNodeBase n && covered.Contains(n))
                 {
                     if (!crosses.Contains(name)) crosses.Add(name);
                     break;
