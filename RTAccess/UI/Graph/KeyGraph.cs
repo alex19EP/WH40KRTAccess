@@ -545,6 +545,26 @@ namespace RTAccess.UI.Graph
             return true;
         }
 
+        /// <summary>Run the focused control's shift-modified activation. False = it has none.</summary>
+        public bool ActivateShift()
+        {
+            if (!Rerender()) return false;
+            var node = CurrentNode;
+            if (node?.Vtable.OnActivateShift == null) return false;
+            node.Vtable.OnActivateShift();
+            return true;
+        }
+
+        /// <summary>Run the focused control's ctrl-modified activation. False = it has none.</summary>
+        public bool ActivateCtrl()
+        {
+            if (!Rerender()) return false;
+            var node = CurrentNode;
+            if (node?.Vtable.OnActivateCtrl == null) return false;
+            node.Vtable.OnActivateCtrl();
+            return true;
+        }
+
         /// <summary>Run the focused control's tooltip behavior. False = it has none.</summary>
         public bool Tooltip()
         {

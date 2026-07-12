@@ -178,6 +178,9 @@ namespace RTAccess.Screens
             Register(new TutorialScreen());
             // Message/confirm modal (CommonVM.MessageBoxVM) — layer 30, e.g. the settings save-changes prompt.
             Register(new MessageBoxScreen());
+            // The quantity-picker modal (CommonVM.CounterWindowVM) — layer 29, Exclusive, just under the
+            // message box. Raised by Split / partial Drop / partial Move from any item context menu.
+            Register(new CounterWindowScreen());
             // Chargen character/ship name-entry modal — layer 32, lets the player type a custom name.
             Register(new NameEntryScreen());
             // Dialogue + book-event readers (DialogContextVM under Surface/Space) — layer 15, above the
@@ -192,6 +195,15 @@ namespace RTAccess.Screens
             // just above the InventoryScreen (10) and lists the equippable party items. Confirm/Unequip/Back drive
             // the game's own selector callbacks. See docs/plans/gridless-stocking-babbage.md (slice 4).
             Register(new EquipSelectorScreen());
+            // Character visual settings (InventoryDollVM.VisualSettingsVM) — layer 13, Exclusive. The doll's
+            // cosmetics panel (helmet/backpack/… visibility + outfit color), raised from the InventoryScreen's
+            // "Show visual settings" opener via the doll's own ShowVisualSettings().
+            Register(new VisualSettingsScreen());
+            // Cargo management service window (party stash ↔ the ship's cargo bays) — layer 10. The stash
+            // side reuses the inventory chrome (same InventoryStashVM); the cargo side is one group per bay.
+            // Transfer verbs use the window's LIVE routes only (its TryMoveToCargo handler is an empty stub —
+            // stash rows go through InventoryHelper directly, the vendor-window lesson).
+            Register(new CargoScreen());
             Register(new JournalScreen());
             Register(new CharacterInfoScreen());
             // Colony Management service window (Ctrl+Y; remote colony administration) — layer 10; content

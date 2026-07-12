@@ -110,6 +110,14 @@ namespace RTAccess.UI.Graph
         /// <summary>Optional. Secondary activation — the right-click equivalent (Backspace).</summary>
         public Action OnSecondary;
 
+        /// <summary>Optional. Shift-modified activation (Shift+Enter) — the shift-drag equivalent
+        /// (e.g. an item row's split-stack dialog).</summary>
+        public Action OnActivateShift;
+
+        /// <summary>Optional. Ctrl-modified activation (Ctrl+Enter) — the ctrl-drag equivalent
+        /// (e.g. an item row's instant half-split).</summary>
+        public Action OnActivateCtrl;
+
         /// <summary>Optional. Read / open the control's tooltip (Space, F1). The action owns the whole
         /// behavior (speak, or open the drill-in tooltip reader), so the core stays game-agnostic.</summary>
         public Action OnTooltip;

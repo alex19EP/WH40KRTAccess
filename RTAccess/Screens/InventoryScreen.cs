@@ -1,11 +1,19 @@
 using System;
 using System.Collections.Generic;
 using Kingmaker;
-using Kingmaker.Blueprints.Root;                   // LocalizedTexts
+using Kingmaker.Blueprints.Root;                   // LocalizedTexts, BlueprintRoot (reload-ability filter)
+using Kingmaker.Blueprints.Root.Strings;           // UIStrings (the game's own filter / visual-settings labels)
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.Inventory;
-using Kingmaker.Code.UI.MVVM.View.Slots;           // ItemsFilterSearchBaseView (the game's search TMP field)
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.LevelClassScores.AbilityScores; // AbilitiesOrdered
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.SkillsAndWeapons.Skills;        // SkillsOrdered
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates; // TooltipTemplateAbility (the weapons block's ability cards)
+using Kingmaker.Code.UI.MVVM.View.Slots;           // ItemsFilterSearchBaseView / ItemsFilterPCView (live chrome)
+using Kingmaker.EntitySystem.Entities;             // BaseUnitEntity
 using Kingmaker.GameCommands;
+using Kingmaker.Items;                             // ItemEntityWeapon (the weapons block)
+using Kingmaker.Stores;                            // StoreManager (the augmentations filter's DLC3 gate)
+using Kingmaker.Stores.DlcInterfaces;              // DlcNameEnum
 using Kingmaker.UI.Common;                         // ItemsFilterType, ItemsSorterType
 using Owlcat.Runtime.UI.Tooltips;                  // TooltipBaseTemplate
 using RTAccess.Accessibility;                       // ViewedCharacter (switch announce + header + pet swap)
@@ -16,12 +24,15 @@ using TMPro;                                        // TMP_InputField
 namespace RTAccess.Screens
 {
     /// <summary>
-    /// The inventory service window (<see cref="InventoryVM"/>) as a graph-native screen: the currently-viewed
-    /// character's equipment doll, a defensive-stat readout, a party load/money summary, and the shared party
-    /// stash with its search + filter/sort chrome — all declared IMMEDIATE-MODE from the live VM on every
-    /// render (no content signature, no focus-capture/restore dance). Five labelled Tab-STOPS, one per pane —
-    /// character, equipment, defenses, summary, stash — so Tab cycles the panes (wrapping; arrows never leave
-    /// one). The stash stop keeps its chrome (search, filters/sort) as Ctrl+arrow REGIONS above the list they
+    /// The inventory service window (<see cref="InventoryVM"/>) as a graph-native screen — one labelled
+    /// Tab-STOP per pane the game window binds: character (name/level/XP/careers/level-up), characteristics,
+    /// skills, weapons (attack modes), the equipment doll (+ carry weight + the visual-settings opener),
+    /// a defensive-stat readout, the party-load summary, and the shared party stash with its search +
+    /// filter/sort chrome — all declared IMMEDIATE-MODE from the live VM on every render (no content
+    /// signature, no focus-capture/restore dance). Tab cycles the panes (wrapping; arrows never leave one).
+    /// The characteristics/skills stops reuse <see cref="CharacterInfoScreen.BuildStatSection"/> — the game
+    /// binds the SAME CharInfo block VMs into this window's left panel, so the speech matches the sheet.
+    /// The stash stop keeps its chrome (search, filters/sort) as Ctrl+arrow REGIONS above the list they
     /// operate on. Initial focus stays on the graph start — the character readout — so opening speaks whose
     /// inventory is shown. The stash is a plain LIST — one focusable row per item, its label mirroring the
     /// card (name + badges + count); Type/Weight/Value are tooltip-only on the card, so they stay on Space
@@ -84,7 +95,19 @@ namespace RTAccess.Screens
             var unit = vm.Unit?.Value;
             string uk = k + "u:" + (unit?.UniqueId ?? "") + ":";  // per-character keys re-home on a unit switch
 
-            BuildCharacter(b, k, uk, vm);        // stop: character
+            BuildCharacter(b, k, uk, vm);        // stop: character (readout, XP, careers, level-up, switch)
+            if (unit != null)
+            {
+                // The window's left panel binds the SAME characteristics/skills block VMs the character
+                // sheet shows — mirror them with the sheet's shared builder, so the speech matches there.
+                CharacterInfoScreen.BuildStatSection(b, "chars", uk + "abil:",
+                    Loc.T("charinfo.characteristics"), unit,
+                    CharInfoAbilityScoresBlockVM.AbilitiesOrdered, withWounds: false);
+                CharacterInfoScreen.BuildStatSection(b, "skills", uk + "skill:",
+                    Loc.T("charinfo.skills"), unit,
+                    CharInfoSkillsBlockVM.SkillsOrdered, withWounds: false);
+                BuildWeapons(b, uk, unit);       // stop: weapons (attack modes per equipped weapon)
+            }
             BuildEquipment(b, k, uk, vm.DollVM); // stop: equip
             BuildDefenses(b, k, uk, vm);         // stop: defenses
             BuildSummary(b, k, vm.StashVM);      // stop: summary
@@ -118,6 +141,32 @@ namespace RTAccess.Screens
             b.PushContext(Loc.T("inv.character"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural(uk + "char:readout"),
                 GraphNodes.Text(() => ViewedCharacter.HeaderLine(vm.Unit?.Value)));
+            // The level block beside the portrait (the window binds CharInfoLevelClassScoresVM here):
+            // XP + psy rating off the live Experience VM, the careers list, and the Level Up entry while
+            // a rank is pending — driving the VM's OWN LevelUp() (raises ILevelUpInitiateUIHandler, the
+            // same event the XP block's affordance fires; the game hides this window and opens the
+            // progression page our LevelUpScreen mirrors).
+            var exp = vm.LevelClassScoresVM?.Experience;
+            if (exp != null)
+            {
+                b.AddItem(ControlId.Structural(uk + "char:xp"), GraphNodes.Text(
+                    () => Loc.T("inv.xp", new { current = exp.CurrentExp.Value, next = exp.NextLevelExp.Value })));
+                if (exp.HasPsyRating.Value)
+                    b.AddItem(ControlId.Structural(uk + "char:psy"), StatLine(
+                        () => Loc.T("inv.psy_rating", new { value = exp.PsyRating.Value }),
+                        () => exp.PsyRatingTooltip));
+            }
+            int ci = 0;
+            foreach (var career in unit.Progression.AllCareerPaths)
+            {
+                var c = career; // capture (a value tuple — keyed by blueprint, not reference)
+                if (c.Blueprint == null) continue;
+                b.AddItem(ControlId.Structural(uk + "char:career:" + (c.Blueprint.AssetGuid ?? (ci++).ToString())),
+                    GraphNodes.Text(() => Loc.T("charinfo.career", new { name = c.Blueprint.Name, rank = c.Rank })));
+            }
+            if (exp?.CanLevelup.Value == true)
+                b.AddItem(ControlId.Structural(uk + "char:levelup"), GraphNodes.Button(
+                    () => Loc.T("levelup.button"), exp.LevelUp));
             b.AddItem(ControlId.Structural(k + "char:prev"), GraphNodes.Button(
                 () => Loc.T("char.prev_member"), () => ViewedCharacter.SwitchMember(next: false)));
             b.AddItem(ControlId.Structural(k + "char:next"), GraphNodes.Button(
@@ -134,7 +183,7 @@ namespace RTAccess.Screens
         // drives SlotsGroupVM.SearchString → UpdateVisibleCollection, so the next immediate-mode BuildStash
         // render reflects the filtered list. The label carries the active query (read on re-focus after an
         // edit); a "Clear" button appears only while a query is set. Keyed party-wide (search is shared).
-        private static void BuildSearch(GraphBuilder b, string k, InventoryStashVM stash)
+        internal static void BuildSearch(GraphBuilder b, string k, InventoryStashVM stash) // shared with CargoScreen (same InventoryStashVM)
         {
             if (stash?.ItemSlotsGroup == null) return;
             b.SetRegion(k + "search");
@@ -185,8 +234,15 @@ namespace RTAccess.Screens
         }
 
         // The equipment doll: the weapon sets, then the worn gear and quick slots, as a flat "Slot: item" list.
-        // Each slot's EquipSlotVM is resolved FRESH here every render (the doll replaces them on equip); the node
-        // keys are structural by slot position + viewed unit, so focus stays put across an equip.
+        // The roster and its order mirror what the RT doll VIEW actually binds (InventoryDollView.UpdateSlots):
+        // armor, head, gloves, boots, back (the VM's Shoulders — cloaks), neck, rings, the pet protocol, quick
+        // slots. The VM also carries Belt/Wrist/Glasses/Shirt, but those are Pathfinder leftovers no RT view
+        // binds and no RT item type fills — declaring them would speak permanently-empty slots the sighted
+        // player never sees. Each slot's EquipSlotVM is resolved FRESH here every render (the doll replaces
+        // them on equip); the node keys are structural by slot position + viewed unit, so focus stays put
+        // across an equip. After the slots: the character's own carry weight (the doll pane's encumbrance
+        // bar) and the visual-settings opener (the doll's cosmetics button — VisualSettingsScreen mirrors
+        // the CharacterVisualSettingsVM it raises).
         private static void BuildEquipment(GraphBuilder b, string k, string uk, InventoryDollVM doll)
         {
             if (doll == null) return;
@@ -195,19 +251,28 @@ namespace RTAccess.Screens
             BuildWeaponSets(b, uk, doll);
             AddDollSlot(b, uk, "armor", Loc.T("slot.armor"), doll.Armor, doll);
             AddDollSlot(b, uk, "head", Loc.T("slot.head"), doll.Head, doll);
-            AddDollSlot(b, uk, "neck", Loc.T("slot.neck"), doll.Neck, doll);
-            AddDollSlot(b, uk, "shoulders", Loc.T("slot.shoulders"), doll.Shoulders, doll);
-            AddDollSlot(b, uk, "wrist", Loc.T("slot.wrist"), doll.Wrist, doll);
             AddDollSlot(b, uk, "gloves", Loc.T("slot.gloves"), doll.Gloves, doll);
-            AddDollSlot(b, uk, "belt", Loc.T("slot.belt"), doll.Belt, doll);
+            AddDollSlot(b, uk, "feet", Loc.T("slot.feet"), doll.Feet, doll);
+            AddDollSlot(b, uk, "back", Loc.T("slot.back"), doll.Shoulders, doll);
+            AddDollSlot(b, uk, "neck", Loc.T("slot.neck"), doll.Neck, doll);
             AddDollSlot(b, uk, "ring1", Loc.T("slot.ring1"), doll.Ring1, doll);
             AddDollSlot(b, uk, "ring2", Loc.T("slot.ring2"), doll.Ring2, doll);
-            AddDollSlot(b, uk, "feet", Loc.T("slot.feet"), doll.Feet, doll);
-            AddDollSlot(b, uk, "glasses", Loc.T("slot.glasses"), doll.Glasses, doll);
-            AddDollSlot(b, uk, "shirt", Loc.T("slot.shirt"), doll.Shirt, doll);
+            AddDollSlot(b, uk, "protocol", Loc.T("slot.protocol"), doll.Protocol, doll);
             if (doll.QuickSlots != null)
                 for (int i = 0; i < doll.QuickSlots.Length; i++)
                     AddDollSlot(b, uk, "quick:" + i, Loc.T("slot.quick", new { index = i + 1 }), doll.QuickSlots[i], doll);
+            var enc = doll.EncumbranceVM;
+            if (enc?.EncumbranceVm != null)
+                b.AddItem(ControlId.Structural(uk + "doll:enc"), StatLine(() =>
+                {
+                    var status = enc.EncumbranceVm.LoadStatus?.Value;
+                    var load = (enc.EncumbranceVm.LoadWeight?.Value ?? "")
+                        + (string.IsNullOrEmpty(status) ? "" : ", " + status);
+                    return Loc.T("inv.encumbrance_char", new { value = load });
+                }, () => enc.Tooltip?.Value));
+            // Window-keyed (like the switch buttons): focus stays on the opener across a character switch.
+            b.AddItem(ControlId.Structural(k + "doll:visual"), GraphNodes.Button(
+                () => UIStrings.Instance.CharGen.ShowVisualSettings.Text, doll.ShowVisualSettings));
             b.PopContext();
         }
 
@@ -263,6 +328,56 @@ namespace RTAccess.Screens
             b.AddItem(ControlId.Structural(uk + "doll:" + posKey), ItemNodes.EquipSlot(name, slot, doll));
         }
 
+        // The left panel's Weapons block (CharInfoWeaponsBlockVM): per equipped weapon, the attack modes a
+        // sighted player reads there — each weapon a collapsible group of its non-hidden weapon abilities
+        // (reload excluded, exactly the block VM's UpdateAbilities filter), Space = the game's own ability
+        // card built against this weapon (TooltipTemplateAbility(ability, weapon, unit) — the same template
+        // CharInfoWeaponSetAbilityVM constructs). Sets read straight off the body like the block VM does;
+        // empty sets vanish, and set numbers only appear while both sets hold weapons.
+        private static void BuildWeapons(GraphBuilder b, string uk, BaseUnitEntity unit)
+        {
+            var sets = unit.Body?.HandsEquipmentSets;
+            if (sets == null) return;
+            var rows = new List<(int set, ItemEntityWeapon weapon)>();
+            for (int i = 0; i < sets.Count; i++)
+            {
+                var set = sets[i];
+                if (set == null || set.IsEmpty()) continue;
+                if (set.PrimaryHand?.MaybeItem is ItemEntityWeapon p) rows.Add((i, p));
+                if (set.SecondaryHand?.MaybeItem is ItemEntityWeapon s) rows.Add((i, s));
+            }
+            if (rows.Count == 0) return;
+
+            bool multi = rows.Exists(r => r.set == 0) && rows.Exists(r => r.set == 1);
+            b.BeginStop("weapons");
+            b.PushContext(UIStrings.Instance.CharacterSheet.Weapons.Text, Loc.T("role.list"));
+            var reload = BlueprintRoot.Instance?.UIConfig?.ReloadAbility;
+            foreach (var row in rows)
+            {
+                var weapon = row.weapon;
+                string prefix = multi ? Loc.T("inv.weapon_set", new { index = row.set + 1 }) + ": " : "";
+                string wkey = uk + "weap:" + row.set + ":" + (weapon.UniqueId ?? weapon.Name);
+                b.BeginGroup(ControlId.Structural(wkey), GraphNodes.Group(() => prefix + weapon.Name));
+                int ai = 0;
+                var abilities = weapon.Blueprint?.WeaponAbilities;
+                if (abilities != null)
+                    foreach (var wa in abilities)
+                    {
+                        var ability = wa?.Ability;
+                        if (ability == null || ability == reload || ability.HiddenInUI) continue;
+                        var ab = ability; // capture for the label/tooltip factories
+                        var vt = GraphNodes.Text(() => ab.Name);
+                        vt.SearchText = () => ab.Name;
+                        vt.OnTooltip = () => TooltipChooser.OpenTemplate(ab.Name,
+                            new TooltipTemplateAbility(ab, weapon.Blueprint, unit));
+                        b.AddItem(ControlId.Structural(wkey + ":ab:" + ai), vt);
+                        ai++;
+                    }
+                b.EndGroup();
+            }
+            b.PopContext();
+        }
+
         // The derived defensive stats the game shows beside the doll — read live from the reachable
         // InventoryDollAdditionalStatsVM (already-formatted strings + breakdown tooltips on Space). Resolve is
         // hidden for pets (the VM reports "—"). Per-character, so keyed on the viewed unit.
@@ -297,8 +412,11 @@ namespace RTAccess.Screens
             return vt;
         }
 
-        // Party-wide readout: carry weight + load status, and money. These live on the shared stash, so they sit
-        // between the per-character equipment and the stash list; keyed party-wide (not on the viewed unit).
+        // Party-wide readout: carry weight + load status. Lives on the shared stash, so it sits between the
+        // per-character equipment and the stash list; keyed party-wide (not on the viewed unit). The old
+        // "Gold" line was a Pathfinder leftover — RT has no player currency UI (Player.Money feeds only
+        // designer script conditions; no UIStrings names it), so the number was never shown to a sighted
+        // player and is dropped.
         private static void BuildSummary(GraphBuilder b, string k, InventoryStashVM stash)
         {
             if (stash == null) return;
@@ -312,17 +430,18 @@ namespace RTAccess.Screens
                     var load = (enc.LoadWeight?.Value ?? "") + (string.IsNullOrEmpty(status) ? "" : ", " + status);
                     return Loc.T("inv.encumbrance", new { value = load });
                 }));
-            b.AddItem(ControlId.Structural(k + "sum:gold"),
-                GraphNodes.Text(() => Loc.T("inv.gold", new { value = stash.Money.Value })));
             b.PopContext();
         }
 
         // The filter + sort control bar above the stash — the real chrome a sighted player uses to operate a
-        // 120-slot list. Each is a combo box (Enter → a submenu of localized options) that drives the game's OWN
-        // filter VM / sort command; both persist to UISettings and rebuild the visible collection, which the
-        // next immediate-mode render reflects (the live value part re-announces the landing). A horizontal row,
-        // so Left/Right walks between the two boxes. (The search field is its own region above — BuildSearch.)
-        private static void BuildStashControls(GraphBuilder b, string k, InventoryStashVM stash)
+        // 120-slot list. The filter and sorter are combo boxes (Enter → a submenu of localized options) that
+        // drive the game's OWN filter VM / sort command; both persist to UISettings and rebuild the visible
+        // collection, which the next immediate-mode render reflects (the live value part re-announces the
+        // landing). Alongside them: the header's force-sort button (SortItems — re-applies the current order
+        // now) and, when the window's live filter bar carries it (m_ShowToggle is per-prefab), the
+        // "show unavailable items" toggle driving the game's own ShowUnavailable reactive (→ UISettings).
+        // A horizontal row, so Left/Right walks the controls. (The search field is its own region above.)
+        internal static void BuildStashControls(GraphBuilder b, string k, InventoryStashVM stash) // shared with CargoScreen (same InventoryStashVM + EventBus sorter route)
         {
             var filter = stash?.ItemsFilter;
             if (filter == null) return;
@@ -330,10 +449,10 @@ namespace RTAccess.Screens
             b.PushContext(Loc.T("inv.filters"), Loc.T("role.list"));
             b.StartRow(k + "filtersrow");
 
-            var filters = FilterOptions;
+            var filters = ActiveFilterOptions();
             b.AddItem(ControlId.Structural(k + "filter"), GraphNodes.Cycler(
                 () => Loc.T("inv.filters"),
-                () => filters.ConvertAll(t => LocalizedTexts.Instance.ItemsFilter.GetText(t)),
+                () => filters.ConvertAll(FilterName),
                 () => { var cf = stash?.ItemsFilter?.CurrentFilter; return cf != null ? Math.Max(0, filters.IndexOf(cf.Value)) : 0; },
                 i => { if (i >= 0 && i < filters.Count) filter.SetCurrentFilter(filters[i]); }));
 
@@ -343,6 +462,15 @@ namespace RTAccess.Screens
                 () => sorters.ConvertAll(t => LocalizedTexts.Instance.ItemsFilter.GetText(t)),
                 () => Math.Max(0, sorters.IndexOf(stash.CurrentSorter.Value)),
                 i => { if (i >= 0 && i < sorters.Count) Game.Instance.GameCommandQueue.SetInventorySorter(sorters[i]); }));
+
+            b.AddItem(ControlId.Structural(k + "sortnow"), GraphNodes.Button(
+                () => Loc.T("inv.sort_now"), () => stash.ItemSlotsGroup?.SortItems()));
+
+            if (ShowsUnavailableToggle(stash))
+                b.AddItem(ControlId.Structural(k + "unavail"), GraphNodes.Toggle(
+                    () => UIStrings.Instance.InventoryScreen.ShowUnavailableItems.Text,
+                    () => filter.ShowUnavailable.Value,
+                    () => filter.ShowUnavailable.Value = !filter.ShowUnavailable.Value));
 
             b.EndRow();
             b.PopContext();
@@ -357,7 +485,63 @@ namespace RTAccess.Screens
             ItemsFilterType.NonUsable, ItemsFilterType.AugmentationsAll, ItemsFilterType.ShipNoFilter,
         };
 
-        private static readonly List<ItemsSorterType> SortOptions = new List<ItemsSorterType>
+        // The game removes the Augmentations tab when DLC3 (The Infinite Museion) isn't installed
+        // (ItemsFilterPCView.ApplyAugmentationsAvailability) — mirror the gate. Checked once (DLC state
+        // can't change mid-run).
+        private static bool? s_HasAugmentsDlc;
+        private static List<ItemsFilterType> ActiveFilterOptions()
+        {
+            s_HasAugmentsDlc ??= StoreManager.CheckIfDlcPurchasedAndInstalled(DlcNameEnum.DLC3TheInfiniteMuseion);
+            if (s_HasAugmentsDlc == true) return FilterOptions;
+            var list = new List<ItemsFilterType>(FilterOptions);
+            list.Remove(ItemsFilterType.AugmentationsAll);
+            return list;
+        }
+
+        // Filter names come from the strings the game's own filter bar shows as its toggle hints
+        // (ItemsFilterPCView.SetHints) — NOT LocalizedTexts.ItemsFilter, whose FILTER-type entries the RT
+        // asset leaves empty (only the SORTER entries are filled; reading it spoke blank filter options).
+        private static string FilterName(ItemsFilterType t)
+        {
+            var inv = UIStrings.Instance.InventoryScreen;
+            string s = t switch
+            {
+                ItemsFilterType.NoFilter => inv.FilterTextAll.Text,
+                ItemsFilterType.Weapon => inv.FilterTextWeapon.Text,
+                ItemsFilterType.Armor => inv.FilterTextArmor.Text,
+                ItemsFilterType.Accessories => inv.FilterTextAcessories.Text, // (the game's own field typo)
+                ItemsFilterType.Usable => inv.FilterTextUsable.Text,
+                ItemsFilterType.Notable => inv.FilterTextNotable.Text,
+                ItemsFilterType.NonUsable => inv.FilterTextOther.Text,
+                ItemsFilterType.AugmentationsAll => UIStrings.Instance.UIAugmentations.FilterAll.Text,
+                ItemsFilterType.ShipNoFilter => inv.FilterTextShipItem.Text,
+                _ => null,
+            };
+            return string.IsNullOrEmpty(s) ? LocalizedTexts.Instance.ItemsFilter.GetText(t) : s;
+        }
+
+        // Whether the game's inventory filter bar carries the "show unavailable" toggle — a serialized
+        // per-prefab flag (m_ShowToggle), so read it off the LIVE view once per window and cache (the
+        // FindObjects sweep is too heavy for every immediate-mode render). No live view yet → try again
+        // next render, don't cache the miss.
+        private static int s_UnavailCheckedFor;
+        private static bool s_UnavailShown;
+        private static bool ShowsUnavailableToggle(InventoryStashVM stash)
+        {
+            int key = stash.GetHashCode();
+            if (s_UnavailCheckedFor == key) return s_UnavailShown;
+            var views = UnityEngine.Object.FindObjectsByType<ItemsFilterPCView>(UnityEngine.FindObjectsSortMode.None);
+            foreach (var v in views)
+            {
+                if (v == null || !v.isActiveAndEnabled) continue;
+                s_UnavailCheckedFor = key;
+                s_UnavailShown = v.m_ShowToggle;
+                return s_UnavailShown;
+            }
+            return false;
+        }
+
+        internal static readonly List<ItemsSorterType> SortOptions = new List<ItemsSorterType> // shared with CargoScreen (the cargo sorter uses the same non-vendor set)
         {
             ItemsSorterType.NotSorted, ItemsSorterType.TypeUp, ItemsSorterType.TypeDown,
             ItemsSorterType.CharacteristicsUp, ItemsSorterType.CharacteristicsDown,

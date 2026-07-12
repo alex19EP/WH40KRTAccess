@@ -10,6 +10,8 @@ using Kingmaker.Code.UI.MVVM.VM.SelectorWindow;               // InventorySelect
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.Inventory;     // EquipSlotVM, InventoryDollVM
 using Kingmaker.Code.UI.MVVM.VM.Slots;   // ItemSlotVM, ItemGrade, ILootHandler, IInventoryHandler
 using Kingmaker.GameCommands;            // GameCommandQueueExtensions (AddRemoveItemAsFavorite)
+using Kingmaker.Items;                    // ItemEntityWeapon/Shield (the doll's fake-item ghost)
+using Kingmaker.Items.Slots;              // HandSlot (HeldInTwoHands)
 using Kingmaker.PubSubSystem.Core;       // EventBus
 using Kingmaker.UI.Common;               // InventoryHelper
 using Kingmaker.UI.MVVM.VM.ServiceWindows.Inventory;          // EquipSelectorSlotVM (the OTHER namespace)
@@ -187,7 +189,8 @@ namespace RTAccess.UI
         public static NodeVtable InventoryItem(ItemSlotVM slot)
         {
             Func<string> label = () => ItemLabel(slot, withFavorite: true);
-            return new NodeVtable
+            string acted = null; // the half-split confirmation (AttachSplitVerbs → StateText)
+            var vt = new NodeVtable
             {
                 ControlType = ControlTypes.Item,
                 Announcements = new List<NodeAnnouncement>
@@ -198,9 +201,12 @@ namespace RTAccess.UI
                 OnActivate = () => { if (slot.IsEquipPossible) Equip(slot); else OpenStashMenu(slot); },
                 OnSecondary = () => OpenStashMenu(slot),
                 OnTooltip = () => OpenItemTooltip(slot),
+                StateText = () => acted,
                 HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
                 ActivateSound = Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick,
             };
+            AttachSplitVerbs(vt, slot, s => acted = s);
+            return vt;
         }
 
         /// <summary>One equipment-doll slot — "Slot: item (badges)" / "Slot: empty". The label is LIVE:
@@ -361,13 +367,13 @@ namespace RTAccess.UI
                         moved = Loc.T("vendor.sent_to_cargo", new { name });
                 }
                 : (Action)null;
-            return new NodeVtable
+            var vt = new NodeVtable
             {
                 ControlType = ControlTypes.Item,
                 Announcements = new List<NodeAnnouncement> { GraphNodes.LabelPart(label) },
                 SearchText = label,
                 OnActivate = activate,
-                StateText = activate != null ? () => moved : (Func<string>)null,
+                StateText = () => moved, // transfer AND half-split confirmations (null until one runs)
                 OnSecondary = () => OpenVendorStashMenu(slot),
                 OnTooltip = () => OpenItemTooltip(slot),
                 HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
@@ -375,6 +381,8 @@ namespace RTAccess.UI
                     ? Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick
                     : null,
             };
+            AttachSplitVerbs(vt, slot, s => moved = s);
+            return vt;
         }
 
         // The stash menu variant for the vendor window: only the verbs whose routes are live here.
@@ -399,11 +407,108 @@ namespace RTAccess.UI
                 onEmpty: () => Tts.Speak(Loc.T("inv.no_actions"), interrupt: true));
         }
 
+        // ---- the cargo family (the CargoManagement service window: party stash ↔ the ship's cargo bays) ----
+
+        /// <summary>One item inside a cargo bay (the CargoManagement window's cargo side). Enter sends it
+        /// back to the party inventory through the window's own LIVE route —
+        /// <c>IInventoryHandler.TryMoveToInventory</c>, which <c>CargoManagementVM</c> implements as
+        /// <c>InventoryHelper.TryMoveSlotInInventory(slot, StashVM.FirstEmptySlot)</c> (the sighted
+        /// drag/double-click path; unlike its EMPTY <c>TryMoveToCargo</c> stub — the vendor-window lesson).
+        /// Gated on the game's own <c>CanTransferToInventory</c> (<c>CargoHelper.CanTransferFromCargo</c> —
+        /// folds in trash items AND the <c>CargoState.LockTransferFromCargo</c> lock), so an ineligible
+        /// item advertises no action. Backspace = the verbs whose routes are live in this window
+        /// (Send to inventory / Split / Information); Space = the item's own card.</summary>
+        public static NodeVtable CargoItem(ItemSlotVM slot)
+        {
+            string moved = null;
+            Func<string> label = () => ItemLabel(slot);
+            Action activate = slot.CanTransferToInventory
+                ? () =>
+                {
+                    var name = ItemName(slot);
+                    EventBus.RaiseEvent<IInventoryHandler>(h => h.TryMoveToInventory(slot, true));
+                    moved = Loc.T("cargo.sent_to_inventory", new { name });
+                }
+                : (Action)null;
+            var vt = new NodeVtable
+            {
+                ControlType = ControlTypes.Item,
+                Announcements = new List<NodeAnnouncement> { GraphNodes.LabelPart(label) },
+                SearchText = label,
+                OnActivate = activate,
+                StateText = () => moved, // transfer AND half-split confirmations (null until one runs)
+                OnSecondary = () => OpenCargoItemMenu(slot),
+                OnTooltip = () => OpenItemTooltip(slot),
+                HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
+                ActivateSound = activate != null
+                    ? Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick
+                    : null,
+            };
+            AttachSplitVerbs(vt, slot, s => moved = s);
+            return vt;
+        }
+
+        // The cargo item's context menu — only the verbs whose routes are live in the CargoManagement
+        // window (its IInventoryHandler implements TryMoveToInventory and INewSlotsHandler implements
+        // Split; TryEquip/TryDrop/TryMoveToCargo are empty stubs there, so those verbs aren't offered).
+        private static void OpenCargoItemMenu(ItemSlotVM slot)
+        {
+            var cm = UIStrings.Instance.ContextMenu;
+            var loot = UIStrings.Instance.LootWindow;
+            var entities = new List<ContextMenuCollectionEntity>
+            {
+                new ContextMenuCollectionEntity(loot.SendToInventory,
+                    () => EventBus.RaiseEvent<IInventoryHandler>(h => h.TryMoveToInventory(slot, true)),
+                    true, slot.CanTransferToInventory),
+                new ContextMenuCollectionEntity(cm.Split,
+                    () => EventBus.RaiseEvent<INewSlotsHandler>(h => h.HandleTrySplitSlot(slot)),
+                    slot.IsPosibleSplit),
+                new ContextMenuCollectionEntity(cm.Information, () => OpenItemTooltip(slot), slot.HasItem),
+            };
+            ContextMenuNodes.Open(ItemLabel(slot), entities,
+                onEmpty: () => Tts.Speak(Loc.T("inv.no_actions"), interrupt: true));
+        }
+
+        // ---- stack splitting on modified Enter — the keyboard mirror of the sighted split-drag
+        // (InventoryHelper.GetEndDragAction: Shift+drag = the counter dialog, Ctrl+drag = instant
+        // half-split). Wired onto the stackable rows of the windows whose VMs implement the split
+        // routes with isLoot: false (inventory stash, vendor stash, cargo bays). ----
+
+        /// <summary>Attach the split verbs to a stackable item row: Shift+Enter opens the game's own
+        /// split flow (<see cref="InventoryHelper.TrySplitSlot"/> → the counter window our
+        /// CounterWindowScreen mirrors); Ctrl+Enter fires the exact half-split command the Ctrl+drag
+        /// path fires (toRef null = the split lands in the first free slot, like the dialog's own
+        /// callback), confirming through the row's StateText via <paramref name="setOutcome"/>.
+        /// A non-splittable stack (single item / not stackable) gets no hooks — the chord stays a
+        /// silent no-op, mirroring the drag path's gate.</summary>
+        private static void AttachSplitVerbs(NodeVtable vt, ItemSlotVM slot, Action<string> setOutcome)
+        {
+            if (!slot.IsPosibleSplit) return;
+            vt.OnActivateShift = () => InventoryHelper.TrySplitSlot(slot, isLoot: false);
+            vt.OnActivateCtrl = () =>
+            {
+                int half = (slot.Item.Value?.Count ?? 0) / 2;
+                if (half < 1) return;
+                Game.Instance.GameCommandQueue.SplitSlot(slot.ToSlotRef(), null, false, half);
+                setOutcome(Loc.T("split.half_done", new { name = ItemName(slot), count = half }));
+            };
+        }
+
         // "Slot: item (badges)" / "Slot: empty" — the doll card's readout. Badges here are the pair the
-        // doll card overlays: notable, and the can't-remove lock.
+        // doll card overlays: notable, and the can't-remove lock. An empty slot showing a FAKE item
+        // (EquipSlotVM.GetIcon's ghost: the set's two-hander occupying the off-hand, or the other set's
+        // shield) speaks that item with a marker — the sighted card shows its icon there, not a hole.
         private static string EquipSlotLabel(string slotName, EquipSlotVM slot)
         {
-            if (slot == null || !slot.HasItem) return slotName + ": " + Loc.T("slot.empty");
+            if (slot == null || !slot.HasItem)
+            {
+                var fake = slot?.m_FakeItem?.Value; // publicized private — the ghost the card renders
+                if (fake is ItemEntityShield)
+                    return slotName + ": " + fake.Name + " (" + Loc.T("slot.other_set") + ")";
+                if (fake is ItemEntityWeapon w && w.HoldingSlot is HandSlot hand && hand.HeldInTwoHands())
+                    return slotName + ": " + fake.Name + " (" + Loc.T("slot.held_two_handed") + ")";
+                return slotName + ": " + Loc.T("slot.empty");
+            }
             var name = ItemName(slot);
             var flags = new List<string>();
             if (slot.IsNotable.Value) flags.Add(Loc.T("item.notable"));

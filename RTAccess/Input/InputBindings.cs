@@ -144,6 +144,15 @@ namespace RTAccess.Input
             InputManager.Register("ui.prev", "Previous region (Shift+Tab)", InputCategory.UI).AddBinding(KeyCode.Tab, shift: true).Repeating();
             InputManager.Register("ui.activate", "Activate control", InputCategory.UI)
                 .AddBinding(KeyCode.Return).AddBinding(KeyCode.KeypadEnter);
+            // Shift+Enter / Ctrl+Enter — modified activations, the keyboard mirror of the sighted
+            // split-drag modifiers (InventoryHelper.GetEndDragAction: Shift+drag = the split counter
+            // dialog, Ctrl+drag = instant half-split). Exact-modifier matching keeps them and bare
+            // ui.activate from cross-firing; the navigator's null-guard non-consume contract keeps the
+            // game's chords alive while nothing is focused.
+            InputManager.Register("ui.activate_shift", "Activate with Shift (split stack)", InputCategory.UI)
+                .AddBinding(KeyCode.Return, shift: true).AddBinding(KeyCode.KeypadEnter, shift: true);
+            InputManager.Register("ui.activate_ctrl", "Activate with Ctrl (half-split stack)", InputCategory.UI)
+                .AddBinding(KeyCode.Return, ctrl: true).AddBinding(KeyCode.KeypadEnter, ctrl: true);
             InputManager.Register("ui.secondary", "Secondary action", InputCategory.UI).AddBinding(KeyCode.Backspace);
             // Escape closes the focused mod screen (window / dialogue / Esc menu / settings) via its Back action —
             // but a context-split (YieldsWhenUnfocused): out on the bare HUD with nothing focused the mod has

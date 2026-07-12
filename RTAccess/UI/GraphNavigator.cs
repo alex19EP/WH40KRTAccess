@@ -308,6 +308,16 @@ namespace RTAccess.UI
                     if (node.Vtable.OnSecondary != null) _graph.Secondary();
                     return true;
                 }
+                // Modified activations (the split-drag mirrors). Same consume shape as ui.activate:
+                // nothing focused → don't claim (the game keeps its chords); focused → consume even
+                // without a hook (the focused UI owns the Enter chords, a hookless press stays silent).
+                case "ui.activate_shift":
+                case "ui.activate_ctrl":
+                {
+                    if (_graph?.CurrentNode == null) return false;
+                    VtableActivateModified(ctrl: action.Key == "ui.activate_ctrl");
+                    return true;
+                }
                 case "ui.back":
                     return Screen != null && Screen.InvokeAction(ActionIds.Back);
                 case "ui.tooltip":
@@ -510,6 +520,25 @@ namespace RTAccess.UI
                 _liveKey = null; // rebaseline: the change was just spoken synchronously
             }
             return true;
+        }
+
+        // The modified activations (Shift+Enter / Ctrl+Enter — the split-drag mirrors). Same feedback
+        // contract as VtableActivate: the control's StateText speaks synchronously and the live watch
+        // rebaselines. No navigator-added sound — the hook's own flow provides the audio (the counter
+        // window opening / the transfer's own sounds).
+        private void VtableActivateModified(bool ctrl)
+        {
+            var node = _graph.CurrentNode;
+            var vt = node?.Vtable;
+            if (vt == null || (ctrl ? vt.OnActivateCtrl : vt.OnActivateShift) == null) return;
+            if (ctrl) _graph.ActivateCtrl(); else _graph.ActivateShift();
+            node = _graph.CurrentNode;
+            var st = node?.Vtable.StateText;
+            if (st != null)
+            {
+                Speak(st(), interrupt: true);
+                _liveKey = null; // rebaseline: the change was just spoken synchronously
+            }
         }
 
         private bool VtableAdjust(int sign)

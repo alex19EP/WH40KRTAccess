@@ -411,7 +411,9 @@ namespace RTAccess.Screens
         // One sheet section as its own Tab-stop: the section label is a context level (the old top-level
         // TreeGroup's announce path), the stats inside are drill-in groups or plain readouts. The whole
         // section is skipped when the unit carries none of its stats (the old empty-container skip).
-        private static void BuildStatSection(GraphBuilder b, object stop, string kp, string label,
+        // Internal: InventoryScreen mirrors the same characteristics/skills blocks the game binds into
+        // the inventory window's left panel (the identical VMs), so it reuses this builder verbatim.
+        internal static void BuildStatSection(GraphBuilder b, object stop, string kp, string label,
             BaseUnitEntity unit, IEnumerable<StatType> stats, bool withWounds)
         {
             string wounds = withWounds ? WoundsLine(unit) : null;

@@ -5,6 +5,7 @@ using Kingmaker.Code.UI.MVVM.VM.GameOver;                  // GameOverVM
 using Kingmaker.Code.UI.MVVM.VM.GroupChanger;              // GroupChangerVM
 using Kingmaker.Code.UI.MVVM.VM.Loot;                      // LootVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;            // ServiceWindowsVM
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CargoManagement; // CargoManagementVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.Inventory;  // InventoryVM
 using Kingmaker.Code.UI.MVVM.VM.Space;                     // SpaceStaticPartVM
 using Kingmaker.Code.UI.MVVM.VM.Surface;                   // SurfaceStaticPartVM
@@ -46,6 +47,11 @@ namespace RTAccess.UI
             => FromLiveStaticPart<InventoryVM>(
                 s => s.ServiceWindowsVM?.InventoryVM?.Value,
                 s => s.ServiceWindowsVM?.InventoryVM?.Value);
+
+        public static CargoManagementVM CargoManagement()
+            => FromLiveStaticPart<CargoManagementVM>(
+                s => s.ServiceWindowsVM?.CargoManagementVM?.Value,
+                s => s.ServiceWindowsVM?.CargoManagementVM?.Value);
 
         public static LootVM Loot()
             => FromLiveStaticPart<LootVM>(

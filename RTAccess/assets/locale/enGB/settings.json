@@ -312,6 +312,8 @@
   "bind.ui.next": "Next region (Tab)",
   "bind.ui.prev": "Previous region (Shift+Tab)",
   "bind.ui.activate": "Activate control",
+  "bind.ui.activate_shift": "Activate with Shift (split stack)",
+  "bind.ui.activate_ctrl": "Activate with Ctrl (half-split stack)",
   "bind.ui.secondary": "Secondary action",
   "bind.ui.back": "Back / close",
   "bind.ui.tooltip": "Read tooltip",
