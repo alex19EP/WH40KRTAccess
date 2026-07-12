@@ -4,6 +4,7 @@ using System.Text;
 using Kingmaker;
 using Kingmaker.AreaLogic.TimeSurvival;               // TimeSurvival ("survive N rounds" areas)
 using Kingmaker.Blueprints;                           // BlueprintScriptableObject.GetComponent<T>()
+using Kingmaker.Code.UI.MVVM.VM.ActionBar;            // ActionBarSlotVM (ship weapons/abilities are bar slots)
 using Kingmaker.Code.UI.MVVM.VM.Space;                // SpaceStaticComponentType
 using Kingmaker.Code.UI.MVVM.VM.SpaceCombat;          // SpaceCombatVM (+ service panel)
 using Kingmaker.EntitySystem.Entities;                // StarshipEntity
@@ -102,6 +103,40 @@ namespace RTAccess.Screens
             b.AddLabel(ControlId.Structural("ship:effects"), () => EffectsLine(ship));
             b.PopContext();
 
+            // -- Weapons (the sighted weapons panel's four arc groups; Phase 3). The slots are the game's
+            // own ActionBarSlotVMs, so the shared factory carries the whole contract — availability-first
+            // readout, the game's why-not reason, arsenal variants via the convert flyout, tooltip on Space —
+            // and Enter arms the weapon into the aim flow (Targeting announces the controls; the scanner's
+            // Period cycle + the tile cursor then read hit/shield/hull odds via StarshipAim).
+            var wp = vm.ShipWeaponsPanelVM;
+            if (wp?.WeaponAbilitiesGroups != null)
+            {
+                b.BeginStop("weapons").PushContext(Loc.T("spacecombat.weapons"), Loc.T("role.list"));
+                int wi = 0;
+                foreach (var kv in wp.WeaponAbilitiesGroups)
+                {
+                    var group = kv.Value;
+                    if (group?.Slots == null) continue;
+                    for (int i = 0; i < group.Slots.Count; i++)
+                        if (UsableSlot(group.Slots[i]))
+                            AddShipSlot(b, group.Slots[i], "weapons", wi++, group.GroupLabel);
+                }
+                b.PopContext();
+
+                // -- Ship abilities (Reload Shields, Ram, Swing Run, torpedo control, …) — the panel's
+                // non-weapon group. Custom-path movement abilities (Ram/Swing Run) arm like any other;
+                // their cell-target commit flow is verified live in Phase 3's aim pass.
+                var ag = wp.AbilitiesGroup;
+                if (ag?.Slots != null && ag.Slots.Count > 0)
+                {
+                    b.BeginStop("abilities").PushContext(Loc.T("spacecombat.abilities"), Loc.T("role.list"));
+                    for (int i = 0; i < ag.Slots.Count; i++)
+                        if (UsableSlot(ag.Slots[i]))
+                            AddShipSlot(b, ag.Slots[i], "abilities", i, null);
+                    b.PopContext();
+                }
+            }
+
             // -- Battle (service panel: round/turn state, End turn, initiative order) --
             b.BeginStop("battle").PushContext(Loc.T("spacecombat.battle"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural("battle:status"), GraphNodes.Text(() => BattleStatusLine(ship)));
@@ -157,6 +192,75 @@ namespace RTAccess.Screens
             b.AddItem(ControlId.Structural("battle:log"), GraphNodes.Button(
                 () => Loc.T("hud.log"), LogReviewScreen.Open));
             b.PopContext();
+        }
+
+        // ---- Weapon / ability slots ----
+
+        // One slot + its open variant flyout rows (the InGameScreen action-bar recipe: converted rows render
+        // right after their parent while the flyout is open — that is how an arsenal's weapon variants switch,
+        // MechanicActionBarShipWeaponSlot.GetConvertedAbilityData feeds the same flyout). The ship-specific
+        // part (arc + burst size) is spoken after the availability reason: a ship weapon's tactical identity
+        // is WHICH ARC it bears on, so it comes before the generic detail.
+        private static void AddShipSlot(GraphBuilder b, ActionBarSlotVM slot, string zone, int index, string arcLabel)
+        {
+            var vt = UI.ActionBarNodes.Slot(slot);
+            // Announcements is an IReadOnlyList field — rebuild it with the ship part slotted in ahead of
+            // the factory's detail part (same Value kind, so ActionSlot's kind order keeps it right there).
+            var parts = new List<NodeAnnouncement>(vt.Announcements);
+            parts.Insert(3, new NodeAnnouncement(() => ShipSlotPart(slot, arcLabel), kind: AnnouncementKinds.Value));
+            vt.Announcements = parts;
+            b.AddItem(ControlId.Referenced(slot, zone + ":slot:" + index), vt);
+
+            var conv = slot.ConvertedVm?.Value;
+            if (conv == null || conv.IsDisposed) return;
+            for (int j = 0; j < conv.Slots.Count; j++)
+                if (UsableSlot(conv.Slots[j]))
+                    b.AddItem(ControlId.Referenced(conv.Slots[j], zone + ":var:" + index + ":" + j),
+                        UI.ActionBarNodes.Slot(conv.Slots[j]));
+        }
+
+        // Arc (the game's own localized group label — passed through, never re-translated) + shots per salvo
+        // (DamageInstances — the count the sighted overtip shows; ship bursts share one hit chance).
+        private static string ShipSlotPart(ActionBarSlotVM slot, string arcLabel)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                if (!string.IsNullOrEmpty(arcLabel)) sb.Append(arcLabel);
+                int shots = slot?.AbilityData?.StarshipWeapon?.Blueprint?.DamageInstances ?? 0;
+                if (shots > 1)
+                {
+                    if (sb.Length > 0) sb.Append(", ");
+                    sb.Append(Loc.T("spacecombat.shots", new { n = shots }));
+                }
+                return sb.Length > 0 ? sb.ToString() : null;
+            }
+            catch { return null; }
+        }
+
+        private static bool UsableSlot(ActionBarSlotVM s)
+            => s != null && !s.IsFake.Value && !s.IsEmpty.Value
+               && s.MechanicActionBarSlot != null && !s.MechanicActionBarSlot.IsBad();
+
+        // Close any open variant flyout across both slot groups (Escape's first job, like the sighted
+        // ActionBarConvertedPCView / InGameScreen.CloseOpenConverts).
+        private static bool CloseOpenConverts()
+        {
+            bool any = false;
+            var wp = Component()?.ShipWeaponsPanelVM;
+            if (wp == null) return false;
+            foreach (var kv in wp.WeaponAbilitiesGroups)
+                foreach (var s in kv.Value.Slots)
+                {
+                    var c = s?.ConvertedVm?.Value;
+                    if (c != null && !c.IsDisposed) { c.Close(); any = true; }
+                }
+            foreach (var s in wp.AbilitiesGroup.Slots)
+            {
+                var c = s?.ConvertedVm?.Value;
+                if (c != null && !c.IsDisposed) { c.Close(); any = true; }
+            }
+            return any;
         }
 
         // ---- Ship lines (read the parts directly; the panel VMs are orphaned recipes — plan §1.5) ----
@@ -329,6 +433,13 @@ namespace RTAccess.Screens
             yield return new ElementAction(ActionIds.Back, Message.Raw("Back"), _ =>
             {
                 if (!Navigation.HasFocus) return;
+                // An open variant/convert flyout claims Escape first — mirroring the sighted
+                // ActionBarConvertedPCView (same rule as InGameScreen's action bar).
+                if (CloseOpenConverts())
+                {
+                    Tts.Speak(Loc.T("slot.variants_closed"), interrupt: true);
+                    return;
+                }
                 Navigation.Blur();
                 Tts.Speak(Loc.T("spacecombat.screen"), interrupt: true);
             });

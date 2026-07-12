@@ -30,6 +30,9 @@
 		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Rewired_Core.dll*" Private="false" />
 		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\ContextData.dll*" Private="false" />
 		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\StateHasher.dll*" Private="false" />
+		<!-- StatefulRandom: DisableStatefulRandomContext — the dry-run guard the game's own overtips wrap
+		     around damage predictions (GetStarshipDamagePrediction); used by Combat/StarshipAim. -->
+		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\StatefulRandom.dll*" Private="false" />
 		<!-- CountingGuard: Game.Keyboard.Disabled (the keyboard-suppression guard FocusMode toggles via
 		     SetValue) is a CountingGuard, which lives in its own assembly not matched by the wildcards. -->
 		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\CountingGuard.dll*" Private="false" />
