@@ -43,7 +43,7 @@ internal static class StarshipAim
         try
         {
             // DESIRED position, not raw Position: while a move preview is pinned (the planned-move
-            // hologram — CommandDispatch.ShipMoveStep), the arc gate answers from the planned cell WITH
+            // hologram — CommandDispatch.MoveStep), the arc gate answers from the planned cell WITH
             // the arrival heading (CanTargetFromDesiredPosition reads the virtual rotation too), exactly
             // like the sighted overtips against the ghost. With nothing pinned both collapse to Position.
             if (!ability.CanTargetFromDesiredPosition(new TargetWrapper(target), out var reason)) return Refusal(reason);

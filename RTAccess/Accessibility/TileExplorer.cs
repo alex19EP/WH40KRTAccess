@@ -32,11 +32,11 @@ namespace RTAccess.Accessibility;
 /// interacts with the scanner SELECTION instead). The whole primary set stands down while the HUD is focused — the arrows and
 /// Backspace/Enter yield to the navigator by chord shadowing, C and Delete by an explicit focus check — so only the
 /// shadow-immune Shift+arrows keep stepping the cursor when
-/// the HUD owns the keyboard. Move-to reproduces the engine turn guards the hand-rolled command bypasses
-/// (player turn + the active unit selected and controllable) and, in turn-based combat, takes a two-step confirm —
-/// it commits movement and spends the turn's movement points with no preview, so the first press only announces the
-/// distance. The cursor is the shared <see cref="MapCursor"/>, so the scanner and later spatial cues all measure
-/// from the same point; the camera follows it for sighted helpers.
+/// the HUD owns the keyboard. Move-to reproduces the engine turn guards the direct call bypasses
+/// (player turn + the active unit selected and controllable) and, in turn-based combat, is the game's own
+/// two-click flow: the first press plants the holo unit (move preview + pinned virtual position) and speaks the
+/// path preview, the second press runs the pinned move. The cursor is the shared <see cref="MapCursor"/>, so the
+/// scanner and later spatial cues all measure from the same point; the camera follows it for sighted helpers.
 /// </summary>
 internal static class TileExplorer
 {
@@ -127,11 +127,12 @@ internal static class TileExplorer
     /// <summary>
     /// Order the party / active unit to walk to the cursor tile. Out of combat this routes through the game's
     /// canonical formation-aware click-to-move (<see cref="UnitCommandsRunner.MoveSelectedUnitsToPoint"/>), refused
-    /// while the game is paused. In turn-based combat it rebuilds the move command directly to the node — but ONLY
-    /// for the player's own active unit (the hand-rolled command bypasses the engine guards
-    /// <see cref="UnitCommandsRunner"/> enforces, which would otherwise let it command an enemy on its turn) and
-    /// behind a two-step confirm (the move commits and spends the turn's movement points with no preview, so the
-    /// first press only announces the distance). Refusals are spoken (out of points, blocked, etc.).
+    /// while the game is paused. In turn-based combat it is the game's own two-click move for the active unit
+    /// (<see cref="RTAccess.Combat.CommandDispatch.MoveStep"/>): the first press plants the holo unit — the move
+    /// preview whose pinned virtual position every positional readout answers from — and speaks the path preview
+    /// (distance, cost, provokes); the second press on the same tile runs the pinned move. Guarded to the player's
+    /// own controllable turn unit (the direct call bypasses the engine guards <see cref="UnitCommandsRunner"/>
+    /// enforces, which would otherwise let it command an enemy on its turn). Refusals are spoken.
     /// </summary>
     public static void MoveToCursor()
     {
@@ -156,65 +157,43 @@ internal static class TileExplorer
                 if (unit == null || unit != current || !unit.IsDirectlyControllable())
                 { Speaker.Speak(Loc.T("combat.select_active"), interrupt: true); return; }
 
-                // Ships ride the game's own two-click preview flow (CommandDispatch.ShipMoveStep): the arm
-                // press ALSO plants the game's move preview — the destination hologram a sighted co-pilot
-                // sees, plus the VIRTUAL position + facing, so cycling enemies while armed answers arcs and
-                // odds "from the planned cell, with the arrival heading". The second press runs the pinned
+                // Every TB unit — walker or voidship — rides the game's own two-click preview flow
+                // (CommandDispatch.MoveStep): the arm press ALSO plants the game's move preview — the holo
+                // unit / destination hologram a sighted co-pilot sees, the path line + provoke markers, and
+                // the pinned VIRTUAL position (+ arrival facing for ships), so cycling enemies while armed
+                // answers cover, odds, and arcs "from the planned cell". The second press runs the pinned
                 // move. A fresh arm always drops any stale pin first, so a lapsed confirm window can never
                 // turn an arming press into an instant commit; the game's own Esc cancel stays wired.
-                if (unit is StarshipEntity)
+                if (_armedNode == node && (Time.unscaledTime - _armTime) <= ConfirmWindow)
                 {
-                    if (_armedNode == node && (Time.unscaledTime - _armTime) <= ConfirmWindow)
+                    _armedNode = null;
+                    var r = RTAccess.Combat.CommandDispatch.MoveStep(node);
+                    if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Committed)
+                        Speaker.Speak(Loc.T("path.moving"), interrupt: true);
+                    else if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Planted)
                     {
-                        _armedNode = null;
-                        var r = RTAccess.Combat.CommandDispatch.ShipMoveStep(node);
-                        if (r == RTAccess.Combat.CommandDispatch.ShipMoveResult.Committed)
-                            Speaker.Speak(Loc.T("path.moving"), interrupt: true);
-                        else if (r == RTAccess.Combat.CommandDispatch.ShipMoveResult.Planted)
-                        {
-                            // The path drifted between presses (budget/heading changed) — the game planted a
-                            // FRESH preview instead of confirming; stay armed and re-read the new verdict.
-                            _armedNode = node;
-                            _armTime = Time.unscaledTime;
-                            Speaker.Speak(RTAccess.Exploration.PathInfo.Preview(unit, node, out _)
-                                + " " + Loc.T("path.preview.press_again"), interrupt: true);
-                        }
-                        return;
+                        // The path drifted between presses (budget/heading changed) — the game planted a
+                        // FRESH preview instead of confirming; stay armed and re-read the new verdict.
+                        _armedNode = node;
+                        _armTime = Time.unscaledTime;
+                        Speaker.Speak(RTAccess.Exploration.PathInfo.Preview(unit, node, out _)
+                            + " " + Loc.T("path.preview.press_again"), interrupt: true);
                     }
-                    _armedNode = node;
-                    _armTime = Time.unscaledTime;
-                    RTAccess.Combat.CommandDispatch.ShipMoveCancelLocal();
-                    var shipPreview = RTAccess.Exploration.PathInfo.Preview(unit, node, out bool shipCanMove);
-                    if (shipCanMove)
-                    {
-                        // Plant the ghost; on the rare engine disagreement its refusal already spoke — the
-                        // engine's word is authoritative, so ours stays unsaid.
-                        if (RTAccess.Combat.CommandDispatch.ShipMoveStep(node)
-                            != RTAccess.Combat.CommandDispatch.ShipMoveResult.Planted) return;
-                        Speaker.Speak(shipPreview + " " + Loc.T("path.preview.press_again"), interrupt: true);
-                    }
-                    else Speaker.Speak(shipPreview, interrupt: true);
                     return;
                 }
-
-                // First press on this tile arms + previews the PATH (reachability + step count, from the game's own
-                // movable-area set); a second within the window commits. The arm is unconditional — the engine stays
-                // authoritative on commit — so even when the preview reads "out of range" a determined second press
-                // still defers to the real move command (which then speaks its own refusal), and the preview can never
-                // wrongly block a move the engine would allow.
-                if (_armedNode != node || (Time.unscaledTime - _armTime) > ConfirmWindow)
+                _armedNode = node;
+                _armTime = Time.unscaledTime;
+                RTAccess.Combat.CommandDispatch.MoveCancelLocal();
+                var preview = RTAccess.Exploration.PathInfo.Preview(unit, node, out bool canMove);
+                if (canMove)
                 {
-                    _armedNode = node;
-                    _armTime = Time.unscaledTime;
-                    var preview = RTAccess.Exploration.PathInfo.Preview(unit, node, out bool canMove);
-                    Speaker.Speak(canMove ? preview + " " + Loc.T("path.preview.press_again") : preview, interrupt: true);
-                    return;
+                    // Plant the holo unit; on the rare engine disagreement its refusal already spoke — the
+                    // engine's word is authoritative, so ours stays unsaid.
+                    if (RTAccess.Combat.CommandDispatch.MoveStep(node)
+                        != RTAccess.Combat.CommandDispatch.MoveStepResult.Planted) return;
+                    Speaker.Speak(preview + " " + Loc.T("path.preview.press_again"), interrupt: true);
                 }
-                _armedNode = null;
-
-                // Commit through the shared act funnel (shared guard + refusal speech); it voices the specific
-                // failure, we give the success cue.
-                if (RTAccess.Combat.CommandDispatch.MoveTo(node)) Speaker.Speak(Loc.T("path.moving"), interrupt: true);
+                else Speaker.Speak(preview, interrupt: true);
             }
             else
             {

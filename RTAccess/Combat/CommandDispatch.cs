@@ -29,8 +29,9 @@ namespace RTAccess.Combat;
 /// the mouse-click path, so ALL of the game's range/LOS/target-restriction validation runs and refusals surface as
 /// <c>IWarningNotificationUIHandler</c> (spoken by the warning reader). Do NOT hand-build
 /// <c>PlayerUseAbilityParams</c> + <c>Commands.Run</c>: that under-initialises the params and NREs in
-/// <c>IsDirectionCorrect</c>. Movement reuses the proven turn-based path (<c>TryCreateMoveCommandTB</c> +
-/// <c>Commands.Run</c>). Object interaction stays on the shipped <c>ClickMapObjectHandler</c> path.
+/// <c>IsDirectionCorrect</c>. Movement rides the game's own two-click TB preview flow (<see cref="MoveStep"/> —
+/// <c>TryCreateMoveCommandTB(showMovePrediction: true)</c> to plant, <c>TryRunVirtualMoveCommand</c> to confirm).
+/// Object interaction stays on the shipped <c>ClickMapObjectHandler</c> path.
 /// </summary>
 public static class CommandDispatch
 {
@@ -96,26 +97,6 @@ public static class CommandDispatch
         catch (Exception e) { Main.Log?.Log("ability dispatch failed: " + e.Message); return false; }
     }
 
-    // ---- Movement & turn ----
-
-    /// <summary>Commit a turn-based move to a grid node. Returns true on success (caller gives the "Moving." cue);
-    /// on failure speaks the specific reason and returns false. Reachability/AP are the engine's call, not ours.</summary>
-    public static bool MoveTo(CustomGridNodeBase node)
-    {
-        var unit = ActingUnit();
-        if (unit == null || node == null) return false;
-        try
-        {
-            var cmd = unit.TryCreateMoveCommandTB(
-                new MoveCommandSettings { Destination = node.Vector3Position, DisableApproachRadius = true },
-                showMovePrediction: false, out var status);
-            if (cmd != null) { unit.Commands.Run(cmd); return true; }
-            Speaker.Speak(MoveFailure(status), interrupt: true);
-            return false;
-        }
-        catch (Exception e) { Main.Log?.Log("move dispatch failed: " + e.Message); return false; }
-    }
-
     /// <summary>Place / reposition the selected unit at a deploy cell during the pre-combat preparation phase.
     /// Faithfully mirrors the game's own <c>ClickSurfaceDeploymentHandler.TryDeployCurrentUnit</c> — the net-role
     /// gate, the public-static <c>CanDeployUnit</c> zone check, the synchronized <c>UnitTeleportParams</c> teleport,
@@ -163,23 +144,30 @@ public static class CommandDispatch
         catch (Exception e) { Main.Log?.Log("deploy pet reposition failed: " + e.Message); }
     }
 
-    // ---- Ship movement: the game's own two-click preview flow (the planned-move hologram) ----
+    // ---- Movement: the game's own two-click TB preview flow (the planned-move "holo unit") ----
 
-    public enum ShipMoveResult { Planted, Committed, Refused }
+    public enum MoveStepResult { Planted, Committed, Refused }
 
-    /// <summary>One press of the ship move two-step — byte-for-byte the game's own grid click
-    /// (<c>UnitCommandsRunner.MoveSelectedUnitToPointTB</c>): a NEW destination plants the move preview —
-    /// the destination hologram a sighted co-pilot sees, the path/cost line, and the VIRTUAL position +
-    /// facing, so aim/arc reads answer "from the planned cell, with the arrival heading" while armed
-    /// (see <see cref="StarshipAim"/>) — and returns Planted. Pressing on the SAME planted destination
-    /// runs the pinned virtual move (the game's confirm — Committed). Refusals speak the game's reason.
-    /// The game's own Esc cancel stays wired (SetVirtualMoveCommand subscribes EscHotkeyManager).</summary>
-    public static ShipMoveResult ShipMoveStep(CustomGridNodeBase node)
+    /// <summary>One press of the TB move two-step — byte-for-byte the game's own grid click
+    /// (<c>UnitCommandsRunner.MoveSelectedUnitToPointTB</c>), for EVERY unit, walker or voidship: a NEW
+    /// destination PLANTS the move preview — the holo unit / destination hologram a sighted co-pilot sees,
+    /// the path/cost line + provoke markers, and the pinned VIRTUAL position (+ arrival facing), so browsing
+    /// enemies while armed answers cover / odds / arcs "from the planned cell" (see <see cref="StarshipAim"/>;
+    /// the walker hover-sim in <c>HoloSim</c> yields to the pin, the game's own precedence) — and returns
+    /// Planted. Pressing on the SAME planted destination runs the pinned virtual move (the game's confirm:
+    /// the queued DrawMovePrediction game-command memorized it via <c>SetVirtualMoveCommand</c>, so the plant
+    /// lands a frame or two later — same latency the mouse flow has). Refusals speak the game's reason. The
+    /// game's own Esc cancel stays wired (SetVirtualMoveCommand subscribes EscHotkeyManager).</summary>
+    public static MoveStepResult MoveStep(CustomGridNodeBase node)
     {
         var unit = ActingUnit();
-        if (unit == null || node == null) return ShipMoveResult.Refused;
+        if (unit == null || node == null) return MoveStepResult.Refused;
         try
         {
+            // The game's own walker pre-check (MoveSelectedUnitToPointTB runs it before creating the command;
+            // ships skip it): never plant a preview on a cell the unit cannot stand on.
+            if (!(unit is StarshipEntity) && !WarhammerBlockManager.Instance.CanUnitStandOnNode(unit, node))
+            { Speaker.Speak(Loc.T("path.preview.occupied"), interrupt: true); return MoveStepResult.Refused; }
             unit.TryCreateMoveCommandTB(
                 new MoveCommandSettings { Destination = node.Vector3Position, DisableApproachRadius = true },
                 showMovePrediction: true, out var status);
@@ -187,24 +175,24 @@ public static class CommandDispatch
             {
                 case UnitHelper.MoveCommandStatus.SamePath:
                     UnitCommandsRunner.TryRunVirtualMoveCommand();   // publicized private — the game's own confirm
-                    return ShipMoveResult.Committed;
+                    return MoveStepResult.Committed;
                 case UnitHelper.MoveCommandStatus.NewCommandCreated:
-                    return ShipMoveResult.Planted;
+                    return MoveStepResult.Planted;
                 default:
                     Speaker.Speak(MoveFailure(status), interrupt: true);
-                    return ShipMoveResult.Refused;
+                    return MoveStepResult.Refused;
             }
         }
-        catch (Exception e) { Main.Log?.Log("ship move step failed: " + e.Message); return ShipMoveResult.Refused; }
+        catch (Exception e) { Main.Log?.Log("move step failed: " + e.Message); return MoveStepResult.Refused; }
     }
 
     /// <summary>Drop any pinned move preview synchronously — the local body of the game's Esc/right-click
     /// cancel (<c>CancelMoveCommandLocal</c>). Called before a fresh arm so a stale pin from a lapsed
     /// confirm window can never turn an arming press into an instant commit.</summary>
-    public static void ShipMoveCancelLocal()
+    public static void MoveCancelLocal()
     {
         try { UnitCommandsRunner.CancelMoveCommandLocal(); }
-        catch (Exception e) { Main.Log?.Log("ship move cancel failed: " + e.Message); }
+        catch (Exception e) { Main.Log?.Log("move cancel failed: " + e.Message); }
     }
 
     /// <summary>End the player's turn (no-op if the game won't allow it right now).</summary>
