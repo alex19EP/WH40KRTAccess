@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
+using Kingmaker.Blueprints.Root.Strings;                  // UIStrings (the weapon groups' own arc labels)
 using Kingmaker.ElementsSystem.ContextData;               // ContextData<T>
 using Kingmaker.EntitySystem.Entities;                    // StarshipEntity
 using Kingmaker.RuleSystem;                               // Rulebook
@@ -9,6 +11,7 @@ using Kingmaker.UnitLogic.Abilities;                      // AbilityData, Abilit
 using Kingmaker.UnitLogic.Enums;                          // MechanicsFeatureType.HideRealHealthInUI
 using Kingmaker.Utility;                                  // TargetWrapper
 using Kingmaker.Utility.StatefulRandom;                   // DisableStatefulRandomContext
+using Warhammer.SpaceCombat.Blueprints.Slots;             // WeaponSlotType
 
 namespace RTAccess.Combat;
 
@@ -74,6 +77,90 @@ internal static class StarshipAim
             return sb.ToString();
         }
         catch (Exception e) { Main.Log?.Log("starship aim describe failed: " + e.Message); return null; }
+    }
+
+    /// <summary>Which of OUR weapon groups can bear on <paramref name="target"/> right now — the game's own
+    /// per-weapon <c>CanTarget</c> verdict (arc + range), labelled with the weapon panel's own group words:
+    /// "Prow, Dorsal bear on it" / "no weapons bear on it". The pre-aim answer to "which battery do I arm?".</summary>
+    public static string OurArcsLine(StarshipEntity ours, StarshipEntity target)
+    {
+        try
+        {
+            if (ours?.Hull?.WeaponSlots == null || target == null) return null;
+            var labels = new List<string>();
+            foreach (var slot in ours.Hull.WeaponSlots)
+            {
+                var ad = slot?.ActiveAbility?.Data;
+                if (ad?.StarshipWeapon == null) continue;
+                if (!ad.CanTarget(new TargetWrapper(target), out _)) continue;
+                string label = GroupLabel(slot.Type);
+                if (label != null && !labels.Contains(label)) labels.Add(label);
+            }
+            return labels.Count > 0
+                ? Loc.T("spacecombat.bears", new { list = string.Join(", ", labels) })
+                : Loc.T("spacecombat.bears_none");
+        }
+        catch (Exception e) { Main.Log?.Log("our-arcs line failed: " + e.Message); return null; }
+    }
+
+    /// <summary>Which of the ENEMY's arcs we are standing in — its weapons whose <c>CanTarget</c> accepts our
+    /// ship from where both stand: "it can fire on you: fore, dorsal" / "it cannot fire on you". Derived from
+    /// the visible facing + the inspectable loadout, so no more than a sighted player reads off the screen.</summary>
+    public static string ThreatArcsLine(StarshipEntity ours, StarshipEntity enemy)
+    {
+        try
+        {
+            if (ours == null || enemy?.Hull?.WeaponSlots == null) return null;
+            var arcs = new List<string>();
+            var wrapped = new TargetWrapper(ours);
+            foreach (var slot in enemy.Hull.WeaponSlots)
+            {
+                var ad = slot?.ActiveAbility?.Data;
+                if (ad?.StarshipWeapon == null) continue;
+                if (!ad.CanTarget(wrapped, out _)) continue;
+                string word = ArcWord(slot.Type);
+                if (word != null && !arcs.Contains(word)) arcs.Add(word);
+            }
+            return arcs.Count > 0
+                ? Loc.T("spacecombat.threat_arcs", new { list = string.Join(", ", arcs) })
+                : Loc.T("spacecombat.threat_none");
+        }
+        catch (Exception e) { Main.Log?.Log("threat-arcs line failed: " + e.Message); return null; }
+    }
+
+    // Our slots speak the weapon panel's own group labels (game-localized, matching the Weapons zone);
+    // Keel has no panel group, so it gets a mod word.
+    private static string GroupLabel(WeaponSlotType type)
+    {
+        try
+        {
+            var texts = UIStrings.Instance.SpaceCombatTexts;
+            switch (type)
+            {
+                case WeaponSlotType.Prow: return texts.ProwAbilitiesGroupLabel;
+                case WeaponSlotType.Dorsal: return texts.DorsalAbilitiesGroupLabel;
+                case WeaponSlotType.Port: return texts.PortAbilitiesGroupLabel;
+                case WeaponSlotType.Starboard: return texts.StarboardAbilitiesGroupLabel;
+                case WeaponSlotType.Keel: return Loc.T("spacecombat.arc_keel");
+                default: return null;
+            }
+        }
+        catch { return null; }
+    }
+
+    // The enemy's arcs read as plain direction words (its panel labels are about OUR ship's UI, and the
+    // sector words are already in the mod's table for the shield cues).
+    private static string ArcWord(WeaponSlotType type)
+    {
+        switch (type)
+        {
+            case WeaponSlotType.Prow: return Loc.T("spacecombat.sector_fore");
+            case WeaponSlotType.Port: return Loc.T("spacecombat.sector_port");
+            case WeaponSlotType.Starboard: return Loc.T("spacecombat.sector_starboard");
+            case WeaponSlotType.Dorsal: return Loc.T("spacecombat.arc_dorsal");
+            case WeaponSlotType.Keel: return Loc.T("spacecombat.arc_keel");
+            default: return null;
+        }
     }
 
     // The game maps a starship arc failure onto HasNoLosToTarget (there is no dedicated arc reason) —

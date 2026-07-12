@@ -243,6 +243,19 @@ internal sealed class ProxyUnit : ScanItem
                 var shields = ship.Shields;
                 if (shields != null && shields.ShieldsMaxSum > 0)
                     bits.Add(Loc.T("unit.shields", new { current = shields.ShieldsSum, max = shields.ShieldsMaxSum }));
+
+                // Firing-arc awareness (space combat only): which of OUR batteries bear on this ship, and
+                // whether ITS weapons can fire on us from where both ships stand — the game's own per-weapon
+                // CanTarget verdict (arc + range), so cycling enemies doubles as picking the right battery.
+                var ours = Game.Instance?.Player?.PlayerShip;
+                if (ours != null && !ReferenceEquals(ours, ship)
+                    && RTAccess.Screens.SpaceCombatScreen.Component() != null)
+                {
+                    var bears = RTAccess.Combat.StarshipAim.OurArcsLine(ours, ship);
+                    if (bears != null) bits.Add(bears);
+                    var threat = RTAccess.Combat.StarshipAim.ThreatArcsLine(ours, ship);
+                    if (threat != null) bits.Add(threat);
+                }
             }
             return bits.Count > 0 ? string.Join(", ", bits) : null;
         }
