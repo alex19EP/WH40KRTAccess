@@ -1,8 +1,11 @@
 using Kingmaker;
-using Kingmaker.EntitySystem.Entities;                   // BaseUnitEntity, MechanicEntity
+using Kingmaker.EntitySystem;                             // DistanceToInCells (EntityHelper ext)
+using Kingmaker.EntitySystem.Entities;                   // BaseUnitEntity, MechanicEntity, UnitEntity
+using Kingmaker.Items;                                    // ItemEntityWeapon (the LOS line's ranged-preferred pick)
 using Kingmaker.Pathfinding;                              // CustomGridNodeBase
+using Kingmaker.UI.SurfaceCombatHUD;                      // AbilityTargetUIDataCache (the reticle/LOS-line hit cache)
 using Kingmaker.UnitLogic;                                // IsThreat (AttackOfOpportunityHelper ext)
-using Kingmaker.UnitLogic.Abilities;                      // AbilityData
+using Kingmaker.UnitLogic.Abilities;                      // AbilityData, AbilityTargetUIData
 using Kingmaker.UnitLogic.Abilities.Components.Patterns;  // AoEPatternHelper.GetGridNode
 using Kingmaker.Utility;                                  // TargetWrapper
 using Kingmaker.View.Covers;                              // LosCalculations
@@ -99,10 +102,148 @@ internal static class CombatReads
                 bool targetable = atk.CanTargetFromNode(node, null, new TargetWrapper(target), out int _, out var _, out var _);
                 bits.Add(targetable ? Loc.T("combat.in_range") : Loc.T("combat.out_of_range"));
             }
+
+            // The LOS-line number: the hit% a sighted player reads off the line to this enemy while hovering it
+            // (browsing the enemy IS our hover). The line hides at zero and for melee weapons — mirror that.
+            int pct = LosHitChance(me, target);
+            if (pct > 0) bits.Add(Loc.T("predict.to_hit", new { hit = pct }));
         }
         if (target.IsThreat(me)) bits.Add(Loc.T("combat.threatening"));   // does this enemy threaten my acting unit (AoO reach)
 
         return bits.Count > 0 ? string.Join(", ", bits) : null;
+    }
+
+    /// <summary>
+    /// The number on the game's LOS line from ME to TARGET — a faithful port of
+    /// <c>LineOfSightVM.UpdateHitChance</c>, answered from my DESIRED position (so it tracks the hover-sim and the
+    /// Backspace-planted holo unit exactly as the on-screen lines do): the real hit-with-avoidance chance from the
+    /// current weapon's ability (best-shooting-position + the reticle cache; scatter weapons via the oriented
+    /// pattern, as the VM does), or with no weapon ability the line's flat cover mapping (none 80 / half 50 /
+    /// full 10 / no-LOS 0). Returns −1 when the game would draw NO line at all (melee weapon, charge ability) and
+    /// 0 when the line exists but hides (no LOS / can't target from here) — callers speak only positive numbers.
+    /// </summary>
+    public static int LosHitChance(BaseUnitEntity me, BaseUnitEntity target)
+    {
+        try
+        {
+            if (me == null || target == null || me == target) return -1;
+            var weapon = RangedPreferredWeapon(me);
+            var ability = Game.Instance?.SelectedAbilityHandler?.Ability ?? weapon?.Abilities.FirstOrDefault()?.Data;
+            if (weapon?.Blueprint.IsMelee ?? false) return -1;   // the game draws no LOS line for a melee weapon
+            if (ability != null && ability.IsCharge) return -1;  // ...nor for a charge ability
+            var vpc = Game.Instance?.VirtualPositionController;
+            Vector3 from = vpc != null ? vpc.GetDesiredPosition(me) : me.Position;
+
+            if (ability == null)
+            {
+                // No weapon ability: the line's flat cover→chance mapping (LineOfSightVM.UpdateHitChance).
+                switch (LosCalculations.GetWarhammerLos(from, me.SizeRect, target).CoverType)
+                {
+                    case LosCalculations.CoverType.None: return 80;
+                    case LosCalculations.CoverType.Half: return 50;
+                    case LosCalculations.CoverType.Full: return 10;
+                    default: return 0;
+                }
+            }
+
+            var fromNode = AoEPatternHelper.GetGridNode(from);
+            var tw = new TargetWrapper(target);
+            if (fromNode == null || !ability.CanTargetFromNode(fromNode, null, tw, out int _, out var _, out var _))
+                return 0;
+            var best = ability.GetBestShootingPositionForDesiredPosition(tw) ?? fromNode;
+            AbilityTargetUIData ui;
+            if (ability.IsScatter && !ability.IsMelee)
+            {
+                // Scatter sprays a pattern — per-target chance comes from the oriented pattern, not the pair cache.
+                var targetNode = AoEPatternHelper.GetGridNode(target.Position);
+                var pattern = ability.GetPatternSettings().GetOrientedPattern(ability, best, targetNode);
+                var list = new List<AbilityTargetUIData>();
+                ability.GatherAffectedTargetsData(pattern, best.Vector3Position, tw, in list, target);
+                ui = list.FirstOrDefault(t => t.Target == target);
+            }
+            else
+            {
+                ui = AbilityTargetUIDataCache.Instance.GetOrCreate(ability, target, best.Vector3Position);
+            }
+            return Mathf.RoundToInt(ui.HitWithAvoidanceChance);
+        }
+        catch (Exception e) { Main.Log?.Error("CombatReads.LosHitChance failed: " + e); return -1; }
+    }
+
+    /// <summary>
+    /// The spoken fan of LOS lines — every visible in-combat enemy, nearest first: name, distance in tiles, the
+    /// line's hit% (when the game would show one), and the enemy's cover badge; "no line of sight" when there is
+    /// none. Anchored where the game anchors the lines: MY DESIRED position (hover-sim / planted holo unit / real
+    /// tile), so the sweep answers "from the plan" exactly as the on-screen fan does. Caps at
+    /// <paramref name="max"/> lines then counts the rest. Null when no visible enemies (caller speaks its own
+    /// no-enemies line).
+    /// </summary>
+    public static string LosSweep(BaseUnitEntity me, int max = 8)
+    {
+        try
+        {
+            if (me == null) return null;
+            var state = Game.Instance?.State;
+            if (state == null) return null;
+            var vpc = Game.Instance?.VirtualPositionController;
+            Vector3 anchor = vpc != null ? vpc.GetDesiredPosition(me) : me.Position;
+
+            var foes = new List<BaseUnitEntity>();
+            foreach (var o in (System.Collections.IEnumerable)state.AllBaseAwakeUnits)
+            {
+                if (!(o is BaseUnitEntity u) || u == me) continue;
+                if (!u.IsInCombat || u.LifeState.IsDead || !u.IsPlayerEnemy || !u.IsVisibleForPlayer) continue;
+                foes.Add(u);
+            }
+            if (foes.Count == 0) return null;
+            foes.Sort((a, b) => (a.Position - anchor).sqrMagnitude.CompareTo((b.Position - anchor).sqrMagnitude));
+
+            var sb = new System.Text.StringBuilder();
+            int spoken = 0;
+            foreach (var u in foes)
+            {
+                if (spoken == max)
+                {
+                    sb.Append(", ").Append(Loc.T("vantage.more", new { count = foes.Count - max }));
+                    break;
+                }
+                int tiles = u.DistanceToInCells(anchor, me.SizeRect);
+                string tileword = Loc.T(tiles == 1 ? "path.preview.tile_one" : "path.preview.tile_many");
+                var cover = CoverTo(anchor, me, u);
+                string line;
+                if (cover == LosCalculations.CoverType.Invisible)
+                {
+                    line = Loc.T("vantage.los_line_hidden", new { name = u.CharacterName, tiles, tileword });
+                }
+                else
+                {
+                    string coverWord = cover == LosCalculations.CoverType.Half ? Loc.T("cover.half")
+                        : cover == LosCalculations.CoverType.Full ? Loc.T("cover.full")
+                        : Loc.T("cover.none");
+                    int pct = LosHitChance(me, u);
+                    line = pct > 0
+                        ? Loc.T("vantage.los_line", new { name = u.CharacterName, tiles, tileword, pct, cover = coverWord })
+                        : Loc.T("vantage.los_line_nopct", new { name = u.CharacterName, tiles, tileword, cover = coverWord });
+                }
+                if (sb.Length > 0) sb.Append(". ");
+                sb.Append(line);
+                spoken++;
+            }
+            return sb.ToString();
+        }
+        catch (Exception e) { Main.Log?.Error("CombatReads.LosSweep failed: " + e); return null; }
+    }
+
+    /// <summary>The weapon whose ability prices the LOS line — the game prefers a RANGED hand over the primary
+    /// (LineOfSightVM.TryGetCurrentWeapon), so a sword-and-pistol unit reads the pistol's numbers.</summary>
+    private static ItemEntityWeapon RangedPreferredWeapon(BaseUnitEntity u)
+    {
+        var set = (u as UnitEntity)?.Body.CurrentHandsEquipmentSet;
+        var w1 = set?.PrimaryHand.MaybeWeapon;
+        var w2 = set?.SecondaryHand.MaybeWeapon;
+        if (w1?.Blueprint.IsRanged ?? false) return w1;
+        if (w2?.Blueprint.IsRanged ?? false) return w2;
+        return w1;
     }
 
     /// <summary>The "if I stood on this cell" tactical read for <paramref name="me"/> — the holographic positional

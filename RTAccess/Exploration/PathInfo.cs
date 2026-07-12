@@ -82,12 +82,53 @@ internal static class PathInfo
         // Attack-of-opportunity warning: the exact call the game's own move prediction runs. Leaving an enemy's
         // threatened tile provokes; the API self-filters to combat, so out of combat it yields nothing. Name the
         // attacker(s) so the player can weigh the risk before committing (a second press still commits).
-        var attackers = unit.CalculateAttackOfOpportunity(PathNodes(dest, dict))
+        var nodes = PathNodes(dest, dict);
+        var attackers = unit.CalculateAttackOfOpportunity(nodes)
                             .Select(a => a.Attacker).Where(a => a != null).Distinct().ToList();
         if (attackers.Count > 0)
             line += " " + Loc.T("path.preview.provokes", new { names = string.Join(", ", attackers.Select(a => a.CharacterName)) });
 
+        line += HazardWarning(nodes, dest);
         return line;
+    }
+
+    /// <summary>
+    /// Hazard zones on the walk. The game marks nothing on the path line itself — a sighted player simply SEES the
+    /// painted area effects (fire patches, warp rifts, gas clouds) under it — so this is the spoken translation:
+    /// " Ends in X." when the destination cell sits inside a hazard (the worst case — you finish the turn in it),
+    /// " Crosses Y." when only intermediate cells do. Same per-cell test the zones themselves run
+    /// (<c>AreaEffectEntity.Contains(node)</c>), hazards only (<see cref="ProxyAreaEffect.IsHazard"/> — ally-only
+    /// buff zones stay silent), fog-gated like the scanner's proxies, names deduped. The ORIGIN cell is skipped:
+    /// the zone you already stand in is not news the path preview owes you. Returns "" when the walk is clean.
+    /// </summary>
+    private static string HazardWarning(List<GraphNode> nodes, CustomGridNodeBase dest)
+    {
+        var crosses = new List<string>();
+        var endsIn = new List<string>();
+        var effects = Game.Instance?.State?.AreaEffects;
+        if (effects == null) return "";
+        foreach (var ae in effects)
+        {
+            if (ae == null || !ae.IsInGame || ae.IsEnded || ae.IsInFogOfWar) continue;
+            if (!ProxyAreaEffect.IsHazard(ae)) continue;
+            string name = ae.Context?.SourceAbility?.Name;
+            if (string.IsNullOrEmpty(name)) name = Loc.T("areaeffect.hazard");
+            if (dest != null && ae.Contains(dest))
+            {
+                if (!endsIn.Contains(name)) endsIn.Add(name);
+                continue;   // "ends in" is the stronger fact; don't also report it as crossed
+            }
+            for (int i = 1; i < nodes.Count; i++)   // 1: skip the origin cell
+                if (nodes[i] is CustomGridNodeBase n && ae.Contains(n))
+                {
+                    if (!crosses.Contains(name)) crosses.Add(name);
+                    break;
+                }
+        }
+        string warning = "";
+        if (crosses.Count > 0) warning += " " + Loc.T("path.preview.crosses", new { names = string.Join(", ", crosses) });
+        if (endsIn.Count > 0) warning += " " + Loc.T("path.preview.ends_in", new { names = string.Join(", ", endsIn) });
+        return warning;
     }
 
     /// <summary>

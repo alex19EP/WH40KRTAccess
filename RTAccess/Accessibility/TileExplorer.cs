@@ -255,8 +255,12 @@ internal static class TileExplorer
     /// <summary>
     /// V — the holographic vantage read: for the acting unit, the cover / in-range / threat it would have if it stood
     /// on the CURSOR tile (the "if I stood here" tactical preview a sighted player reads off the move ghost), computed
-    /// as a pure read from the candidate cell (<see cref="RTAccess.Accessibility.CombatReads.VantageFrom"/>). Combat
-    /// only; out of combat or with no acting unit it says so. Lazy-plants like the other cursor verbs.
+    /// as a pure read from the candidate cell (<see cref="RTAccess.Accessibility.CombatReads.VantageFrom"/>) —
+    /// followed for surface units by the spoken fan of LOS lines
+    /// (<see cref="RTAccess.Accessibility.CombatReads.LosSweep"/>): every visible enemy, nearest first, with
+    /// distance, the line's hit% and its cover badge, answered from the DESIRED position exactly as the on-screen
+    /// lines are (so it tracks the hover-sim / planted holo unit). Combat only; out of combat or with no acting
+    /// unit it says so. Lazy-plants like the other cursor verbs.
     /// </summary>
     public static void ReadVantage()
     {
@@ -275,7 +279,13 @@ internal static class TileExplorer
             var line = me is StarshipEntity ship
                 ? RTAccess.Exploration.ShipPathInfo.Preview(ship, MapCursor.Node, out _)
                 : CombatReads.VantageFrom(MapCursor.Position, me);
-            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("vantage.no_enemies") : line, interrupt: true);
+            string text = string.IsNullOrWhiteSpace(line) ? Loc.T("vantage.no_enemies") : line;
+            if (!(me is StarshipEntity))
+            {
+                var sweep = CombatReads.LosSweep(me);
+                if (!string.IsNullOrWhiteSpace(sweep)) text += ". " + sweep + ".";
+            }
+            Speaker.Speak(text, interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.ReadVantage failed: " + e); }
     }

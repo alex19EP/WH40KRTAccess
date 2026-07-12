@@ -104,7 +104,8 @@ internal sealed class ProxyAreaEffect : ScanItem
     private static string Classify(AreaEffectEntity ae)
         => IsHazard(ae) ? ScanTaxonomy.Hazards : ScanTaxonomy.BuffZones;
 
-    private static bool IsHazard(AreaEffectEntity ae)
+    // Also the path preview's hazard filter (PathInfo.HazardWarning) — one definition of "dangerous zone".
+    internal static bool IsHazard(AreaEffectEntity ae)
     {
         var bp = ae.Blueprint;
         if (bp == null) return true;
