@@ -32,9 +32,9 @@ namespace RTAccess.Exploration;
 /// Officers' Deck), so there is no sub-grid resample. Rebuilt when the area part changes; the graph streams in
 /// after the part key, so the build self-latches on <see cref="Ready"/> and retries on a cooldown while empty.
 ///
-/// Consumers: X's "where am I" appends the room; V / Shift+V cycle the current room's exits (planting the shared
-/// cursor on the opening); an announce-on-room-change watches the scan reference (cursor,
-/// else leader) with a short dwell so a boundary graze doesn't flap.
+/// Consumers: X's "where am I" appends the room; V / Shift+V review the current room's ways out (doors,
+/// transitions, and the bare openings here — see Scanner.CycleExit); an announce-on-room-change watches the scan
+/// reference (cursor, else leader) with a short dwell so a boundary graze doesn't flap.
 /// </summary>
 internal static class RoomMap
 {
@@ -61,16 +61,32 @@ internal static class RoomMap
 
     /// <summary>One walkable opening between two rooms — a cluster of grid-boundary cells (a wide doorway is one
     /// exit; two separate doorways between the same pair are two). <see cref="Position"/> is the opening centre,
-    /// snapped to the walkable grid, and is what the exit-cycle plants the shared cursor on.</summary>
+    /// snapped to the walkable grid — the cursor target; <see cref="Boundary"/> is the full threshold (every
+    /// boundary-cell midpoint of the cluster), so distance/bearing can read the nearest PART of a wide opening.</summary>
     public sealed class Exit
     {
         public Vector3 Position;
+        public Vector3[] Boundary;
         public Room To;
+    }
+
+    /// <summary>Is this exit object part of the CURRENT map? Selection liveness for the V cycle — a map
+    /// rebuild (area/part change) orphans old Exit objects, and a held selection must go stale with them.
+    /// A handful of rooms × exits, so a plain scan is fine (keypress work).</summary>
+    public static bool ContainsExit(Exit exit)
+    {
+        if (exit == null) return false;
+        foreach (var room in _rooms)
+            foreach (var e in room.Exits)
+                if (ReferenceEquals(e, exit)) return true;
+        return false;
     }
 
     private static string _builtFor;   // "areaName|partName" the grid was built for
     private static int[] _label;       // per-cell room index (-1 = not walkable / dropped), row-major [z*_w+x]
     private static float[] _cellY;     // per-cell surface height (for the RoomAt level guard)
+    private static float[] _wx, _wz;   // per-cell world XZ (walkable cells only — read off the graph at build)
+    private static float _cell;        // grid cell size (m) as built
     private static int _w, _h;
     private static readonly List<Room> _rooms = new List<Room>();
 
@@ -103,7 +119,69 @@ internal static class RoomMap
     }
 
     public static string Describe(Room room)
-        => Loc.T("where.room", new { id = room.Id }) + ", " + Loc.T("room.class." + room.ClassKey);
+    {
+        string s = Loc.T("where.room", new { id = room.Id }) + ", " + Loc.T("room.class." + room.ClassKey);
+        // How much of the room the explored layer still hides — the darkened patches a sighted player sees on
+        // the map, so a blind player knows whether a room is worth re-sweeping. Silent when fully explored
+        // (no "0% unexplored" noise); the bare word at 100% (WrathAccess parity).
+        int pct = UnexploredPercent(room);
+        if (pct >= 100) return s + ", " + Loc.T("room.unexplored");
+        if (pct > 0) return s + ", " + Loc.T("room.unexplored_pct", new { pct });
+        return s;
+    }
+
+    /// <summary>How much of a room the game's explored layer still hides, as the SPOKEN percentage: rounded to
+    /// tens (0, 10 … 100 — grid resolution doesn't honestly support finer), so callers comparing against 100
+    /// match what <see cref="Describe"/> says.</summary>
+    public static int UnexploredPercent(Room room)
+        => Mathf.RoundToInt(UnexploredFraction(room) * 10f) * 10;
+
+    // Room.Id -> (fraction, cache expiry). Fraction needs a full-grid pass, so it's cached briefly; callers are
+    // announcements (key presses, room-change events), never frame loops.
+    private static readonly Dictionary<int, KeyValuePair<float, float>> _unexplored
+        = new Dictionary<int, KeyValuePair<float, float>>();
+
+    private static float UnexploredFraction(Room room)
+    {
+        if (room == null || _label == null) return 0f;
+        if (_unexplored.TryGetValue(room.Id, out var hit) && Time.unscaledTime < hit.Value)
+            return hit.Key;
+        if (!FogExplored.Ensure()) return 0f; // no fog in this area → everything reads explored
+        int label = room.Id - 1; // ids are the label indices, 1-based
+        int total = 0, unexp = 0;
+        for (int gz = 0; gz < _h; gz++)
+            for (int gx = 0; gx < _w; gx++)
+            {
+                int i = gz * _w + gx;
+                if (_label[i] != label) continue;
+                total++;
+                if (!FogExplored.IsExplored(CellCenter(gx, gz))) unexp++;
+            }
+        float f = total > 0 ? (float)unexp / total : 0f;
+        _unexplored[room.Id] = new KeyValuePair<float, float>(f, Time.unscaledTime + 2f);
+        return f;
+    }
+
+    // ---- the raw grid, for derived overlays (FrontierModel) ----
+
+    /// <summary>The room-label grid: per-cell room index (-1 = not walkable / dropped), row-major [z*w+x], plus
+    /// the per-cell surface height. False until a map is built.</summary>
+    internal static bool TryGetGrid(out int[] label, out float[] cellY, out int w, out int h)
+    {
+        label = _label; cellY = _cellY; w = _w; h = _h;
+        return _label != null;
+    }
+
+    /// <summary>Grid cell size in metres, as built (0 when no map).</summary>
+    internal static float CellSize => _cell;
+
+    /// <summary>World centre of a grid cell. Meaningful only for walkable (label ≥ 0) cells — positions were
+    /// read off the live graph at build time and unwalkable cells hold zeroes.</summary>
+    internal static Vector3 CellCenter(int gx, int gz)
+    {
+        int i = gz * _w + gx;
+        return new Vector3(_wx[i], _cellY[i], _wz[i]);
+    }
 
     // ---- lifecycle ----
 
@@ -123,6 +201,7 @@ internal static class RoomMap
             _rooms.Clear();
             _retryCooldown = 0;
             ResetAnnounce();
+            DropDerived();
         }
         // The grid graph STREAMS IN after the part key changes — an immediate build can see an empty graph. Success
         // latches via Ready; until then, retry on a cooldown (an empty pass is cheap). A thrown build backs off.
@@ -139,6 +218,7 @@ internal static class RoomMap
             catch (Exception e)
             {
                 _label = null; _rooms.Clear();
+                DropDerived();
                 _retryCooldown = 300; // a real failure: back off; the next part change resets
                 Main.Log?.Warning("[rooms] build failed: " + e.Message);
             }
@@ -154,6 +234,17 @@ internal static class RoomMap
         _rooms.Clear();
         _retryCooldown = 0;
         ResetAnnounce();
+        DropDerived();
+    }
+
+    // Derived overlays hang off the built grid — drop them whenever the grid drops, so the frontier's cached
+    // blobs can't resolve at a previous area's coordinates and the per-room fraction cache can't answer for a
+    // same-numbered room in the new area.
+    private static void DropDerived()
+    {
+        _wx = null; _wz = null; _cell = 0f;
+        _unexplored.Clear();
+        FrontierModel.Invalidate();
     }
 
     // ---- announce on room change (dwell-gated so a boundary graze doesn't flap) ----
@@ -566,7 +657,7 @@ internal static class RoomMap
         for (int i = 0; i < n; i++)
             _label[i] = _label[i] >= 0 && remap.ContainsKey(_label[i]) ? remap[_label[i]] : -1;
 
-        _w = W; _h = D; _cellY = cellY;
+        _w = W; _h = D; _cellY = cellY; _wx = wx; _wz = wz; _cell = cell;
         BuildExits(W, D, cell, wx, wz, cellY, fence);
     }
 
@@ -650,8 +741,9 @@ internal static class RoomMap
                 var pos = sum / g.Count;
                 var node = NavmeshProbe.NodeAt(pos);
                 if (node != null) pos = node.Vector3Position; // snap the opening centre onto the walkable grid
-                ra.Exits.Add(new Exit { Position = pos, To = rb });
-                rb.Exits.Add(new Exit { Position = pos, To = ra });
+                var boundary = g.ToArray(); // the full threshold — ProxyRoomExit reads bearing to its nearest part
+                ra.Exits.Add(new Exit { Position = pos, Boundary = boundary, To = rb });
+                rb.Exits.Add(new Exit { Position = pos, Boundary = boundary, To = ra });
             }
         }
     }

@@ -39,32 +39,41 @@ namespace RTAccess.Exploration;
 /// tile explorer names the hazard on the cursor tile. I = interact with selection (an object; a landmark → walk to
 /// it; otherwise the object at the cursor); O = re-announce the current
 /// selection; Home/Slash = plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y
-/// inspect the cursor / the selection (see <see cref="Inspect"/>).
+/// inspect the cursor / the selection (see <see cref="Inspect"/>). V / Shift+V = cycle the current room's ways
+/// out — doors, area transitions, and uncovered geometric openings, merged into one distance-sorted review that
+/// drives the shared selection (see <see cref="CycleExit"/>).
 /// </summary>
 internal static class Scanner
 {
+    // Where a browse category's items come from: most filter the WorldModel registry by a taxonomy predicate;
+    // two are special-sourced lists with no backing registry entity (see MarkerList / FrontierList).
+    private enum Source { Registry, Markers, Frontier }
+
     // The browse categories cycled by Ctrl+PageUp/Down. Most filter the WorldModel registry by a taxonomy predicate;
-    // the "points of interest" category is instead marker-sourced (Marker == true) — the area-wide local-map pins
-    // (objective / POI / important / loot) that have no interaction part to bin on. Area exits appear as their real
+    // the "points of interest" category is instead marker-sourced — the area-wide local-map pins
+    // (objective / POI / important / loot) that have no interaction part to bin on — and the "unexplored space"
+    // category is frontier-sourced (fog-edge openings; see FrontierModel). Area exits appear as their real
     // world objects under "taxonomy.exits" (activatable), so there is no separate marker-exits category.
-    private static readonly (string Key, bool Marker, Func<ScanItem, bool> Pred)[] Categories =
+    private static readonly (string Key, Source Src, Func<ScanItem, bool> Pred)[] Categories =
     {
-        ("taxonomy.units.party",    false, it => it.Primary == ScanTaxonomy.UnitsParty),
-        ("taxonomy.units.enemies",  false, it => it.Primary == ScanTaxonomy.UnitsEnemies),
-        ("taxonomy.units.neutrals", false, it => it.Primary == ScanTaxonomy.UnitsNeutrals),
-        ("taxonomy.containers",     false, it => it.HasNode(ScanTaxonomy.Containers)),
-        ("taxonomy.corpses",        false, it => it.HasNode(ScanTaxonomy.Corpses)),   // dead-with-loot bodies (I loots)
-        ("taxonomy.doors",          false, it => it.HasNode(ScanTaxonomy.Doors)),
-        ("taxonomy.exits",          false, it => it.HasNode(ScanTaxonomy.Exits)),
-        ("taxonomy.poi",            true,  null),   // area-wide local-map landmark pins (travel-to; see MarkerList)
-        ("taxonomy.searchpoints",   false, it => it.HasNode(ScanTaxonomy.SearchPoints)),
-        ("taxonomy.traps",          false, it => it.HasNode(ScanTaxonomy.Traps)),
-        ("taxonomy.mechanisms",     false, it => it.HasNode(ScanTaxonomy.Mechanisms)),
+        ("taxonomy.units.party",    Source.Registry, it => it.Primary == ScanTaxonomy.UnitsParty),
+        ("taxonomy.units.enemies",  Source.Registry, it => it.Primary == ScanTaxonomy.UnitsEnemies),
+        ("taxonomy.units.neutrals", Source.Registry, it => it.Primary == ScanTaxonomy.UnitsNeutrals),
+        ("taxonomy.containers",     Source.Registry, it => it.HasNode(ScanTaxonomy.Containers)),
+        ("taxonomy.corpses",        Source.Registry, it => it.HasNode(ScanTaxonomy.Corpses)),   // dead-with-loot bodies (I loots)
+        ("taxonomy.doors",          Source.Registry, it => it.HasNode(ScanTaxonomy.Doors)),
+        ("taxonomy.exits",          Source.Registry, it => it.HasNode(ScanTaxonomy.Exits)),
+        ("taxonomy.poi",            Source.Markers,  null),   // area-wide local-map landmark pins (travel-to; see MarkerList)
+        ("taxonomy.searchpoints",   Source.Registry, it => it.HasNode(ScanTaxonomy.SearchPoints)),
+        ("taxonomy.traps",          Source.Registry, it => it.HasNode(ScanTaxonomy.Traps)),
+        ("taxonomy.mechanisms",     Source.Registry, it => it.HasNode(ScanTaxonomy.Mechanisms)),
         // No "scenery" category: a map object with no live interaction / exit / marker is no longer scannable
         // (see ProxyMapObject.IsScannable) and NodeSet has no Scenery fallback, so nothing produces that node.
         // Real interactions (incl. bark/examine volumes) land in their own bucket — bark → Mechanisms.
-        ("taxonomy.hazards",        false, it => it.HasNode(ScanTaxonomy.Hazards)),
-        ("taxonomy.buffzones",      false, it => it.HasNode(ScanTaxonomy.BuffZones)),
+        ("taxonomy.hazards",        Source.Registry, it => it.HasNode(ScanTaxonomy.Hazards)),
+        ("taxonomy.buffzones",      Source.Registry, it => it.HasNode(ScanTaxonomy.BuffZones)),
+        // Last so the established category order is untouched: fog-edge openings where exploration can continue.
+        ("taxonomy.unexplored",     Source.Frontier, null),
     };
 
     // Party/Enemies/Neutrals/Objects come from the WorldModel snapshot (units + reachable interactables). Area
@@ -75,8 +84,6 @@ internal static class Scanner
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
-    private static int _exitIndex = -1;     // current room-exit cycle position (reset when the room changes)
-    private static RoomMap.Room _exitRoom;  // the room the exit cycle is scoped to
 
     // ---- registered action entry points (InputCategory.Exploration; see InputBindings.RegisterDefaults) ----
     // Each is wired to an InputAction so the dev harness /input can drive it and the framework's chord shadowing
@@ -338,60 +345,122 @@ internal static class Scanner
         Speak(parts.Count > 0 ? string.Join(", ", parts) : Loc.T("where.unknown"));
     }
 
-    // V / Shift+V: cycle the current room's exits (doorway openings to neighbouring rooms). Speaks
-    // "Exit to Room N, class" + bearing/distance and plants the shared cursor on the opening so Backspace walks the
-    // party there. The room is resolved from the scan origin (planted cursor, else anchor); the cycle resets when
-    // that room changes. See RTAccess.Exploration.RoomMap.
+    // A door/transition item within this of a geometric opening COVERS it (the thing is the exit); also the
+    // radius that resolves a covered opening's destination for a door's "leads to" tail. ~2 tiles.
+    private const float ExitCoverSq = 2.5f * 2.5f;
+
+    // V / Shift+V: cycle everything that leads OUT of the current room — door and area-transition items in (or
+    // adjacent to) the room, plus the bare geometric openings no such item covers (RoomMap exits; a doorway with
+    // a door in it cycles as the DOOR — it names, opens, and travels, so a duplicate bare opening is noise).
+    // The target becomes the shared review selection like any other cycle: O re-announces it, I opens the door /
+    // takes the transition, Home/Slash plants the cursor, Backspace then walks. The cursor is NEVER moved
+    // implicitly (the old auto-plant silently flipped ScanFrom for every later scanner action). The room resolves
+    // from the scan origin (planted cursor, else anchor) — review the ways out of the room you are LOOKING at —
+    // and candidates are distance-sorted each press, continuing from the current selection. Mirrors WrathAccess's
+    // DoCycleRoomExits. See RTAccess.Exploration.RoomMap.
     private static void CycleExit(int dir)
     {
         if (!RoomMap.Ready) { Speak(Loc.T("scan.no_rooms")); return; }
-        // Scope the cycle to the room the PARTY is in — a stable origin, so re-planting the cursor on an exit each
-        // press (below) doesn't re-resolve the room to a boundary and reset the cycle. Distance is from there too.
-        var anchor = Anchor();
-        var origin = anchor != null ? Geo.Live(anchor) : ScanFrom();
-        var room = RoomMap.RoomAt(origin);
-        if (room == null || room.Exits.Count == 0) { Speak(Loc.T("scan.no_exits")); return; }
-        if (!ReferenceEquals(room, _exitRoom)) { _exitRoom = room; _exitIndex = -1; }
-        var exits = room.Exits;
-        _exitIndex = Wrap(_exitIndex + dir, exits.Count);
-        var ex = exits[_exitIndex];
-        MapCursor.Set(ex.Position); // plant so cursor.move_to (Backspace) walks the party to the opening
-        // Parity gate (main-HUD audit L4): a wholly-unexplored destination room's id/class must not leak — degrade
-        // to the class-less "unexplored" line (centroid probe; a partially explored destination keeps its class,
-        // which the sighted map's explored layout already reveals).
-        string destination = FogProbe.Classify(ex.To.Centroid) == FogProbe.FogState.NeverSeen
-            ? Loc.T("exit.to_unexplored")
-            : Loc.T("exit.to_room", new { room = RoomMap.Describe(ex.To) });
-        // Audit #2 (second half): when the opening coincides with an area-transition object, name where it
-        // leads — the destination title the Exits category now resolves — so the V cycle carries the same
-        // decision-critical datum without a category switch. The proxy's own gate (revealed + awareness)
-        // rides along via IsVisible.
-        var transitionName = NearbyExitName(ex.Position);
-        string line = destination
-            + (transitionName != null ? ", " + transitionName : "")
-            + ", " + RTAccess.Accessibility.InteractableDescriber.DirectionAndDistance(origin, ex.Position)
-            + ", " + Loc.T("nav.position", new { index = _exitIndex + 1, count = exits.Count });
-        Speak(line);
+        var refPos = ScanFrom();
+        var room = RoomMap.RoomAt(refPos);
+        if (room == null) { Speak(Loc.T("scan.no_exits")); return; }
+
+        // Door / area-transition items in (or adjacent to) this room — probe around the thing, since a closed
+        // door's cells can be cut out of the walkable grid and resolve to either side or nothing. Reveal-latched
+        // (IsVisible), same as the category browse, so an undiscovered transition never leaks.
+        var things = new List<ScanItem>();
+        foreach (var it in WorldModel.Items)
+        {
+            if (it == null || !it.IsVisible) continue;
+            if (!it.HasNode(ScanTaxonomy.Doors) && !it.HasNode(ScanTaxonomy.Exits)) continue;
+            if (InOrAdjacentTo(it.Position, room)) things.Add(it);
+        }
+
+        var list = new List<ScanItem>(things);
+        foreach (var exit in room.Exits)
+        {
+            bool covered = false;
+            foreach (var t in things)
+            {
+                float dx = t.Position.x - exit.Position.x, dz = t.Position.z - exit.Position.z;
+                if (dx * dx + dz * dz < ExitCoverSq) { covered = true; break; }
+            }
+            if (!covered) list.Add(new ProxyRoomExit(exit));
+        }
+        if (list.Count == 0) { Speak(Loc.T("scan.no_exits")); return; }
+        list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
+
+        int idx = ExitIndexOfSelected(list);
+        idx = idx < 0 ? (dir >= 0 ? 0 : list.Count - 1) : Wrap(idx + dir, list.Count);
+        var item = list[idx];
+        _selectedKey = item.Key;
+
+        // A bare opening announces its destination itself ("Exit to Room N…"); a door or transition speaks the
+        // THING, so append where it leads — fog-gated like the openings (main-HUD audit L4).
+        string line = item.Describe(refPos);
+        if (!(item is ProxyRoomExit))
+        {
+            var dest = ExitDestination(item.Position, room);
+            if (dest != null)
+                line += ", " + (FogProbe.Classify(dest.Centroid) == FogProbe.FogState.NeverSeen
+                    ? Loc.T("exit.leads_to_unexplored")
+                    : Loc.T("exit.leads_to", new { room = RoomMap.Describe(dest) }));
+        }
+        Speak(line + ", " + Loc.T("nav.position", new { index = idx + 1, count = list.Count }));
     }
 
-    // The nearest visible area-transition scan item within ~2 tiles of a room-exit opening, by name — the
-    // destination title InteractableDescriber.ResolveName resolves for the Exits category (audit #2). Null
-    // when the opening is a plain doorway (no transition object) or the transition isn't revealed yet.
-    private static string NearbyExitName(Vector3 pos)
+    // The V cycle's continuation: real items match by key identity (the standard rule), but bare openings match
+    // by POSITION — the two sides of one threshold hold DISTINCT Exit objects at the same point, and RoomAt on a
+    // boundary can resolve to either room, so an identity match would restart the cycle whenever the room flips.
+    private static int ExitIndexOfSelected(List<ScanItem> list)
     {
-        try
+        if (_selectedKey == null) return -1;
+        for (int i = 0; i < list.Count; i++)
         {
-            ScanItem best = null;
-            float bestSq = 7.3f; // (2 tiles ≈ 2.7 m)²
-            foreach (var it in WorldModel.Items)
-            {
-                if (it == null || !it.IsVisible || !it.HasNode(ScanTaxonomy.Exits)) continue;
-                float sq = (it.Position - pos).sqrMagnitude;
-                if (sq < bestSq) { bestSq = sq; best = it; }
-            }
-            return best?.Name;
+            if (ReferenceEquals(list[i].Key, _selectedKey)) return i;
+            if (_selectedKey is RoomMap.Exit prev && list[i].Key is RoomMap.Exit cur
+                && (cur.Position - prev.Position).sqrMagnitude < 0.05f) return i;
         }
-        catch { return null; }
+        return -1;
+    }
+
+    // Is a thing's position in (or within one probe step of) the room? A closed door's own cells can be cut out
+    // of the walkable grid, so its position may resolve to no room / the far side — probe the four cardinal
+    // offsets too, so a door on this room's boundary counts as one of its exits.
+    private static bool InOrAdjacentTo(Vector3 p, RoomMap.Room room)
+    {
+        for (int k = 0; k < 5; k++)
+        {
+            var probe = p;
+            if (k == 1) probe.x += 1.5f; else if (k == 2) probe.x -= 1.5f;
+            else if (k == 3) probe.z += 1.5f; else if (k == 4) probe.z -= 1.5f;
+            if (RoomMap.RoomAt(probe) == room) return true;
+        }
+        return false;
+    }
+
+    /// <summary>The room on the far side of a door/transition item in the V cycle: the covered geometric
+    /// opening's destination when one is nearby, else probe around the thing — a CLOSED door can cut the
+    /// walkable grid, so no Exit record exists there. Null when nothing resolves (an area transition — the
+    /// map just ends).</summary>
+    private static RoomMap.Room ExitDestination(Vector3 p, RoomMap.Room from)
+    {
+        foreach (var exit in from.Exits)
+        {
+            float dx = exit.Position.x - p.x, dz = exit.Position.z - p.z;
+            if (dx * dx + dz * dz < ExitCoverSq) return exit.To;
+        }
+        for (int radius = 0; radius < 2; radius++)
+            for (int k = 0; k < 4; k++)
+            {
+                var probe = p;
+                float d = radius == 0 ? 1.5f : 2.5f;
+                if (k == 0) probe.x += d; else if (k == 1) probe.x -= d;
+                else if (k == 2) probe.z += d; else probe.z -= d;
+                var r = RoomMap.RoomAt(probe);
+                if (r != null && r != from) return r;
+            }
+        return null;
     }
 
     // Is the loaded area part flagged indoors? Read directly from the publicized blueprint IndoorType (any value
@@ -480,8 +549,9 @@ internal static class Scanner
     private static List<ScanItem> CategoryList(int categoryIndex, Vector3 refPos)
     {
         var cat = Categories[categoryIndex];
-        // The points-of-interest category is area-wide local-map pins, not WorldModel entities (see MarkerList).
-        if (cat.Marker) return MarkerList(refPos);
+        // Two categories aren't WorldModel entities: local-map pins and fog-frontier openings (special-sourced).
+        if (cat.Src == Source.Markers) return MarkerList(refPos);
+        if (cat.Src == Source.Frontier) return FrontierList(refPos);
 
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Items)
@@ -538,6 +608,20 @@ internal static class Scanner
             if (MarkerHidden(m)) continue;
             list.Add(new ProxyMarker(m));
         }
+        list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
+        return list;
+    }
+
+    // The "unexplored space" category: frontier blobs — openings where walkable never-seen ground borders explored
+    // ground (see FrontierModel) — sourced from the frontier cache, not the WorldModel registry. Refresh is
+    // TTL-cached, so the full-grid recompute runs at most once per burst of presses (key-press work, mirroring
+    // WrathAccess's unexplored cycle); wrappers are fresh each press but key on the STABLE blob object, so the
+    // selection survives rebuilds like every other category. No fog gate — the blobs ARE the fog edge.
+    private static List<ScanItem> FrontierList(Vector3 refPos)
+    {
+        FrontierModel.Refresh();
+        var list = new List<ScanItem>();
+        foreach (var b in FrontierModel.Current) list.Add(new ProxyFrontier(b));
         list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
         return list;
     }
@@ -613,6 +697,15 @@ internal static class Scanner
         // working on a pin the sighted map has withdrawn.
         if (_selectedKey is ILocalMapMarker marker)
             return LocalMapModel.Markers.Contains(marker) && !MarkerHidden(marker) ? new ProxyMarker(marker) : null;
+        // Frontier selections (the unexplored-space category) aren't in the registry either — re-wrap the blob
+        // while the cached frontier still holds it (the blob object survives recomputes while its opening
+        // persists); null once the fog is pushed past it or the area changes.
+        if (_selectedKey is FrontierModel.Blob blob)
+            return FrontierModel.Contains(blob) ? new ProxyFrontier(blob) : null;
+        // Bare-opening selections (the V cycle) aren't in the registry either — re-wrap while the current room
+        // map still holds the exit; a map rebuild (area/part change) orphans it → null.
+        if (_selectedKey is RoomMap.Exit exit)
+            return RoomMap.ContainsExit(exit) ? new ProxyRoomExit(exit) : null;
         // Everything else keys on its backing entity — the persistent registry re-finds the SAME stable proxy in
         // O(1); null once it despawns or the area changes.
         return WorldModel.Find(_selectedKey);

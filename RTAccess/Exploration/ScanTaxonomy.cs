@@ -26,4 +26,7 @@ internal static class ScanTaxonomy
     // can catch enemies (a damage/debuff field — route around it); a BUFF ZONE is an ally-exclusive aura.
     public const string Hazards = "hazards";
     public const string BuffZones = "zones.buff";
+    // Frontier blobs — openings where walkable never-seen ground borders explored ground (FrontierModel),
+    // surfaced by ProxyFrontier in the "Unexplored space" category.
+    public const string Unexplored = "unexplored";
 }
