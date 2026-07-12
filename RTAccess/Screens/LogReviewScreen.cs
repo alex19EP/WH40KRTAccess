@@ -64,8 +64,17 @@ namespace RTAccess.Screens
         // resumes (and doesn't leak one GraphState per open) if reopening pushes the SAME screen object.
         private static LogReviewScreen _instance;
 
-        /// <summary>Open the log review (pushed as a child of the current screen). No-op with no top screen.</summary>
-        public static void Open() => ScreenManager.Current?.PushChild(_instance ?? (_instance = new LogReviewScreen()));
+        /// <summary>Toggle the log review: open it as a child of the current screen, or close it when it
+        /// (or one of its drill-in children) is already focused — bare L is a natural toggle, and re-pushing
+        /// the cached instance onto its own chain is exactly the cycle PushChild refuses. No-op with no top screen.</summary>
+        public static void Open()
+        {
+            var cur = ScreenManager.Current;
+            if (cur == null) return;
+            for (var s = cur; s != null; s = s.ParentScreen)
+                if (s == _instance) { _instance.ParentScreen?.RemoveChild(_instance); return; }
+            cur.PushChild(_instance ?? (_instance = new LogReviewScreen()));
+        }
 
         public override string Key => "overlay.log";
         public override string ScreenName => Loc.T("log.title");

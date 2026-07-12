@@ -81,10 +81,11 @@ namespace RTAccess.Input
                     .AddBinding((KeyCode)((int)KeyCode.Alpha1 + idx), alt: true).Grouped("formation");
             }
 
-            // L — open the message-log review (a child overlay: channel tabs + newest-first history, with
-            // per-line tooltip / glossary drill-in). Global + self-gated so it opens in surface/space and over
-            // windows/dialogue; bare L is free — GameKeybinds moved the game's Encyclopedia onto Ctrl+L.
-            InputManager.Register("log.review", "Open the message log", InputCategory.Global,
+            // L — toggle the message-log review (a child overlay: channel tabs + newest-first history, with
+            // per-line tooltip / glossary drill-in; a second L closes it). Global + self-gated so it opens in
+            // surface/space and over windows/dialogue; bare L is free — GameKeybinds moved the game's
+            // Encyclopedia onto Ctrl+L.
+            InputManager.Register("log.review", "Toggle the message log", InputCategory.Global,
                 () => { if (InAGame()) RTAccess.Screens.LogReviewScreen.Open(); }).AddBinding(KeyCode.L);
 
             // Ctrl+P — re-announce the current character-creation phase (name + position + progress). Global +

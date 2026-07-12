@@ -136,7 +136,22 @@ namespace RTAccess.Screens
         public void PushChild(Screen child)
         {
             if (child == null || child == ActiveChild) return;
+            // The child chain must stay a straight, acyclic line — DeepestActiveScreen and
+            // ScreenManager.FocusedFirst walk ActiveChild links with no cycle detection, so pushing a
+            // screen onto itself (or onto its own subtree) would spin the main thread forever. Refuse it:
+            // reused-instance screens (the log) make this reachable when their open key fires while
+            // they're already focused.
+            for (var s = this; s != null; s = s.ParentScreen)
+                if (s == child)
+                {
+                    Main.Log?.Error("PushChild refused: '" + child.Key + "' is already in the focused chain of '" + Key + "'.");
+                    return;
+                }
             if (ActiveChild != null) RemoveChild(ActiveChild);
+            // A child adopted from another parent must leave its old slot first: a stale ActiveChild
+            // pointer there would resurface this screen as a parentless zombie (focused, Back dead)
+            // once the new chain pops.
+            child.ParentScreen?.RemoveChild(child);
             child.ParentScreen = this;
             ActiveChild = child;
             child.OnPush();
