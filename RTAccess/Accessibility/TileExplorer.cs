@@ -128,7 +128,7 @@ internal static class TileExplorer
     {
         try
         {
-            // During deployment there is no move-to (Enter places, B starts the battle); swallow Backspace.
+            // During deployment there is no move-to (Enter places, Space starts the battle); swallow Backspace.
             if (RTAccess.Exploration.DeploymentMode.Active) return;
             // While an ability is armed, Backspace cancels the aim instead of moving (see Targeting).
             if (RTAccess.Exploration.Targeting.Aiming) { RTAccess.Exploration.Targeting.Cancel(); return; }

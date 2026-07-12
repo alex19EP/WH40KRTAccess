@@ -91,6 +91,16 @@ namespace RTAccess.Input
 
         public InputAction YieldsWhenUnfocused() { YieldToGameWhenUnfocused = true; return this; }
 
+        /// <summary>For a <see cref="YieldsWhenUnfocused"/> action: a predicate that REASSERTS the claim
+        /// even while nothing is focused. Needed because arbitration and dispatch are decided separately:
+        /// the navigator is dispatched either way (it just declines unfocused), so a screen-level handler
+        /// that fires while unfocused (the deployment screen's ActionIds.Space verb) MUST also claim the
+        /// chord, or the game's own binding on the same key runs too and the press double-fires. Keep the
+        /// predicate exactly in sync with whatever makes the unfocused dispatch consume.</summary>
+        public Func<bool> UnfocusedClaim { get; private set; }
+
+        public InputAction ClaimsWhenUnfocusedIf(Func<bool> predicate) { UnfocusedClaim = predicate; return this; }
+
         internal void InvokePerformed() => Performed?.Invoke();
     }
 }

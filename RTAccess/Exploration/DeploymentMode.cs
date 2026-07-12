@@ -14,7 +14,8 @@ namespace RTAccess.Exploration;
 /// exactly this): while <see cref="Active"/>, the shared tile cursor's <b>Enter</b> PLACES the selected character on
 /// the cursor tile (through <see cref="RTAccess.Combat.CommandDispatch.Deploy"/>, which drives the game's own
 /// deploy-cell validation + teleport), the arrow keys and the party member-select hotkeys choose the cell and the
-/// unit, and <b>B</b> starts the battle (<c>TurnController.RequestEndPreparationTurn</c>). Every cursor step also
+/// unit, and <b>Space</b> starts the battle (the game's own contextual Space — <c>Game.EndTurnBind</c> — claimed
+/// through the InGameScreen's ActionIds.Space verb so the refusal reason is spoken). Every cursor step also
 /// reads the tile's deploy legality plus the holographic "if I stood here" vantage from that cell
 /// (<see cref="CombatReads.VantageFrom"/>), so placement is a tactical decision rather than a guess.
 ///
@@ -47,16 +48,22 @@ internal static class DeploymentMode
             Speaker.Speak(Loc.T("deploy.placed", new { name = unit?.CharacterName ?? "" }), interrupt: true);
     }
 
-    /// <summary>B, while deploying: start the battle, or say why it can't start yet. Wrapped like the tile-cursor
-    /// handlers because Main.OnUpdate has no top-level catch.</summary>
+    /// <summary>Space, while deploying: start the battle, or say why it can't start yet. Space IS the game's own
+    /// key for this (<c>Game.EndTurnBind</c> routes it to <c>RequestEndPreparationTurn</c> during the preparation
+    /// turn), so the success path drives that exact handler — EndTurn sound included; what the mod adds is the
+    /// SPOKEN refusal (the game's own hint string off the disabled Start-battle button — a sighted-only readout
+    /// otherwise). Reached via the InGameScreen's ActionIds.Space verb, both HUD-focused and blurred. Wrapped
+    /// like the tile-cursor handlers because Main.OnUpdate has no top-level catch.</summary>
     public static void StartBattle()
     {
         try
         {
-            if (!Active) return;   // self-gate: B does nothing outside deployment
+            if (!Active) return;   // self-gate: the Space verb is only advertised during deployment anyway
             var tc = Game.Instance.TurnController;
-            if (tc.CanFinishDeploymentPhase()) tc.RequestEndPreparationTurn();   // CombatEvents speaks "Battle begins" on prep exit
-            else Speaker.Speak(Loc.T("deploy.cannot_start"), interrupt: true);
+            if (tc.CanFinishDeploymentPhase()) Game.Instance.EndTurnBind();   // CombatEvents speaks "Battle begins" on prep exit
+            else Speaker.Speak(GameText.Or(
+                () => Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.TurnBasedTexts.CannotStartbattle,
+                "deploy.cannot_start"), interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("DeploymentMode.StartBattle failed: " + e); }
     }

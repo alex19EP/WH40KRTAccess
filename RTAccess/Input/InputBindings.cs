@@ -171,8 +171,15 @@ namespace RTAccess.Input
             // that a screen may claim Space outright as the game's contextual Space verb (ActionIds.Space,
             // e.g. the loot screen's collect-all); tooltip reading stays on F1 there.
             InputManager.Register("ui.tooltip", "Read tooltip", InputCategory.UI).AddBinding(KeyCode.F1);
+            // The unfocused-claim predicate: when the focused screen advertises the ActionIds.Space verb
+            // (deployment's start-battle on the blurred in-game screen), Space must stay OURS even with
+            // nothing focused — the navigator hook fires either way (it runs before the focus guard), so
+            // without the claim the game's own Space handler would run too and the press would double-fire.
+            // The predicate IS the advertisement check, so claim and dispatch can't drift apart.
             InputManager.Register("ui.tooltip.space", "Read tooltip (Space)", InputCategory.UI)
-                .AddBinding(KeyCode.Space).YieldsWhenUnfocused();
+                .AddBinding(KeyCode.Space).YieldsWhenUnfocused()
+                .ClaimsWhenUnfocusedIf(() =>
+                    RTAccess.Screens.ScreenManager.Current?.HasAction(RTAccess.UI.ActionIds.Space) == true);
             InputManager.Register("ui.home", "Jump to first item", InputCategory.UI).AddBinding(KeyCode.Home);
             InputManager.Register("ui.end", "Jump to last item", InputCategory.UI).AddBinding(KeyCode.End);
             // Ctrl+Up/Down jump between regions of a sheet (the navigators consume these only while the
@@ -301,11 +308,11 @@ namespace RTAccess.Input
             // Combat-only; self-gates with the reason otherwise.
             InputManager.Register("path.summary", "Read movement options (turn-based)", InputCategory.Exploration,
                 Ax.TileExplorer.ReadMoveSummary).AddBinding(KeyCode.Z).Grouped("cursor");
-            // B — start the battle during the pre-combat deployment (preparation) phase. Self-gates: a no-op outside
-            // deployment. Bare B is free (GameKeybinds moved cargo management to Ctrl+B). See DeploymentMode; Enter
-            // places the selected character on the cursor tile while deploying (routed in InteractAtCursor).
-            InputManager.Register("deploy.start_battle", "Deployment: start the battle", InputCategory.Exploration,
-                Ex.DeploymentMode.StartBattle).AddBinding(KeyCode.B).Grouped("cursor");
+            // Starting the battle during the pre-combat deployment phase rides SPACE — the game's own key
+            // (EndTurnBind routes Space to RequestEndPreparationTurn during the preparation turn), claimed via
+            // the InGameScreen's ActionIds.Space verb + the ui.tooltip.space unfocused-claim predicate above,
+            // NOT a binding here (the old bare-B binding is retired; bare B is free again — GameKeybinds moved
+            // cargo management to Ctrl+B). Enter still places the selected character (routed in InteractAtCursor).
 
             // ---- Exploration: party commands + status readout. Registered (not raw-polled like PartyHotkeys.Update's
             // member-select): the game's own Select-all / Hold / Stop / status keys live in the PC HUD (dead in our

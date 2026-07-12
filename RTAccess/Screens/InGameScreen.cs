@@ -98,6 +98,18 @@ namespace RTAccess.Screens
                 Navigation.Blur();
                 Tts.Speak(Loc.T("nav.exploration"), interrupt: true);
             });
+            // Space, while the pre-combat deployment phase is live: start the battle — the game's own
+            // contextual Space verb (EndTurnBind routes Space to RequestEndPreparationTurn during the
+            // preparation turn). Advertising this is ALSO what makes ui.tooltip.space claim Space while
+            // the HUD is blurred (the ClaimsWhenUnfocusedIf predicate in InputBindings checks HasAction):
+            // letting the game's own handler take it instead would start the battle too, but SILENTLY
+            // no-op when it can't — our handler speaks the refusal reason (the disabled button's hint).
+            if (RTAccess.Exploration.DeploymentMode.Active)
+                yield return new ElementAction(ActionIds.Space,
+                    Message.Raw(GameText.Or(
+                        () => Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.TurnBasedTexts.StartBattle,
+                        "deploy.start_battle")),
+                    _ => RTAccess.Exploration.DeploymentMode.StartBattle());
         }
 
         // Close every open variant/convert flyout on the bar; true when any was open. Nothing in the game

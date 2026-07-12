@@ -59,15 +59,17 @@ namespace RTAccess.Input
         /// KeyboardAccess dispatch: if we claim the chord, the game's binding on the same key is suppressed;
         /// if we don't, the game keeps it (that's how the merge lets un-overridden game keys through). An action
         /// flagged <see cref="InputAction.YieldToGameWhenUnfocused"/> (Space) does not count as a claim while
-        /// nothing is focused, so the game's Pause / End-turn survives out in the world. Only meaningful with
-        /// focus mode active (the caller gates on it); when off, RebuildLive leaves only Global live.</summary>
+        /// nothing is focused, so the game's Pause / End-turn survives out in the world — unless its
+        /// <see cref="InputAction.UnfocusedClaim"/> predicate reasserts the claim (the deployment screen's
+        /// Space verb, which must own the chord blurred or the game's handler double-fires). Only meaningful
+        /// with focus mode active (the caller gates on it); when off, RebuildLive leaves only Global live.</summary>
         public static bool ClaimsChord(UnityEngine.KeyCode key, bool ctrl, bool alt, bool shift)
         {
             EnsureLive();
             for (int i = 0; i < _actions.Count; i++)
             {
                 var a = _actions[i];
-                if (a.YieldToGameWhenUnfocused && !_hasFocus) continue;
+                if (a.YieldToGameWhenUnfocused && !_hasFocus && !(a.UnfocusedClaim?.Invoke() ?? false)) continue;
                 for (int j = 0; j < a.Bindings.Count; j++)
                 {
                     if (!(a.Bindings[j] is KeyboardBinding b)) continue;

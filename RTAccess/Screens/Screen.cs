@@ -31,6 +31,15 @@ namespace RTAccess.Screens
             return false;
         }
 
+        /// <summary>Whether an action with this id is currently advertised, without executing it —
+        /// the input arbitration asks this to decide chord ownership (the unfocused-Space claim).</summary>
+        public bool HasAction(string id)
+        {
+            foreach (var a in GetActions())
+                if (a.Id == id) return true;
+            return false;
+        }
+
         /// <summary>Stable identity used for stack diffing.</summary>
         public abstract string Key { get; }
 
