@@ -111,6 +111,29 @@ internal static class ShipPathInfo
         return InDeadEnd ? Loc.T("spacecombat.dead_end") + ", " + line : line;
     }
 
+    /// <summary>
+    /// The per-tile browse marker for the cursor stepping the battle grid during a ship's turn — the space
+    /// twin of the ground cursor's additive "unreachable" note (<c>tile.unreachable</c>, absence of the blue
+    /// move-highlight). Silent (null) when the ship can move here AND stop — reachable stays unspoken, like
+    /// ground — and on the ship's own cell (the occupant headline covers it); "pass-through only" when the
+    /// inertia fan merely crosses the cell; "unreachable" when the cell can't be entered this turn at all.
+    /// Null when the reachable set isn't computed (not this ship's turn) — never a false claim.
+    /// </summary>
+    internal static string TileReachabilityWord(StarshipEntity ship, CustomGridNodeBase node)
+    {
+        try
+        {
+            var path = ship?.Navigation?.ReachableTiles;
+            if (path?.Result == null || node == null) return null;
+            if (path.Result.Count == 0) return Loc.T("tile.unreachable");
+            var cell = QuantizeToMetagrid(ship, node);
+            if (cell == null || !path.Result.TryGetValue(cell, out var pc)) return Loc.T("tile.unreachable");
+            if (pc.Length <= 0) return null;
+            return pc.CanStand ? null : Loc.T("spacecombat.tile_pass_through");
+        }
+        catch { return null; }
+    }
+
     /// <summary>Localized compass word for a grid direction index (arrival facing).</summary>
     internal static string FacingWord(int gridDir)
         => Loc.T(Accessibility.InteractableDescriber.Compass8[GridDirToCompass[SafeDir(gridDir)]]);

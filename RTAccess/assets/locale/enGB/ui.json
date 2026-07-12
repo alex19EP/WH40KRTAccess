@@ -187,6 +187,7 @@
   "spacecombat.threat_none": "it cannot fire on you",
   "spacecombat.arc_dorsal": "dorsal",
   "spacecombat.arc_keel": "keel",
+  "spacecombat.tile_pass_through": "pass-through only",
   "hud.initiative": "Initiative order",
   "path.none": "No path",
   "path.distance": "Path, {feet} feet",
