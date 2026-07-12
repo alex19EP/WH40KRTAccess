@@ -250,10 +250,39 @@ internal static class TileExplorer
             { Speaker.Speak(Loc.T("vantage.not_in_combat"), interrupt: true); return; }
             if (!EnsurePlanted(out bool fresh)) return;
             if (fresh) { Announce(); return; }
-            var line = CombatReads.VantageFrom(MapCursor.Position, me);
+            // Cover/threat is surface tactics; a ship's "what if I went here" is the inertial path verdict
+            // (cost, arrival facing, stop legality) — the same line the move-to arming press speaks.
+            var line = me is StarshipEntity ship
+                ? RTAccess.Exploration.ShipPathInfo.Preview(ship, MapCursor.Node, out _)
+                : CombatReads.VantageFrom(MapCursor.Position, me);
             Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("vantage.no_enemies") : line, interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.ReadVantage failed: " + e); }
+    }
+
+    /// <summary>
+    /// Z — the movement-options summary for the acting unit's turn-based turn: surface units get the
+    /// reachable-area extent (<see cref="RTAccess.Exploration.PathInfo.MoveAreaSummary"/> — the spoken blue
+    /// move-highlight), starships get the end-position fan grouped by resulting facing
+    /// (<see cref="RTAccess.Exploration.ShipPathInfo.MoveSummary"/> — the spoken path-marker fan). Cursor-
+    /// independent (it summarizes the whole turn, not a tile), pure read, combat-only; says why otherwise.
+    /// </summary>
+    public static void ReadMoveSummary()
+    {
+        try
+        {
+            if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys
+            var tc = Game.Instance?.TurnController;
+            if (tc == null || !tc.TurnBasedModeActive)
+            { Speaker.Speak(Loc.T("combat.not_turn_based"), interrupt: true); return; }
+            if (!tc.IsPlayerTurn) { Speaker.Speak(Loc.T("combat.not_your_turn"), interrupt: true); return; }
+            string line = tc.CurrentUnit is StarshipEntity ship
+                ? RTAccess.Exploration.ShipPathInfo.MoveSummary(ship)
+                : RTAccess.Exploration.PathInfo.MoveAreaSummary();
+            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("path.preview.out_of_movement") : line,
+                interrupt: true);
+        }
+        catch (Exception e) { Main.Log?.Error("TileExplorer.ReadMoveSummary failed: " + e); }
     }
 
     /// <summary>

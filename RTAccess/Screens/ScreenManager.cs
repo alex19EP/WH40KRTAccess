@@ -143,6 +143,12 @@ namespace RTAccess.Screens
             // Layer 0, mutually exclusive with the other base contexts (distinct area type). Systems/Status/Actions
             // tab stops; WarpEvents voices warp/scan/route events. See docs/plans/warp-sector-map-accessibility.md.
             Register(new SectorMapScreen());
+            // Voidship combat base context (the game's SpaceCombat HUD component is alive) — Layer 0,
+            // mutually exclusive with the other base contexts by that component gate (SystemMapScreen
+            // excludes it explicitly: in-system encounter fights keep the star-system AREA). Ship/Battle
+            // tab stops; turn/attack narration rides CombatEvents/LogTap. Phase 1 of
+            // docs/plans/inertial-broadsiding-tsiolkovsky.md.
+            Register(new SpaceCombatScreen());
             // The planet-exploration tablet (SpaceStaticPartVM.ExplorationVM.IsExploring — auto-opens on
             // landing) — layer 9, Exclusive: above the map, below service windows (10) / dialogue (15) /
             // loot (24) that stack on it. Scan, POIs, resources/miners, colony + projects. M2 of

@@ -44,9 +44,14 @@ namespace RTAccess.Screens
         public override int Layer => 0;                     // base context, sibling of ctx.ingame / mainmenu
         public override bool StartUnfocused => true;        // camera keeps the arrows; Tab enters the list
 
+        // The SpaceCombat exclusion covers in-system random encounters: the fight runs ON the star-system
+        // area (the area type doesn't change), and a mode check alone would flap during dialogs over the
+        // battle — the component gate mirrors the game's own HUD swap (CreateVMs disposes the SystemMap
+        // component for the fight and restores it after).
         public override bool IsActive()
             => Game.Instance?.CurrentlyLoadedArea is BlueprintStarSystemMap
-               && Game.Instance.RootUiContext?.SpaceVM != null;
+               && Game.Instance.RootUiContext?.SpaceVM != null
+               && SpaceCombatScreen.Component() == null;
 
         /// <summary>Map verbs may act: this screen is the live top screen and the map is the CURRENT mode —
         /// not a dialog/cutscene/book event layered over it (acting there desyncs the game; WA lesson).</summary>

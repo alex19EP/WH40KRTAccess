@@ -1,0 +1,337 @@
+using System;
+using System.Collections.Generic;
+using System.Text;
+using Kingmaker;
+using Kingmaker.AreaLogic.TimeSurvival;               // TimeSurvival ("survive N rounds" areas)
+using Kingmaker.Blueprints;                           // BlueprintScriptableObject.GetComponent<T>()
+using Kingmaker.Code.UI.MVVM.VM.Space;                // SpaceStaticComponentType
+using Kingmaker.Code.UI.MVVM.VM.SpaceCombat;          // SpaceCombatVM (+ service panel)
+using Kingmaker.EntitySystem.Entities;                // StarshipEntity
+using Kingmaker.EntitySystem.Stats.Base;              // StatType (per-sector armour)
+using Kingmaker.SpaceCombat.StarshipLogic.Parts;      // PartStarshipNavigation, StarshipSectorShieldsType
+using RTAccess.UI;
+using RTAccess.UI.Graph;
+using UnityEngine;                                    // Mathf
+
+namespace RTAccess.Screens
+{
+    /// <summary>
+    /// Voidship (space) combat as a navigable base context — the SpaceCombat-mode sibling of
+    /// <see cref="InGameScreen"/> / <see cref="SystemMapScreen"/>. Phase 1 of
+    /// docs/plans/inertial-broadsiding-tsiolkovsky.md: FOLLOW the battle — two Tab stops mirroring the
+    /// sighted HUD's chrome. <b>Ship</b> — the player ship's panel block (hull, the four sector shields +
+    /// armour, speed mode + movement budget + facing, crew/morale/military rating, active effects).
+    /// <b>Battle</b> — round (+ the TimeSurvival rounds-left counter), the End-turn control, the
+    /// still-have-actions nudge, and the initiative order rendered through
+    /// <see cref="InGameScreen.InitiativeLabel"/> so both trackers read alike. Weapons / posts / aiming
+    /// are Phases 3–4. Phase 2 (move the ship) declares the Exploration input category like
+    /// <see cref="InGameScreen"/>: the tile cursor scans the battle grid, Backspace arms/commits the
+    /// guarded ship move (previewed via <see cref="RTAccess.Exploration.ShipPathInfo"/> — cost, arrival
+    /// facing, stop legality), Z speaks the end-position fan, and Semicolon reads the ship-path verdict
+    /// at the cursor. Chord shadowing mirrors the surface screen: bare keys go to the grid while the HUD
+    /// is unfocused, Tab enters the zones and flips priority to ui.*.
+    ///
+    /// ACTIVE exactly while the game's own space-combat HUD component exists:
+    /// <c>SpaceStaticPartVM.CreateVMs</c> skips unmapped modes (Dialog/Cutscene/Pause return a null
+    /// component list), so the component — and this screen — survive a conversation layered over the
+    /// battle and are swapped out when a mapped mode (StarSystem/GlobalMap/GameOver) takes over. That is
+    /// the same lifetime the sighted HUD has, and it keeps this context mutually exclusive with
+    /// <see cref="SystemMapScreen"/> even for in-system random-encounter fights (whose AREA stays a
+    /// BlueprintStarSystemMap — the area type can't be the gate).
+    /// </summary>
+    public sealed class SpaceCombatScreen : Screen
+    {
+        public override string Key => "ctx.spacecombat";
+        public override string ScreenName => Loc.T("spacecombat.screen");
+        public override int Layer => 0;                     // base context, sibling of ctx.ingame / ctx.systemmap
+        public override bool StartUnfocused => true;        // the game keeps the keys; Tab enters the HUD zones
+
+        public override bool IsActive() => Component() != null;
+
+        // Same category flip as InGameScreen: with world control and the HUD unfocused the Exploration
+        // set (tile cursor / scanner / move verbs) leads and shadows the ui.* arrows; focusing the HUD
+        // reverses the priority so arrows browse the zones. A dialog/cutscene layered over the battle
+        // drops world control (ClickEventsController unregisters) and with it every world verb.
+        private static readonly RTAccess.Input.InputCategory[] FocusedCats =
+        {
+            RTAccess.Input.InputCategory.UI, RTAccess.Input.InputCategory.InGame,
+            RTAccess.Input.InputCategory.Exploration, RTAccess.Input.InputCategory.Windows,
+        };
+        private static readonly RTAccess.Input.InputCategory[] UnfocusedCats =
+        {
+            RTAccess.Input.InputCategory.Exploration, RTAccess.Input.InputCategory.InGame,
+            RTAccess.Input.InputCategory.UI, RTAccess.Input.InputCategory.Windows,
+        };
+        private static readonly RTAccess.Input.InputCategory[] NoControlCats =
+        {
+            RTAccess.Input.InputCategory.InGame, RTAccess.Input.InputCategory.UI,
+        };
+        public override System.Collections.Generic.IReadOnlyList<RTAccess.Input.InputCategory> InputCategories =>
+            !ControlState.HasControl ? NoControlCats
+          : Navigation.HasFocus     ? FocusedCats
+          :                           UnfocusedCats;
+
+        /// <summary>The game's live space-combat HUD component, or null — the screen's activation gate,
+        /// and the VM root every zone reads. Also consulted by <see cref="SystemMapScreen.IsActive"/> for
+        /// mutual exclusion (an in-system encounter keeps the star-system AREA while this component swaps in).</summary>
+        internal static SpaceCombatVM Component()
+        {
+            try
+            {
+                return Game.Instance?.RootUiContext?.SpaceVM?.StaticPartVM?
+                    .TryGetComponentVM(SpaceStaticComponentType.SpaceCombat) as SpaceCombatVM;
+            }
+            catch { return null; }
+        }
+
+        // ---- the graph ----
+
+        public override void Build(GraphBuilder b)
+        {
+            var vm = Component();
+            var ship = Game.Instance?.Player?.PlayerShip;
+            if (vm == null || ship == null) return;
+
+            // -- Ship (the sighted HUD's ship block: hull slider + shield diamond + crew bar) --
+            b.BeginStop("ship").PushContext(Loc.T("spacecombat.ship"), Loc.T("role.list"));
+            b.AddLabel(ControlId.Structural("ship:hull"), () => HullLine(ship));
+            b.AddLabel(ControlId.Structural("ship:shields"), () => ShieldsLine(ship));
+            b.AddLabel(ControlId.Structural("ship:armour"), () => ArmourLine(ship));
+            b.AddLabel(ControlId.Structural("ship:speed"), () => SpeedLine(ship));
+            b.AddLabel(ControlId.Structural("ship:crew"), () => CrewLine(ship));
+            b.AddLabel(ControlId.Structural("ship:effects"), () => EffectsLine(ship));
+            b.PopContext();
+
+            // -- Battle (service panel: round/turn state, End turn, initiative order) --
+            b.BeginStop("battle").PushContext(Loc.T("spacecombat.battle"), Loc.T("role.list"));
+            b.AddItem(ControlId.Structural("battle:status"), GraphNodes.Text(() => BattleStatusLine(ship)));
+
+            // End turn — the surface HUD's exact node (TryEndPlayerTurnManually plays the game's own
+            // end-turn sting, so no ActivateSound). While the ship still MUST move (forced movement:
+            // PartUnitCombatState.CanEndTurn's starship branch) the button reads ", disabled" and the
+            // status line above carries the why ("must keep moving").
+            var game = Game.Instance;
+            Func<string> endTurnLabel = () => GameText.Or(
+                () => Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.HUDTexts.EndTurn, "turn.end");
+            b.AddItem(ControlId.Structural("battle:endturn"), new NodeVtable
+            {
+                ControlType = ControlTypes.Button,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    GraphNodes.LabelPart(endTurnLabel),
+                    GraphNodes.DisabledPart(() => game.TurnController.CanEndTurn),
+                },
+                SearchText = endTurnLabel,
+                OnActivate = () => { if (game.TurnController.CanEndTurn) game.TurnController.TryEndPlayerTurnManually(); },
+                ActivateSound = null,
+            });
+
+            // The "you still have moves" nudge the sighted panel pulses on the end-turn button
+            // (CombatActionsCount = action holders with anything possible, movement included).
+            var svc = vm.SpaceCombatServicePanelVM;
+            if (svc != null && svc.IsPlayerTurn.Value && svc.CombatActionsCount.Value > 0)
+                b.AddLabel(ControlId.Structural("battle:actions"),
+                    () => Loc.T("spacecombat.actions_left", new { n = svc.CombatActionsCount.Value }));
+
+            // Initiative order — the shared tracker VM, rendered through the surface recipe so both
+            // trackers read alike (faction, HP with the HideRealHealthInUI mask, current/order markers,
+            // the next-round divider). Rows are keyed by unit, so focus follows a ship as the order shifts.
+            var tracker = svc?.InitiativeTrackerVM?.Value;
+            if (tracker?.Units != null)
+            {
+                var units = tracker.Units;
+                for (int i = 0; i < units.Count; i++)
+                {
+                    var row = units[i];
+                    if (row == null) continue;
+                    if (i == tracker.RoundIndex + 1)
+                        b.AddItem(ControlId.Structural("battle:round"), GraphNodes.Text(
+                            () => InGameScreen.RoundDividerLabel(Component()?.SpaceCombatServicePanelVM?.InitiativeTrackerVM?.Value)));
+                    if (row.IsInSquad.Value && !row.IsSquadLeader.Value && !row.NeedToShow.Value) continue;
+                    var vmRow = row; // loop-local for the closure
+                    b.AddItem(ControlId.Referenced(vmRow, "battle:init:" + (vmRow.Unit?.UniqueId ?? "slot" + i)),
+                        GraphNodes.Text(() => InGameScreen.InitiativeLabel(vmRow)));
+                }
+            }
+
+            b.AddItem(ControlId.Structural("battle:log"), GraphNodes.Button(
+                () => Loc.T("hud.log"), LogReviewScreen.Open));
+            b.PopContext();
+        }
+
+        // ---- Ship lines (read the parts directly; the panel VMs are orphaned recipes — plan §1.5) ----
+
+        private static string HullLine(StarshipEntity ship)
+        {
+            try
+            {
+                return Loc.T("spacecombat.hull", new
+                {
+                    name = ship.CharacterName,
+                    cur = ship.Health?.HitPointsLeft ?? 0,
+                    max = ship.Health?.MaxHitPoints ?? 0,
+                });
+            }
+            catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.HullLine: " + e); return ""; }
+        }
+
+        private static string ShieldsLine(StarshipEntity ship)
+        {
+            try
+            {
+                var sh = ship.Shields;
+                if (sh == null) return "";
+                string One(StarshipSectorShieldsType sector)
+                {
+                    var s = sh.GetShields(sector);
+                    return s == null ? "0" : Loc.T("spacecombat.of", new { cur = s.Current, max = s.Max });
+                }
+                return Loc.T("spacecombat.shields", new
+                {
+                    fore = One(StarshipSectorShieldsType.Fore),
+                    port = One(StarshipSectorShieldsType.Port),
+                    starboard = One(StarshipSectorShieldsType.Starboard),
+                    aft = One(StarshipSectorShieldsType.Aft),
+                });
+            }
+            catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.ShieldsLine: " + e); return ""; }
+        }
+
+        private static string ArmourLine(StarshipEntity ship)
+        {
+            try
+            {
+                return Loc.T("spacecombat.armour", new
+                {
+                    fore = ship.Stats.GetStat(StatType.ArmourFore)?.ModifiedValue ?? 0,
+                    port = ship.Stats.GetStat(StatType.ArmourPort)?.ModifiedValue ?? 0,
+                    starboard = ship.Stats.GetStat(StatType.ArmourStarboard)?.ModifiedValue ?? 0,
+                    aft = ship.Stats.GetStat(StatType.ArmourAft)?.ModifiedValue ?? 0,
+                });
+            }
+            catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.ArmourLine: " + e); return ""; }
+        }
+
+        // Speed mode + movement budget + facing. Movement is the blue-AP pool (the sighted HUD's
+        // CombatMovementActionHint number); facing via the shared 8-way compass, +z = north like the
+        // tile cursor.
+        private static string SpeedLine(StarshipEntity ship)
+        {
+            try
+            {
+                var nav = ship.Navigation;
+                var cs = ship.CombatState;
+                var sb = new StringBuilder(Loc.T("spacecombat.speed", new
+                {
+                    mode = SpeedModeWord(nav?.SpeedMode ?? PartStarshipNavigation.SpeedModeType.Normal),
+                    mp = Mathf.RoundToInt(cs?.ActionPointsBlue ?? 0f),
+                    max = Mathf.RoundToInt(cs?.ActionPointsBlueMax ?? 0f),
+                }));
+                if (Exploration.Geo.CompassSector(ship.Forward.x, ship.Forward.z, out int sector))
+                    sb.Append(", ").Append(Loc.T("spacecombat.facing",
+                        new { dir = Loc.T(Accessibility.InteractableDescriber.Compass8[sector]) }));
+                return sb.ToString();
+            }
+            catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.SpeedLine: " + e); return ""; }
+        }
+
+        internal static string SpeedModeWord(PartStarshipNavigation.SpeedModeType mode)
+        {
+            switch (mode)
+            {
+                case PartStarshipNavigation.SpeedModeType.Deccelerating: return Loc.T("spacecombat.speed_decelerating");
+                case PartStarshipNavigation.SpeedModeType.LowSpeed: return Loc.T("spacecombat.speed_low");
+                case PartStarshipNavigation.SpeedModeType.FullStop: return Loc.T("spacecombat.speed_full_stop");
+                default: return Loc.T("spacecombat.speed_normal");
+            }
+        }
+
+        private static string CrewLine(StarshipEntity ship)
+        {
+            try
+            {
+                int moralePct = ship.Morale != null && ship.Morale.MaxMorale != 0
+                    ? Mathf.RoundToInt(100f * ship.Morale.MoraleLeft / ship.Morale.MaxMorale) : 0;
+                return Loc.T("spacecombat.crew", new
+                {
+                    crew = ship.Crew?.Count ?? 0,
+                    morale = moralePct,
+                    rating = ship.Hull?.CurrentMilitaryRating ?? 0,
+                });
+            }
+            catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.CrewLine: " + e); return ""; }
+        }
+
+        private static string EffectsLine(StarshipEntity ship)
+        {
+            try
+            {
+                var names = new List<string>();
+                foreach (var buff in ship.Buffs.Enumerable)
+                    if (buff != null && !buff.Hidden) names.Add(buff.Name);
+                return names.Count == 0
+                    ? Loc.T("spacecombat.effects_none")
+                    : Loc.T("spacecombat.effects", new { list = string.Join(", ", names) });
+            }
+            catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.EffectsLine: " + e); return ""; }
+        }
+
+        // ---- Battle status ----
+
+        // "Round 3, 5 rounds left, your turn: Righteous Absolution, must keep moving, 7 movement left".
+        // The must-move tail mirrors the forced-movement law (CanEndTurn's starship branch): budget still
+        // at/above the finishing window AND somewhere to go — the single most confusing space-combat state
+        // for a blind player ("why won't my turn end?").
+        private static string BattleStatusLine(StarshipEntity ship)
+        {
+            try
+            {
+                var game = Game.Instance;
+                var tc = game?.TurnController;
+                if (tc == null || !tc.TurnBasedModeActive) return Loc.T("spacecombat.no_battle");
+
+                var sb = new StringBuilder(Loc.T("combat.round", new { round = tc.CombatRound }));
+
+                var ts = game.CurrentlyLoadedArea?.GetComponent<TimeSurvival>();
+                if (ts != null && !ts.UnlimitedTime)
+                    sb.Append(", ").Append(Loc.T("spacecombat.rounds_left", new { n = ts.RoundsLeft }));
+
+                var cur = tc.CurrentUnit;
+                if (cur != null)
+                {
+                    string name = (cur as Kingmaker.Mechanics.Entities.AbstractUnitEntity)?.CharacterName ?? cur.Name;
+                    sb.Append(", ").Append(Loc.T(
+                        tc.IsPlayerTurn ? "combat.turn" : "combat.turn_enemy", new { name }));
+                }
+
+                var nav = ship.Navigation;
+                if (tc.IsPlayerTurn && ReferenceEquals(tc.CurrentUnit, ship) && nav != null
+                    && ship.CombatState.ActionPointsBlue >= nav.FinishingTilesCount && nav.HasAnotherPlaceToStand)
+                    sb.Append(", ").Append(Loc.T("spacecombat.must_move",
+                        new { mp = Mathf.RoundToInt(ship.CombatState.ActionPointsBlue) }));
+
+                // The dead-end state (nowhere standable ahead with budget left): the game swaps the reachable
+                // set for 1-tile escape moves — without this line the tiny fan reads like a movement bug.
+                if (tc.IsPlayerTurn && game.StarshipPathController.IsCurrentShipInDeadEnd)
+                    sb.Append(", ").Append(Loc.T("spacecombat.dead_end"));
+
+                return sb.ToString();
+            }
+            catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.BattleStatusLine: " + e); return ""; }
+        }
+
+        // ---- input ----
+
+        // Escape while focused backs out of the zones to the bare battle (keys return to the game);
+        // while unfocused the yield hands Escape to the game (cancel targeting / pause menu).
+        public override IEnumerable<ElementAction> GetActions()
+        {
+            yield return new ElementAction(ActionIds.Back, Message.Raw("Back"), _ =>
+            {
+                if (!Navigation.HasFocus) return;
+                Navigation.Blur();
+                Tts.Speak(Loc.T("spacecombat.screen"), interrupt: true);
+            });
+        }
+    }
+}

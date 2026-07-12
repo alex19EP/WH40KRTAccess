@@ -24,8 +24,10 @@ namespace RTAccess.Accessibility;
 /// EXPIRY is no longer announced — a deliberate sighted-parity call (the log never shows expiry either).
 ///
 /// <see cref="Tick"/> POLLS the turn machinery (<see cref="PollLifecycle"/>) for the legibility cues a sighted
-/// player reads off the HUD chrome — combat start/end, round advance, whose-turn, and the deployment phase —
-/// and the HUD pressure gauges (<see cref="PollThresholds"/>). These are polled rather than driven off the
+/// player reads off the HUD chrome — combat start/end, whose-turn, and the deployment phase —
+/// and the HUD pressure gauges (<see cref="PollThresholds"/>). (Round advance is NOT ours: the game's own
+/// "Round N" banner toast — <c>InitiativeTrackerView.RoundChanged</c> — reaches speech via
+/// <see cref="WarningReader"/> already localized in the game's language.) These are polled rather than driven off the
 /// turn-start/round EventBus interfaces on purpose: those are entity-targeted and unreliable for a global
 /// subscriber (WrathAccess's turn-ended handler is famously never raised), whereas <c>TurnController</c> state
 /// is authoritative every frame. Cues share the same <see cref="_pending"/> queue so a burst ("Ork takes 5
@@ -46,7 +48,6 @@ internal sealed class CombatEvents
     // Turn identity is tracked by UniqueId, not object reference: CurrentUnit can return a fresh entity
     // instance for the same logical unit across frames, so a reference compare would re-announce mid-turn.
     private string _lastTurnUnitId;
-    private int _lastRound = -1;
     private bool _wasInCombat;
     private bool _wasInPrep;
 
@@ -101,10 +102,10 @@ internal sealed class CombatEvents
         {
             _wasInCombat = inCombat;
             Enqueue(Message.Localized("ui", inCombat ? "combat.started" : "combat.ended").Resolve());
-            if (!inCombat) { _lastTurnUnitId = null; _lastRound = -1; _wasInPrep = false; }
+            if (!inCombat) { _lastTurnUnitId = null; _wasInPrep = false; }
         }
 
-        // The remaining cues (round, whose-turn, deployment) are turn-based-only chrome. Reset the turn poll
+        // The remaining cues (whose-turn, deployment) are turn-based-only chrome. Reset the turn poll
         // when out of TB so re-entering combat re-announces the first unit rather than staying silent.
         if (!inCombat || !tc.TurnBasedModeActive) { _lastTurnUnitId = null; return; }
 
@@ -120,14 +121,10 @@ internal sealed class CombatEvents
             Enqueue(Message.Localized("ui", "deploy.battle_begins").Resolve());
         _wasInPrep = prep;
 
-        // Round advance (CombatRound is 0 out of combat, 1 = first round). Announce before the turn cue so a
-        // fresh round reads "Round 2 … Your turn, X".
-        int round = tc.CombatRound;
-        if (round != _lastRound && round > 0)
-        {
-            _lastRound = round;
-            Enqueue(Message.Localized("ui", "combat.round", new { round }).Resolve());
-        }
+        // Round advance is deliberately NOT cued here: the game's own "Round N" banner toast
+        // (InitiativeTrackerView.RoundChanged, round > 1) is voiced by WarningReader in the game's
+        // language. Round 1 has no toast, but it coincides with "Battle begins" / combat start, and the
+        // battle status line carries the labelled round for review.
 
         // Whose turn — announce on change of the acting unit, keyed by stable UniqueId. Ignoring null ids
         // (rather than tracking them) keeps _lastTurnUnitId pinned to the last real actor, so neither a
@@ -143,12 +140,23 @@ internal sealed class CombatEvents
 
     // The whose-turn line: player turns read "Your turn, X, 2 AP, 6 MP" (the acting unit's economy, matching
     // the HUD status line); non-player turns read "X's turn" with an ", enemy" tag for hostiles.
+    // Starships have no yellow-AP economy in play (weapons fire on charges), so a player ship — or a
+    // commandable torpedo salvo, also a StarshipEntity — reads movement + speed mode instead
+    // ("Your turn, X, movement 11, normal speed"); the Phase-0 transcript's "0 AP" was pure noise.
     private static string TurnCue(Kingmaker.Controllers.TurnBased.TurnController tc, MechanicEntity cur)
     {
         string name = (cur as AbstractUnitEntity)?.CharacterName ?? cur.Name;
         if (tc.IsPlayerTurn)
         {
             var cs = (cur as BaseUnitEntity)?.GetCombatStateOptional();
+            if (cur is StarshipEntity ship && cs != null)
+                return Message.Localized("ui", "combat.your_turn_ship", new
+                {
+                    name,
+                    mp = Mathf.RoundToInt(cs.ActionPointsBlue),
+                    speed = RTAccess.Screens.SpaceCombatScreen.SpeedModeWord(
+                        ship.Navigation?.SpeedMode ?? Kingmaker.SpaceCombat.StarshipLogic.Parts.PartStarshipNavigation.SpeedModeType.Normal),
+                }).Resolve();
             if (cs != null)
                 return Message.Localized("ui", "combat.your_turn",
                     new { name, ap = cs.ActionPointsYellow, mp = Mathf.RoundToInt(cs.ActionPointsBlue) }).Resolve();
