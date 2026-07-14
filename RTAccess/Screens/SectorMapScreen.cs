@@ -8,6 +8,7 @@ using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;              // ServiceWindowsTy
 using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;          // TooltipTemplateSimple (the Space readout)
 using Kingmaker.Code.UI.MVVM.VM.Space;                       // SpaceStaticPartVM, SpaceStaticComponentType
 using Kingmaker.Controllers.GlobalMap;                       // SectorMapController
+using Kingmaker.GameCommands;                                // GameCommandQueue.CreateNewWarpRoute / LowerWarpRouteDifficulty
 using Kingmaker.GameModes;                                   // GameModeType
 using Kingmaker.Globalmap.Blueprints;                        // BlueprintSectorMapArea (the area type)
 using Kingmaker.Globalmap.SectorMap;                         // SectorMapObject(Entity), SectorMapPassageEntity
@@ -350,17 +351,43 @@ namespace RTAccess.Screens
                 var entity = view.Data;
                 bool isCurrent = current != null && entity == current;
                 var passage = (!isCurrent && current != null) ? ctrl.FindPassageBetween(current, entity) : null;
-                bool canTravel = passage != null && passage.IsExplored;
+                bool hasRoute = passage != null && passage.IsExplored;
                 bool canVisit = isCurrent && view.StarSystemToTransit != null;
                 string name = view.Name;
 
                 var rows = new List<ChoiceSubmenuScreen.Row>();
-                if (canTravel)
+
+                // Travel an existing explored route.
+                if (hasRoute)
                     rows.Add(ChoiceSubmenuScreen.Row.Action(
                         () => Loc.T("sectormap.verb_travel", new { name }), () => DoTravel(view, overtip, name)));
+
+                // Visit the current system's own area.
                 if (canVisit)
                     rows.Add(ChoiceSubmenuScreen.Row.Action(
                         () => Loc.T("sectormap.verb_visit", new { name }), () => DoVisit(view, overtip, name)));
+
+                // Make an existing route one difficulty tier safer (a Navigator's-Resource spend).
+                if (hasRoute && passage.CurrentDifficulty > SectorMapPassageEntity.PassageDifficulty.Safe)
+                {
+                    var p = passage;
+                    rows.Add(ChoiceSubmenuScreen.Row.Action(
+                        () => UpgradeLabel(name), () => DoUpgradeRoute(entity, p, name)));
+                }
+
+                // Create a new route to a non-current, un-routed system. Mirrors the sighted "Create way" button:
+                // enabled only when IsScannedFrom && IsAvailable, else a DISABLED "scan required" row (the game's
+                // own ScanRequired hint). Cost = WarpTravelState.CreateNewPassageCost.
+                if (current != null && !isCurrent && !hasRoute)
+                {
+                    var from = current;
+                    var to = entity;
+                    rows.Add(ChoiceSubmenuScreen.Row.Action(
+                        () => CreateLabel(to, name),
+                        () => DoCreateRoute(from, to, name),
+                        () => to.IsScannedFrom && to.IsAvailable));
+                }
+
                 if (rows.Count == 0)
                     rows.Add(ChoiceSubmenuScreen.Row.Header(() => Loc.T("sectormap.verb_none")));
 
@@ -396,6 +423,61 @@ namespace RTAccess.Screens
                 Tts.Speak(Loc.T("sectormap.verb_visit", new { name }), interrupt: true);
             }
             catch (Exception e) { Main.Log?.Error("SectorMapScreen.DoVisit failed: " + e); }
+        }
+
+        // ---- warp-route shop (Navigator's Resource): create / make-safer, driven through the game's own
+        // networked GameCommandQueue — the exact path the sighted Create/Upgrade popup buttons use. Both commands
+        // are async (queued, run over later frames); WarpEvents speaks the charted / safer line on completion. ----
+
+        private static int NavResource => Game.Instance?.Player?.WarpTravelState?.NavigatorResource ?? 0;
+        private static int CreateCost => Game.Instance?.Player?.WarpTravelState?.CreateNewPassageCost ?? 0;
+        private static int UpgradeCost
+            => Kingmaker.Blueprints.Root.BlueprintWarhammerRoot.Instance?.WarpRoutesSettings?.LowerPassageDifficultyCost ?? 0;
+
+        // "Create route to X, costs N" when scanned + affordable; "…scan required" when unscanned (the row is
+        // disabled, so the announcer adds "disabled" — the game's ScanRequired hint); "…not enough" when scanned
+        // but you can't pay (still enabled, mirroring the sighted button that stays clickable and warns).
+        private static string CreateLabel(SectorMapObjectEntity to, string name)
+        {
+            if (!to.IsScannedFrom) return Loc.T("sectormap.verb_create_scan", new { name });
+            int cost = CreateCost;
+            return NavResource >= cost
+                ? Loc.T("sectormap.verb_create", new { name, cost })
+                : Loc.T("sectormap.verb_create_poor", new { name, cost });
+        }
+
+        private static string UpgradeLabel(string name)
+        {
+            int cost = UpgradeCost;
+            return NavResource >= cost
+                ? Loc.T("sectormap.verb_upgrade", new { name, cost })
+                : Loc.T("sectormap.verb_upgrade_poor", new { name, cost });
+        }
+
+        private static void DoCreateRoute(SectorMapObjectEntity from, SectorMapObjectEntity to, string name)
+        {
+            if (!Interactive) { Tts.Speak(Loc.T("sectormap.not_now"), interrupt: true); return; }
+            if (!to.IsScannedFrom) { Tts.Speak(Loc.T("sectormap.verb_create_scan", new { name }), interrupt: true); return; }
+            if (NavResource < CreateCost) { Tts.Speak(Loc.T("sectormap.no_resource"), interrupt: true); return; }
+            try
+            {
+                Game.Instance.GameCommandQueue.CreateNewWarpRoute(from, to);
+                Tts.Speak(Loc.T("sectormap.verb_create_go", new { name }), interrupt: true);
+            }
+            catch (Exception e) { Main.Log?.Error("SectorMapScreen.DoCreateRoute failed: " + e); }
+        }
+
+        private static void DoUpgradeRoute(SectorMapObjectEntity to, SectorMapPassageEntity passage, string name)
+        {
+            if (!Interactive) { Tts.Speak(Loc.T("sectormap.not_now"), interrupt: true); return; }
+            if (passage.CurrentDifficulty <= SectorMapPassageEntity.PassageDifficulty.Safe) return;
+            if (NavResource < UpgradeCost) { Tts.Speak(Loc.T("sectormap.no_resource"), interrupt: true); return; }
+            try
+            {
+                Game.Instance.GameCommandQueue.LowerWarpRouteDifficulty(to, passage.CurrentDifficulty - 1);
+                Tts.Speak(Loc.T("sectormap.verb_upgrade_go", new { name }), interrupt: true);
+            }
+            catch (Exception e) { Main.Log?.Error("SectorMapScreen.DoUpgradeRoute failed: " + e); }
         }
 
         // ---- status lines ----
