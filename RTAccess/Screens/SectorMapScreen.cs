@@ -5,6 +5,7 @@ using Kingmaker.Code.UI.MVVM.VM.NavigatorResource;          // SectorMapBottomHu
 using Kingmaker.Code.UI.MVVM.VM.Overtips.SectorMap;          // OvertipEntitySystemVM, SectorMapOvertipsVM
 using Kingmaker.Code.UI.MVVM.VM.SectorMap;                   // SectorMapVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;              // ServiceWindowsType
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;          // TooltipTemplateSimple (the Space readout)
 using Kingmaker.Code.UI.MVVM.VM.Space;                       // SpaceStaticPartVM, SpaceStaticComponentType
 using Kingmaker.Controllers.GlobalMap;                       // SectorMapController
 using Kingmaker.GameModes;                                   // GameModeType
@@ -56,14 +57,17 @@ namespace RTAccess.Screens
             => Game.Instance?.CurrentlyLoadedArea is BlueprintSectorMapArea
                && Game.Instance.RootUiContext?.SpaceVM != null;
 
-        /// <summary>Verbs may act: this is the live top screen, the sector map is the CURRENT mode, and we are not
-        /// mid-jump or under a dialog/book-event layered over it (acting there desyncs the game / loops the resume
-        /// — the WA mode-stack lesson). READING is NOT gated by this — labels and status read during a jump too.</summary>
+        /// <summary>Verbs may act: the sector map is the CURRENT game mode and we are not mid-jump or under a
+        /// dialog/book-event (acting there desyncs the game / loops the resume — the WA mode-stack lesson). GlobalMap
+        /// mode is the authoritative "we're on the warp map" signal — do NOT also require ctx.sectormap to be the TOP
+        /// mod screen: the Travel/Visit verbs are invoked from OUR ChoiceSubmenuScreen picker, which sits on top of
+        /// the sector map (Current == the submenu, not ctx.sectormap) yet leaves the game mode GlobalMap — gating on
+        /// the top screen there wrongly rejected our own verb picker with "Not available now". READING is NOT gated by
+        /// this — labels and status read during a jump too.</summary>
         public static bool Interactive
         {
             get
             {
-                if (ScreenManager.Current?.Key != "ctx.sectormap") return false;
                 if (Game.Instance?.CurrentMode != GameModeType.GlobalMap) return false;
                 var vm = Sector();
                 if (vm == null) return true; // no VM to consult → assume actable (defensive; IsActive already true)
@@ -105,7 +109,8 @@ namespace RTAccess.Screens
                 var overtipVm = vm;
                 b.AddItem(ControlId.Referenced(v.Data, "sms:" + uid), GraphNodes.Button(
                     () => SystemLabel(v, overtipVm),
-                    () => Activate(v, overtipVm)));
+                    () => Activate(v, overtipVm),
+                    tooltip: SystemTooltip(v, overtipVm)));   // Space → the system dossier
                 any = true;
             }
             if (!any)
@@ -149,12 +154,13 @@ namespace RTAccess.Screens
         }
 
         // The service windows offered from the sector-map HUD (same GlobalMap-adjacent set the system map uses;
-        // the game surfaces the ship/roster/journal here too). TODO(harness): confirm which are actually enabled
-        // in GlobalMap mode and prune.
+        // the game surfaces the ship/roster/journal here too). ShipCustomization is intentionally NOT here — it has
+        // its own dedicated "Ship customization" action (Hud().OpenShipCustomization); listing it as a window too
+        // double-voiced it in-game.
         private static readonly ServiceWindowsType[] WindowButtons =
         {
             ServiceWindowsType.Inventory, ServiceWindowsType.CharacterInfo, ServiceWindowsType.Journal,
-            ServiceWindowsType.Encyclopedia, ServiceWindowsType.ShipCustomization,
+            ServiceWindowsType.Encyclopedia,
             ServiceWindowsType.ColonyManagement, ServiceWindowsType.CargoManagement,
             ServiceWindowsType.Augmentations,
         };
@@ -232,40 +238,38 @@ namespace RTAccess.Screens
 
         // ---- labels (mirror the overtip card; [[rt-label-mirror-visual]]) ----
 
+        // The display name, or "Unknown system" when it shouldn't be named yet.
+        private static string SystemName(SectorMapObject view)
+            => view.IsExploredOrHasQuests && !string.IsNullOrWhiteSpace(view.Name)
+                ? view.Name : Loc.T("sectormap.unknown_system");
+
+        // Status / route word — mirrors the card's risk indicator (0–3 skulls → difficulty word). Difficulty ONLY:
+        // the encounter % is an internal PassagesGenerator roll shown NOWHERE to sighted players, and travel time
+        // only surfaces in the history log after committing — so we reveal neither (parity; user call 2026-07-14).
+        private static string StatusWord(SectorMapObject view)
+        {
+            var entity = view.Data;
+            var ctrl = Ctrl;
+            var current = ctrl?.CurrentStarSystem;
+            if (current != null && entity == current) return Loc.T("sectormap.here");
+            if (entity.IsVisited) return Loc.T("sectormap.visited");
+            var passage = current != null ? ctrl.FindPassageBetween(current, entity) : null;
+            return passage != null && passage.IsExplored
+                ? Loc.T("sectormap.route", new { difficulty = DifficultyWord(passage.CurrentDifficulty) })
+                : Loc.T("sectormap.no_route");
+        }
+
         private static string SystemLabel(SectorMapObject view, OvertipEntitySystemVM overtip)
         {
             try
             {
-                var entity = view.Data;
-                var ctrl = Ctrl;
-                var current = ctrl?.CurrentStarSystem;
-                var parts = new List<string>
-                {
-                    view.IsExploredOrHasQuests && !string.IsNullOrWhiteSpace(view.Name)
-                        ? view.Name : Loc.T("sectormap.unknown_system"),
-                };
-
-                bool isCurrent = current != null && entity == current;
-                SectorMapPassageEntity passage = (!isCurrent && current != null)
-                    ? ctrl.FindPassageBetween(current, entity) : null;
-                bool reachable = passage != null && passage.IsExplored;
-
-                if (isCurrent) parts.Add(Loc.T("sectormap.here"));
-                else if (entity.IsVisited) parts.Add(Loc.T("sectormap.visited"));
-                else if (reachable)
-                    parts.Add(Loc.T("sectormap.route", new
-                    {
-                        difficulty = DifficultyWord(passage.CurrentDifficulty),
-                        chance = Mathf.RoundToInt(passage.EncounterChance),
-                    }));
-                else parts.Add(Loc.T("sectormap.no_route"));
-
+                var parts = new List<string> { SystemName(view), StatusWord(view) };
                 // Card flags, read from live game state (robust regardless of overtip refresh timing).
                 if (Game.Instance?.ColonizationController?.GetColony(view) != null) parts.Add(Loc.T("systemmap.has_colony"));
                 if (SafeCheckQuests(view)) parts.Add(Loc.T("systemmap.has_quest"));
                 if (SafeCheckRumours(overtip)) parts.Add(Loc.T("systemmap.has_rumour"));
-
-                parts.Add(BearingAndUnits(CurrentPos(), entity.Position));
+                var bearing = Bearing(CurrentPos(), view.Data.Position);
+                if (!string.IsNullOrEmpty(bearing)) parts.Add(bearing);
                 return string.Join(", ", parts);
             }
             catch (Exception e)
@@ -273,6 +277,25 @@ namespace RTAccess.Screens
                 Main.Log?.Error("SectorMapScreen.SystemLabel: " + e);
                 return string.IsNullOrWhiteSpace(view?.Name) ? Loc.T("sectormap.unknown_system") : view.Name;
             }
+        }
+
+        // Space on a system → a short dossier: name (title) + status/route word + the quest/rumour objective TITLES
+        // the card itself shows (OvertipEntitySystemVM.QuestObjectiveName / RumourObjectiveName — sighted card text)
+        // + colony. Same difficulty-only parity as the browse label. Replaces the bare "No tooltip".
+        private static Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> SystemTooltip(
+            SectorMapObject view, OvertipEntitySystemVM overtip)
+            => () => new TooltipTemplateSimple(SystemName(view), SystemDetail(view, overtip));
+
+        private static string SystemDetail(SectorMapObject view, OvertipEntitySystemVM overtip)
+        {
+            var lines = new List<string> { StatusWord(view) };
+            if (overtip != null)
+            {
+                try { if (overtip.CheckQuests() && !string.IsNullOrWhiteSpace(overtip.QuestObjectiveName.Value)) lines.Add(overtip.QuestObjectiveName.Value); } catch { }
+                try { if (overtip.CheckRumours() && !string.IsNullOrWhiteSpace(overtip.RumourObjectiveName.Value)) lines.Add(overtip.RumourObjectiveName.Value); } catch { }
+            }
+            if (Game.Instance?.ColonizationController?.GetColony(view) != null) lines.Add(Loc.T("systemmap.has_colony"));
+            return string.Join("\n", lines);
         }
 
         private static bool SafeCheckQuests(SectorMapObject view)
@@ -304,16 +327,15 @@ namespace RTAccess.Screens
             }
         }
 
-        // Bearing + distance from the ship, e.g. "14 units, north-east". Map plane is XZ (same as the system map).
-        // Distances are the map's schematic units, not a real measure.
-        private static string BearingAndUnits(Vector3 from, Vector3 to)
+        // Compass bearing from the ship to the system, e.g. "north-east". No numeric distance: on a passage-based
+        // map the straight-line distance is misleading (a near system can be a longer warp), so only the direction
+        // is spoken (user call 2026-07-14). Empty at/near the current system. Map plane is XZ (like the system map).
+        private static string Bearing(Vector3 from, Vector3 to)
         {
             float dx = to.x - from.x, dz = to.z - from.z;
-            float dist = Exploration.Geo.Distance(from, to);
-            var s = Loc.T("systemmap.units", new { n = Mathf.RoundToInt(dist) });
-            if (dist > 0.5f && Exploration.Geo.CompassSector(dx, dz, out int sector))
-                s += ", " + Loc.T(Accessibility.InteractableDescriber.Compass8[sector]);
-            return s;
+            if (Exploration.Geo.Distance(from, to) <= 0.5f) return "";
+            return Exploration.Geo.CompassSector(dx, dz, out int sector)
+                ? Loc.T(Accessibility.InteractableDescriber.Compass8[sector]) : "";
         }
 
         // ---- verbs (Enter → the valid actions for that system) ----
