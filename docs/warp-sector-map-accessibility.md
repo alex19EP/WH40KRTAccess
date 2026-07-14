@@ -1,10 +1,37 @@
 # Warp / Sector-Map accessibility
 
-**Status: implemented from the decompile, NOT yet tested in-harness.** Warp travel is quest-gated in the
-campaign, so the live game could not be driven when this was built (shared-harness rule + no access to the
-sector map yet). Everything below compiles and is wired in; the items tagged **TODO(harness)** need live
-verification once the sector map is reachable. This supersedes the "M4 — sector map (sketch only)" section of
-`orbital-listing-wilkes.md`.
+**Status: LIVE-TESTED 2026-07-14 (warp now unlocked) — core verified, one item pending a redeploy.** The screen
+comes up, the systems list / status / actions read correctly, the verb picker opens, and Space now reads a
+dossier. Testing surfaced a critical travel-blocking bug and several parity corrections — all fixed (see
+"Live test results" below). The one thing still unverified is the actual **warp-jump narration** (`WarpEvents`),
+because deploying the fixes was blocked by concurrent non-compiling work in the shared tree; re-test after the
+next build. This supersedes the "M4 — sector map (sketch only)" section of `orbital-listing-wilkes.md`.
+
+## Live test results (2026-07-14)
+
+Tested on the live sector map at Фурибундус (12 known systems of 47). Confirmed working: screen activates
+("Sector map"), Tab into the systems list, all labels (name / status / difficulty / flags / bearing), frozen
+nearest-first order, the Status + Actions stops, and the Enter→verb-picker (opens "Travel to X", Escape backs
+out cleanly). Fixed from what testing found:
+
+- **CRITICAL — travel was completely blocked.** Selecting "Travel to X" spoke "Not available now" and did
+  nothing. `Interactive` gated on `ScreenManager.Current == ctx.sectormap`, but Travel/Visit fire from our own
+  `ChoiceSubmenuScreen` (Current == the submenu). Fixed: gate on `GlobalMap` mode + `!IsTraveling` +
+  `!IsDialogActive` only (the submenu leaves the game mode GlobalMap; verified it never touches game mode).
+- **Encounter % removed (parity).** The label spoke "N percent encounter risk", but `EncounterChance` is an
+  internal `PassagesGenerator` roll shown to sighted players NOWHERE (verified: no VM/view binds it). Sighted
+  players see risk ONLY as 0–3 skulls (`SpaceSystemNavigatorPopupVM.ValueOfSkulls = (int)CurrentDifficulty`).
+  Label now speaks the difficulty word only, which mirrors the skulls.
+- **Distance → bearing only.** Straight-line map distance is misleading on a passage-based map (a near system
+  can be a longer warp) and "N units" sounds like a unit count. Now just the compass direction.
+- **Space dossier.** System nodes had no tooltip → "No tooltip". Space now reads name + route word + the
+  quest/rumour objective titles the card shows (`QuestObjectiveName`/`RumourObjectiveName`) + colony.
+- **Duplicate "Ship customization" removed** — it was listed both as a dedicated action and as a service window.
+
+**Duration unit RESOLVED:** `TimeSpanExtension.TotalSegments() = floor(TotalHours)/8`, so **1 segment = 8 hours
+= ⅓ day**; `DurationInDays` is segments (the game's own history log says "duration N segments"). Sample passages
+from Фурибундус: Safe 25 seg (~8d), Unsafe 50 (~17d), Dangerous 109 (~36d), Deadly 185 (~62d). Per the parity
+call above, travel time is **not** spoken (sighted players never see it either — it only appears in the log).
 
 The sector map is the galaxy-scale sibling of the in-system star-system map, so this is deliberately a clone of
 the shipped `SystemMapScreen` recipe — a flat, frozen, nearest-first list of graph nodes, labels mirroring the
