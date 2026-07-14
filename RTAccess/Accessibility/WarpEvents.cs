@@ -12,7 +12,7 @@ namespace RTAccess.Accessibility;
 
 /// <summary>
 /// Long-lived EventBus subscriber voicing SECTOR-MAP / warp-travel state (<see cref="GameModeType.GlobalMap"/>):
-/// entering / leaving warp, pause / resume, scan lifecycle + reveals, and warp-route charting. The
+/// entering / leaving warp, scan lifecycle + reveals, and warp-route charting. The
 /// <see cref="RTAccess.Accessibility.SpaceEvents"/> sibling for the galaxy layer. Subscribed once at mod load,
 /// unsubscribed at unload (see <see cref="Main"/>); the tiny <see cref="Tick"/> only resets edge state off-map.
 /// Plan: docs/plans/warp-sector-map-accessibility.md.
@@ -41,9 +41,6 @@ internal sealed class WarpEvents :
     // HandleWarpTravelStarted (robust to the several-second start animation, unlike a timestamp window).
     private static bool _suppressNextStart;
 
-    // Announce resume only when we actually announced a pause (resume also fires on load / area re-enable).
-    private bool _announcedPause;
-
     // Newly-revealed contacts between HandleScanStarted and HandleScanStopped.
     private int _scanRevealed;
 
@@ -59,7 +56,6 @@ internal sealed class WarpEvents :
     public void HandleWarpTravelStarted(SectorMapPassageEntity passage)
     {
         if (_suppressNextStart) { _suppressNextStart = false; return; } // our screen already said the destination
-        _announcedPause = false;
         try
         {
             string dest = Game.Instance?.SectorMapTravelController?.To?.View?.Name;
@@ -80,7 +76,6 @@ internal sealed class WarpEvents :
 
     public void HandleWarpTravelStopped()
     {
-        _announcedPause = false;
         try
         {
             string name = Game.Instance?.SectorMapController?.CurrentStarSystem?.View?.Name;
@@ -92,19 +87,13 @@ internal sealed class WarpEvents :
         catch (Exception e) { Main.Log?.Log("warp stopped announce failed: " + e.Message); }
     }
 
-    public void HandleWarpTravelPaused()
-    {
-        if (_announcedPause) return;
-        _announcedPause = true;
-        Speaker.Speak(Loc.T("sectormap.evt_paused"), interrupt: false);
-    }
+    // Pause/resume are internal warp mechanics — they fire whenever a dialog or scripted event interrupts the
+    // jump, and that dialog/event already announces itself, so voicing them was pure noise (dropped 2026-07-14,
+    // user call after the live test). Kept as no-ops: the interface requires them. The evt_paused / evt_resumed
+    // locale keys are now unused but left in place.
+    public void HandleWarpTravelPaused() { }
 
-    public void HandleWarpTravelResumed()
-    {
-        if (!_announcedPause) return; // resume fires on load/enable too; only echo a pause we announced
-        _announcedPause = false;
-        Speaker.Speak(Loc.T("sectormap.evt_resumed"), interrupt: false);
-    }
+    public void HandleWarpTravelResumed() { }
 
     // A star-system arrival raises HandleStarSystemChanged just before HandleWarpTravelStopped, so the arrival
     // line above already covers it — kept as a no-op to avoid a double announce.
@@ -158,11 +147,10 @@ internal sealed class WarpEvents :
     // ---- tick (edge-state housekeeping only; the reader is otherwise event-driven) ----
 
     /// <summary>Called every frame from Main.OnUpdate. Clears transient edge state when we leave the sector map
-    /// so a stale pause/scan flag can't leak into the next visit.</summary>
+    /// so a stale scan flag can't leak into the next visit.</summary>
     internal void Tick()
     {
         if (OnSectorMap) return;
-        _announcedPause = false;
         _scanRevealed = 0;
     }
 
