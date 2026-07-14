@@ -38,11 +38,13 @@ namespace RTAccess.Accessibility
         /// <summary>Clear the guard so the next observation (a fresh window open) re-baselines silently.</summary>
         public static void Reset() => _last = null;
 
-        /// <summary>True while a member-switching service window (Inventory / Character Info) is the focused
-        /// mod screen — the contexts where <see cref="SwitchMember"/>/<see cref="SwitchTo"/> apply.</summary>
+        /// <summary>True while a member-switching service window (Inventory / Character Info /
+        /// Augmentations) is the focused mod screen — the contexts where
+        /// <see cref="SwitchMember"/>/<see cref="SwitchTo"/> apply.</summary>
         public static bool WindowActive
             => RTAccess.Screens.ScreenManager.Current is RTAccess.Screens.InventoryScreen
-                or RTAccess.Screens.CharacterInfoScreen;
+                or RTAccess.Screens.CharacterInfoScreen
+                or RTAccess.Screens.AugmentationsScreen;
 
         /// <summary>Switch the viewed member to the next/previous roster entry — the same walk the game's own
         /// Prev/NextCharacter handlers run (CharInfoNameAndPortraitVM.SelectCharacter): step

@@ -242,17 +242,28 @@ namespace RTAccess.UI
             };
         }
 
-        /// <summary>One candidate row of the equip-selector window (<see cref="InventorySelectorWindowVM"/>).
+        /// <summary>One candidate row of an equip-selector window — the inventory doll's
+        /// (<see cref="InventorySelectorWindowVM"/>) or the augmentations window's
+        /// (<c>AugmentationsSelectorWindowVM</c>): both are <see cref="SelectorWindowVM{T}"/> over
+        /// <see cref="EquipSelectorSlotVM"/>, differing only in which base field carries the equipped slot
+        /// and in their per-window <c>Unequip</c> (not on the base — passed as <paramref name="unequip"/>).
         /// The game inserts the currently WORN item at the head of the list; that row is detected LIVE
         /// (an unequip that keeps the window open flips it back to a plain candidate — the live label
         /// announces the flip), gains an "(equipped)" marker, and Enter takes it off via the window's own
-        /// <c>Unequip</c>; every other row Enter equips through the window's own <c>Confirm</c> (the
+        /// unequip; every other row Enter equips through the window's own <c>Confirm</c> (the
         /// game's EquipItem command, which closes the window on success). Space = the candidate's own
         /// item card (a single template, not a slot list).</summary>
-        public static NodeVtable EquipCandidate(EquipSelectorSlotVM candidate, InventorySelectorWindowVM selector)
+        public static NodeVtable EquipCandidate(EquipSelectorSlotVM candidate,
+            SelectorWindowVM<EquipSelectorSlotVM> selector, Action unequip)
         {
-            Func<bool> equipped = () => selector?.Slot != null && selector.Slot.HasItem
-                && ReferenceEquals(candidate.Item, selector.Slot.Item.Value);
+            // The base VM carries the equipped slot in one of two fields (Slot for the doll,
+            // AugmentationsSlot for the augment window) — read whichever is filled.
+            Func<ItemSlotVM> equippedSlot = () => (ItemSlotVM)selector?.Slot ?? selector?.AugmentationsSlot;
+            Func<bool> equipped = () =>
+            {
+                var s = equippedSlot();
+                return s != null && s.HasItem && ReferenceEquals(candidate.Item, s.Item.Value);
+            };
             Func<string> label = () =>
             {
                 var name = candidate.DisplayName;
@@ -268,7 +279,7 @@ namespace RTAccess.UI
                     new NodeAnnouncement(label, live: true, kind: AnnouncementKinds.Label),
                 },
                 SearchText = label,
-                OnActivate = () => { if (equipped()) selector.Unequip(); else selector.Confirm(candidate); },
+                OnActivate = () => { if (equipped()) unequip?.Invoke(); else selector.Confirm(candidate); },
                 OnTooltip = () => TooltipChooser.OpenTemplate(label(), candidate.Tooltip.Value),
                 ActivateSound = Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick,
             };

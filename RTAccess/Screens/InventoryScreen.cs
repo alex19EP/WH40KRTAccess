@@ -5,6 +5,7 @@ using Kingmaker.Blueprints.Root;                   // LocalizedTexts, BlueprintR
 using Kingmaker.Blueprints.Root.Strings;           // UIStrings (the game's own filter / visual-settings labels)
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.Inventory;
+using Kingmaker.Code.UI.MVVM.VM.Slots;             // SlotsGroupVM<ItemSlotVM> (the shared search core)
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.LevelClassScores.AbilityScores; // AbilitiesOrdered
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.SkillsAndWeapons.Skills;        // SkillsOrdered
 using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates; // TooltipTemplateAbility (the weapons block's ability cards)
@@ -184,20 +185,26 @@ namespace RTAccess.Screens
         // render reflects the filtered list. The label carries the active query (read on re-focus after an
         // edit); a "Clear" button appears only while a query is set. Keyed party-wide (search is shared).
         internal static void BuildSearch(GraphBuilder b, string k, InventoryStashVM stash) // shared with CargoScreen (same InventoryStashVM)
+            => BuildSearch(b, k, stash?.ItemSlotsGroup);
+
+        // The search core takes the slots GROUP rather than the stash VM: the augmentations window's
+        // stash (AugmentationsInventoryStashVM) is a member-identical but unrelated class, and the group
+        // is the only piece the search actually touches. (AugmentationsScreen shares this overload.)
+        internal static void BuildSearch(GraphBuilder b, string k, SlotsGroupVM<ItemSlotVM> group)
         {
-            if (stash?.ItemSlotsGroup == null) return;
+            if (group == null) return;
             b.SetRegion(k + "search");
             b.PushContext(Loc.T("inv.search"), Loc.T("role.list"));
             b.AddItem(ControlId.Structural(k + "search:edit"), GraphNodes.Button(
                 () =>
                 {
-                    var q = stash.ItemSlotsGroup.SearchString?.Value;
+                    var q = group.SearchString?.Value;
                     return string.IsNullOrEmpty(q) ? Loc.T("inv.search") : Loc.T("inv.search_active", new { query = q });
                 },
                 BeginSearch));
-            if (!string.IsNullOrEmpty(stash.ItemSlotsGroup.SearchString?.Value))
+            if (!string.IsNullOrEmpty(group.SearchString?.Value))
                 b.AddItem(ControlId.Structural(k + "search:clear"), GraphNodes.Button(
-                    () => Loc.T("inv.search_clear"), () => ClearSearch(stash)));
+                    () => Loc.T("inv.search_clear"), () => ClearSearch(group)));
             b.PopContext();
         }
 
@@ -210,12 +217,12 @@ namespace RTAccess.Screens
         }
 
         // Clear via the game's own field (its observer sets SearchString=""), falling back to the reactive.
-        private static void ClearSearch(InventoryStashVM stash)
+        private static void ClearSearch(SlotsGroupVM<ItemSlotVM> group)
         {
             var field = SearchField();
             if (field != null) field.text = "";
-            else if (stash?.ItemSlotsGroup?.SearchString != null && !string.IsNullOrEmpty(stash.ItemSlotsGroup.SearchString.Value))
-                stash.ItemSlotsGroup.SearchString.Value = "";
+            else if (group?.SearchString != null && !string.IsNullOrEmpty(group.SearchString.Value))
+                group.SearchString.Value = "";
             Tts.Speak(Loc.T("search.cleared"), interrupt: true);
         }
 

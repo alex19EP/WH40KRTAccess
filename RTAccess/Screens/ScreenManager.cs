@@ -273,6 +273,14 @@ namespace RTAccess.Screens
             // The ship component picker (ShipUpgradeVm.ShipSelectorWindowVM), raised by Enter on a component
             // slot — layer 12, Exclusive, directly above the ship screen (the EquipSelectorScreen shape).
             Register(new ShipItemSelectorScreen());
+            // Augmentations service window (CurrentServiceWindow == Augmentations — the DLC3 cybernetics
+            // screen, Surface OR Space) — layer 10. Status / body slots / augment stash as Tab stops; the
+            // doll is decoration. Two-phase install (dirty slots) and the galvanize toggle are first-class
+            // verbs. See docs/plans/galvanized-slotting-ritchie.md.
+            Register(new AugmentationsScreen());
+            // The augment picker (AugmentationsVM.InventorySelectorWindowVM), raised by Enter on a body
+            // slot — layer 12, Exclusive, directly above the augmentations screen (the EquipSelectorScreen shape).
+            Register(new AugmentSelectorScreen());
             // Vendor / trade window (Surface OR Space StaticPartVM.VendorVM — a full-screen UI, not a
             // ServiceWindowsType) — layer 24, Exclusive. Trade tab (PF-threshold buys, tiered wares,
             // send-to-cargo stash) + Reputation tab (cargo-for-reputation exchange).

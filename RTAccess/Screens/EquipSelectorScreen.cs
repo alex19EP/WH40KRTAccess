@@ -69,7 +69,7 @@ namespace RTAccess.Screens
                     var id = ent != null
                         ? ControlId.Referenced(ent, k + "cand:" + ent.UniqueId)
                         : ControlId.Structural(k + "cand:" + i);
-                    b.AddItem(id, ItemNodes.EquipCandidate(cand, sel));
+                    b.AddItem(id, ItemNodes.EquipCandidate(cand, sel, sel.Unequip));
                     i++;
                 }
             }
