@@ -1357,6 +1357,8 @@
   "sectormap.diff_unsafe": "unsafe route",
   "sectormap.diff_dangerous": "dangerous route",
   "sectormap.diff_deadly": "deadly route",
+  "sectormap.links_header": "Explored links:",
+  "sectormap.link": "{name}, {difficulty}",
   "sectormap.navigator_resource": "Navigator's Resource {n}",
   "sectormap.nav_will_change": "change pending {n}",
   "sectormap.current": "Current system: {name}",

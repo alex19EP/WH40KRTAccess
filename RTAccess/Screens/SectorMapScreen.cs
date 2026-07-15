@@ -296,7 +296,46 @@ namespace RTAccess.Screens
                 try { if (overtip.CheckRumours() && !string.IsNullOrWhiteSpace(overtip.RumourObjectiveName.Value)) lines.Add(overtip.RumourObjectiveName.Value); } catch { }
             }
             if (Game.Instance?.ColonizationController?.GetColony(view) != null) lines.Add(Loc.T("systemmap.has_colony"));
+            lines.AddRange(ExploredLinks(view));
             return string.Join("\n", lines);
+        }
+
+        // The explored warp links radiating from THIS system — the exact set of lines a sighted player sees drawn
+        // around the node. SectorMapPassageView.UpdateVisibility draws a passage iff Data.IsExplored, so we mirror
+        // that filter precisely: every fully-explored passage touching the system, listed as the OTHER endpoint's
+        // name + difficulty word. Half-explored (one-side) and unexplored passages draw no line, so they are omitted
+        // here too — no topology the sighted player can't already see ([[rt-visual-parity]]). Closes the mod's
+        // narrower-than-sighted gap: the browse label only carries the current→system route, but a sighted player
+        // reads the whole explored graph, including links between two non-current systems.
+        private static List<string> ExploredLinks(SectorMapObject view)
+        {
+            var result = new List<string>();
+            var ctrl = Ctrl;
+            var mine = view?.Data;
+            if (ctrl == null || mine == null) return result;
+            try
+            {
+                var links = new List<string>();
+                foreach (var p in ctrl.AllPassagesForSystem(mine))
+                {
+                    if (p == null || !p.IsExplored) continue;
+                    var e1 = p.View?.StarSystem1Entity;
+                    var e2 = p.View?.StarSystem2Entity;
+                    var other = (e1 != null && e1.UniqueId != mine.UniqueId) ? e1
+                              : (e2 != null && e2.UniqueId != mine.UniqueId) ? e2 : null;
+                    var nv = other?.View;
+                    if (nv == null || !nv.IsExploredOrHasQuests || string.IsNullOrWhiteSpace(nv.Name)) continue;
+                    links.Add(Loc.T("sectormap.link", new { name = nv.Name, difficulty = DifficultyWord(p.CurrentDifficulty) }));
+                }
+                if (links.Count > 0)
+                {
+                    links.Sort(StringComparer.CurrentCultureIgnoreCase);
+                    result.Add(Loc.T("sectormap.links_header"));
+                    result.AddRange(links);
+                }
+            }
+            catch (Exception e) { Main.Log?.Log("sector links enum failed: " + e.Message); }
+            return result;
         }
 
         private static bool SafeCheckQuests(SectorMapObject view)
