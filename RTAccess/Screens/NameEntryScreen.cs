@@ -12,11 +12,13 @@ namespace RTAccess.Screens
 {
     /// <summary>
     /// The character/ship name-entry modal (the chargen change-name <see cref="MessageBoxVM"/>, a TextField
-    /// box created by the Summary/Ship phases), graph-native. Resolves whichever phase's box is currently
-    /// open and lets the player TYPE a custom name: the name field is a <see cref="CharGenNodes.TextField"/>
-    /// node driving the game's own TMP input field through <see cref="TextEntry"/> (so Unity/TMP own caret,
-    /// Unicode and IME), Random rolls one (spoken), Apply confirms, Back cancels. Layer 32, Exclusive —
-    /// sits above the chargen flow and owns the keyboard while open.
+    /// box created by the Summary/Ship phases — or the name-your-familiar box a level-up Commit with a
+    /// PetKeystone pick opens on <c>CareerPathVM.PetChangeNameVM</c>), graph-native. Resolves whichever
+    /// box is currently open and lets the player TYPE a custom name: the name field is a
+    /// <see cref="CharGenNodes.TextField"/> node driving the game's own TMP input field through
+    /// <see cref="TextEntry"/> (so Unity/TMP own caret, Unicode and IME), Random rolls one (spoken),
+    /// Apply confirms, Back cancels. Layer 32, Exclusive — sits above the chargen flow / the level-up
+    /// screen (26) and owns the keyboard while open.
     /// </summary>
     public sealed class NameEntryScreen : Screen
     {
@@ -25,14 +27,25 @@ namespace RTAccess.Screens
         public override bool Exclusive => true;
         public override string ScreenName => Loc.T("chargen.name_entry");
 
-        // The change-name box of whichever chargen phase is current (Summary = character, Ship = vessel).
+        // The change-name box of whichever chargen phase is current (Summary = character, Ship = vessel),
+        // or the level-up name-your-familiar box.
         private static MessageBoxVM Box()
         {
             var cg = Game.Instance?.RootUiContext?.MainMenuVM?.CharGenContextVM?.CharGenVM?.Value;
             var phase = cg?.CurrentPhaseVM.Value;
             if (phase is CharGenSummaryPhaseVM s) return s.CharGenNameVM?.MessageBoxVM?.Value;
             if (phase is CharGenShipPhaseVM sh) return sh.MessageBoxVM?.Value;
-            return null;
+            return PetBox();
+        }
+
+        // Committing a level-up with a familiar (PetKeystone) pick opens a name-your-pet box on the career
+        // VM (CareerPathVM.Commit → PetChangeNameVM) — bound only by the game's own progression views,
+        // never CommonVM.MessageBoxVM, so MessageBoxScreen can't see it. Declining disposes the VM in
+        // place while the property keeps holding it, hence the IsDisposed gate.
+        private static MessageBoxVM PetBox()
+        {
+            var box = LevelUpScreen.Vm()?.CurrentCareer.Value?.PetChangeNameVM?.Value;
+            return box != null && !box.IsDisposed ? box : null;
         }
 
         public override bool IsActive() => Box() != null;

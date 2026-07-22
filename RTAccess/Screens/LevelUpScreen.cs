@@ -59,9 +59,16 @@ namespace RTAccess.Screens
         private readonly Dictionary<string, bool> _fold = new Dictionary<string, bool>();
 
         // Selections whose lazy option list (FilteredGroupList) we already materialized via the VM's own
-        // UpdateFeatures — it rebuilds the option VMs wholesale, so once per selection per page, never per
-        // render (the one construction-time side effect the adapter proxies carried).
+        // UpdateFeatures — it rebuilds the option VMs wholesale, so once per selection per render EPOCH,
+        // never per render. A made pick evicts the OTHER pending selections (see RefreshStaleSelections):
+        // picks change downstream option lists, so those must re-materialize.
         private readonly HashSet<RankEntrySelectionVM> _materialized = new HashSet<RankEntrySelectionVM>();
+
+        // Pick-change detection for RefreshStaleSelections: each in-range selection's last-seen staged
+        // feature, plus the fold-map key its group was declared under (to re-latch a group that just
+        // became a pending choice).
+        private readonly Dictionary<RankEntrySelectionVM, string> _picks = new Dictionary<RankEntrySelectionVM, string>();
+        private readonly Dictionary<RankEntrySelectionVM, string> _selKey = new Dictionary<RankEntrySelectionVM, string>();
 
         private string _page; // last-built page signature (state + career) — a flip resets the maps above
 
@@ -72,6 +79,8 @@ namespace RTAccess.Screens
         {
             _fold.Clear();
             _materialized.Clear();
+            _picks.Clear();
+            _selKey.Clear();
             _page = null;
         }
 
@@ -96,7 +105,8 @@ namespace RTAccess.Screens
 
         private static ServiceWindowsVM ServiceWindows() => UiContexts.ServiceWindows();
 
-        private static UnitProgressionVM Vm() => Vm(ServiceWindows()?.CharacterInfoVM?.Value);
+        // Internal: NameEntryScreen resolves the level-up pet-naming box through this same VM.
+        internal static UnitProgressionVM Vm() => Vm(ServiceWindows()?.CharacterInfoVM?.Value);
 
         private static UnitProgressionVM Vm(CharacterInfoVM ci)
         {
@@ -127,7 +137,7 @@ namespace RTAccess.Screens
             var page = PageSig(vm);
             if (_page != page)
             {
-                if (_page != null) { _fold.Clear(); _materialized.Clear(); }
+                if (_page != null) { _fold.Clear(); _materialized.Clear(); _picks.Clear(); _selKey.Clear(); }
                 _page = page;
             }
 
@@ -215,6 +225,8 @@ namespace RTAccess.Screens
         // outstanding line + Commit read live off the VM.
         private void BuildProgression(GraphBuilder b, string k, UnitProgressionVM vm, CareerPathVM cp)
         {
+            RefreshStaleSelections(cp);
+
             b.BeginStop("head").AddItem(ControlId.Structural(k + "head"),
                 GraphNodes.Text(() => ProgressHeader(cp)));
 
@@ -255,6 +267,7 @@ namespace RTAccess.Screens
                     if (sel == null) continue;
                     var s = sel; // capture
                     string skey = rkey + ":sel:" + si++;
+                    _selKey[s] = skey; // so RefreshStaleSelections can re-latch this group's fold
                     // Materialize the lazy option list ONCE via the VM's own UpdateFeatures (it rebuilds
                     // the option VMs — much too heavy for a per-render call).
                     if (_materialized.Add(s)) s.UpdateFeatures();
@@ -287,6 +300,45 @@ namespace RTAccess.Screens
                 GraphNodes.Button(() => Loc.T("levelup.change_career"), () => vm.SetCareerPath(null)));
         }
 
+        // A made pick can CHANGE the other pending selections' option lists: the staged feature injects
+        // options into later entries via AddFeaturesToLevelUp — the familiar (PetKeystone) pick is the
+        // canonical case, adding the pet's abilities, talents and ultimate to later ranks (before it, the
+        // PetUltimateAbility entry has ZERO options). The game's UI rebuilds an entry's option VMs every
+        // time it's clicked into (RankEntrySelectionVM.HandleClick / SetRankEntry → UpdateFeatures); this
+        // immediate-mode page has no "click into", so detect pick changes here and evict the OTHER
+        // in-range selections from the materialization memo — the next render re-runs the VM's own
+        // UpdateFeatures. The just-changed selection itself is kept: focus sits inside its group, and
+        // rebuilding its option VMs would drop the focused node. An evicted group whose collapsed fold
+        // was latched while it was a non-choice (the empty pet-ultimate case) re-latches, so a group that
+        // just became a pending choice opens; a user's own collapse of a still-made group survives.
+        private void RefreshStaleSelections(CareerPathVM cp)
+        {
+            List<RankEntrySelectionVM> changed = null;
+            foreach (var s in cp.AvailableSelections)
+            {
+                string cur = s.SelectedFeature.Value?.Feature?.AssetGuid ?? "";
+                string prev;
+                bool had = _picks.TryGetValue(s, out prev);
+                if (had ? prev != cur : cur.Length != 0)
+                {
+                    if (changed == null) changed = new List<RankEntrySelectionVM>();
+                    changed.Add(s);
+                }
+                _picks[s] = cur;
+            }
+            if (changed == null) return;
+            foreach (var s in cp.AvailableSelections)
+            {
+                if (changed.Contains(s)) continue;
+                _materialized.Remove(s);
+                string sk;
+                bool folded;
+                if (_selKey.TryGetValue(s, out sk)
+                    && _fold.TryGetValue(sk, out folded) && !folded && !s.SelectionMadeAndValid)
+                    _fold.Remove(sk);
+            }
+        }
+
         private static string ProgressHeader(CareerPathVM cp)
         {
             int rank = cp.Unit.Progression.GetPathRank(cp.CareerPath);
@@ -295,11 +347,17 @@ namespace RTAccess.Screens
 
         // Commit via the game's own CareerPathVM.Commit (re-checks validity, applies the preview to the real
         // unit through CommitLevelUpGameCommand, then destroys the manager and refreshes → back to state 1).
+        // EXCEPT with a familiar (PetKeystone) pick for the main character / custom companions: there
+        // CareerPathVM.Commit returns WITHOUT committing and opens a name-your-pet box on PetChangeNameVM
+        // instead (surfaced by NameEntryScreen; its Apply completes the real commit) — so don't announce
+        // completion until the level-up actually happened.
         private static void Commit(CareerPathVM cp)
         {
             if (!cp.CanCommit.Value) return;
             cp.Commit();
-            Tts.Speak(Loc.T("levelup.complete"));
+            var petBox = cp.PetChangeNameVM?.Value;
+            if (petBox == null || petBox.IsDisposed)
+                Tts.Speak(Loc.T("levelup.complete"));
         }
 
         // Escape: in the progression view, back out to the career list (the game pops a discard-confirm when

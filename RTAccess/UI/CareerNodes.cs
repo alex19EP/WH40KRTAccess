@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;                                     // TooltipTemplatePetKeystone
 using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.CareerPath;   // CareerPathVM
 using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.RankEntry;    // RankEntrySelectionVM, RankEntryState, RankFeatureState
 using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.RankEntry.Feature; // BaseRankEntryFeatureVM, RankEntrySelectionStatVM
+using Kingmaker.UnitLogic.Levelup.Selections;                                          // FeatureGroup
+using Owlcat.Runtime.UI.Tooltips;                                                      // TooltipBaseTemplate
 using RTAccess.UI.Graph;
 
 namespace RTAccess.UI
@@ -89,7 +92,7 @@ namespace RTAccess.UI
                 // ReannounceOnActivate convention, as CharGenNodes.SelectionItem does it).
                 StateText = canSelect ? (Func<string>)(() => chosen() ? Loc.T("state.selected") : null) : null,
                 OnActivate = canSelect ? (Action)(() => opt.Select()) : null,
-                OnTooltip = () => TooltipChooser.OpenTemplate(FeatureName(opt), opt.TooltipTemplate()),
+                OnTooltip = () => TooltipChooser.OpenTemplate(FeatureName(opt), OptionTemplate(opt)),
                 ActivateSound = canSelect
                     ? Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick
                     : null,
@@ -114,6 +117,20 @@ namespace RTAccess.UI
                 SearchText = () => FeatureName(f),
                 OnTooltip = () => TooltipChooser.OpenTemplate(FeatureName(f), f.TooltipTemplate()),
             };
+        }
+
+        // The option's Space tooltip. PetKeystone (familiar) options ship a NULL TooltipTemplate by design
+        // (RankEntrySelectionFeatureVM.OverrideTooltip nulls it); the game's own view compensates by
+        // building a TooltipTemplatePetKeystone on the fly while the familiar selection has focus
+        // (CareerPathVM.SetFocusOn). Mirror that here so Space on a familiar option reads the full pet
+        // card (prerequisites, key stats, description, abilities) instead of "No tooltip".
+        private static TooltipBaseTemplate OptionTemplate(BaseRankEntryFeatureVM opt)
+        {
+            var tpl = opt.TooltipTemplate();
+            if (tpl != null) return tpl;
+            if (opt is RankEntrySelectionFeatureVM sf && sf.Owner?.FeatureGroup == FeatureGroup.PetKeystone)
+                return new TooltipTemplatePetKeystone(sf, opt.CareerPathVM.Unit);
+            return null;
         }
 
         // Stat options name themselves by the attribute/skill they raise; everything else by DisplayName.
