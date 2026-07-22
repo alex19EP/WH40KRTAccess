@@ -16,6 +16,13 @@ namespace RTAccess
         private static readonly Regex SubSup =
             new Regex("<(sub|sup)>.*?</(sub|sup)>", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase);
         private static readonly Regex RichTextTag = new Regex("<[^>]+>", RegexOptions.Compiled);
+        // A run of ADJACENT tags ("</color><size=110%>") is a single visual boundary — the glue-or-space
+        // decision in StripRichTextSpaced must see it as one unit, not per tag.
+        private static readonly Regex RichTextTagRun = new Regex("(?:<[^>]+>)+", RegexOptions.Compiled);
+        // Explicit separator tags: a line/paragraph break is a real boundary no matter what characters
+        // surround it.
+        private static readonly Regex BreakTag =
+            new Regex(@"<\s*/?\s*(br|p)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
 
         public static string StripRichText(string s)
@@ -30,17 +37,29 @@ namespace RTAccess
             return s.Trim();
         }
 
-        /// <summary>Like <see cref="StripRichText"/> but replaces each tag with a SPACE rather than nothing,
-        /// so segments joined only by a rich-text boundary don't weld into one word — e.g. a combat-log damage
-        /// line and its emphasised "Critical hit!" suffix, which the game separates with a colour/size tag and
-        /// no space. Use for combat-log and bark text (no intra-word drop-cap tags); prefer
-        /// <see cref="StripRichText"/> for UI labels, where tight stripping keeps "N&lt;size&gt;ew Game" whole.
-        /// Extra spaces around punctuation are audibly harmless — screen readers normalise them.</summary>
+        /// <summary>Like <see cref="StripRichText"/> but replaces each tag boundary with a SPACE rather than
+        /// nothing, so segments joined only by a rich-text boundary don't weld into one word — e.g. a
+        /// combat-log damage line and its emphasised "Critical hit!" suffix, which the game separates with a
+        /// colour/size tag and no space. ONE exception: a styling-tag run with DIGITS on both sides glues —
+        /// stat values are written per-character ("&lt;color&gt;3&lt;/color&gt;&lt;size=110%&gt;0&lt;/size&gt;",
+        /// the char-sheet ability-score views) and TMP renders them as one number, so "30" must not read as
+        /// "3 0"; an explicit break tag (&lt;br&gt;/&lt;p&gt;) between digits still separates. Use for
+        /// combat-log, bark and scraped-tooltip text; prefer <see cref="StripRichText"/> for UI labels, where
+        /// tight stripping keeps "N&lt;size&gt;ew Game" whole. Extra spaces around punctuation are audibly
+        /// harmless — screen readers normalise them.</summary>
         public static string StripRichTextSpaced(string s)
         {
             if (string.IsNullOrEmpty(s)) return s;
             s = SubSup.Replace(s, "");
-            s = RichTextTag.Replace(s, " ");
+            var src = s; // the evaluator indexes the string the Replace is running over
+            s = RichTextTagRun.Replace(src, m =>
+            {
+                int i = m.Index - 1, j = m.Index + m.Length;
+                bool glue = i >= 0 && j < src.Length
+                    && char.IsDigit(src[i]) && char.IsDigit(src[j])
+                    && !BreakTag.IsMatch(m.Value);
+                return glue ? "" : " ";
+            });
             s = Whitespace.Replace(s, " ");
             return s.Trim();
         }

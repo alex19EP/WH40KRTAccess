@@ -14,6 +14,8 @@
        feature: it enforces the boundary). -->
   <ItemGroup>
     <Compile Include="..\RTAccess\UI\Graph\**\*.cs" LinkBase="GraphSources" />
+    <!-- TextUtil is BCL-pure too (speech text cleanup — regex boundary logic worth pinning). -->
+    <Compile Include="..\RTAccess\TextUtil.cs" Link="TextUtil.cs" />
   </ItemGroup>
 
   <ItemGroup>
