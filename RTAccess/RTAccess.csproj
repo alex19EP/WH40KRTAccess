@@ -13,32 +13,36 @@
 		<RestoreAdditionalProjectSources>https://api.nuget.org/v3/index.json</RestoreAdditionalProjectSources>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<RogueTraderData>$(LocalAppData)Low\Owlcat Games\Warhammer 40000 Rogue Trader</RogueTraderData>
+		<!-- Where the game's reference assemblies live. Defaults to the local install's Managed dir;
+		     CI overrides this (and RogueTraderData) to point into the RogueTraderGameAssemblies
+		     NuGet package, which has a flat Assemblies/ layout instead of WH40KRT_Data\Managed. -->
+		<RogueTraderManagedDir Condition="'$(RogueTraderManagedDir)' == ''">$(RogueTraderInstallDir)\WH40KRT_Data\Managed</RogueTraderManagedDir>
 	</PropertyGroup>
 	<ItemGroup>
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Unity*.dll" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Kingmaker*.dll" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Utility*.dll" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Core*.dll" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Owlcat*.dll" Publicize="true" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\RogueTrader*.dll" Publicize="true" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Code.dll*" Publicize="true" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\LocalizationShared.dll*" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Unity*.dll" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Kingmaker*.dll" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Utility*.dll" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Core*.dll" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Owlcat*.dll" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\RogueTrader*.dll" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Code.dll*" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\LocalizationShared.dll*" Publicize="true" Private="false" />
 		<Reference Include="$(RogueTraderData)\UnityModManager\UnityModManager.dll*" Publicize="true" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\0Harmony.dll*" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Newtonsoft.Json.dll*" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\UniRx.dll*" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\Rewired_Core.dll*" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\ContextData.dll*" Private="false" />
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\StateHasher.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\0Harmony.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Newtonsoft.Json.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\UniRx.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Rewired_Core.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\ContextData.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\StateHasher.dll*" Private="false" />
 		<!-- StatefulRandom: DisableStatefulRandomContext — the dry-run guard the game's own overtips wrap
 		     around damage predictions (GetStarshipDamagePrediction); used by Combat/StarshipAim. -->
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\StatefulRandom.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\StatefulRandom.dll*" Private="false" />
 		<!-- CountingGuard: Game.Keyboard.Disabled (the keyboard-suppression guard FocusMode toggles via
 		     SetValue) is a CountingGuard, which lives in its own assembly not matched by the wildcards. -->
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\CountingGuard.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\CountingGuard.dll*" Private="false" />
 		<!-- A* Pathfinding Project — defines GraphNode/NavGraph behind CustomGridNodeBase (grid walkability,
 		     node.position, node.Graph). Needed by the tile explorer (see TileExplorer / InteractableDescriber). -->
-		<Reference Include="$(RogueTraderInstallDir)\WH40KRT_Data\Managed\AstarPathfindingProject.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\AstarPathfindingProject.dll*" Private="false" />
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="Info.json" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
