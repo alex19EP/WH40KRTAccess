@@ -32,10 +32,12 @@ jobs:
       - uses: actions/checkout@v4
 
       # Game reference assemblies come from xADDBx's community package on GitHub
-      # Packages (the same source ToyBox uses for its CI). The registry demands
-      # *some* token even for public packages — the workflow's own is enough.
+      # Packages (the same source ToyBox uses for its CI). The registry demands a
+      # token even for public packages, and the workflow's own GITHUB_TOKEN is
+      # repo-scoped — it cannot read another owner's packages. GH_PACKAGES_TOKEN
+      # is a classic PAT with only the read:packages scope.
       - name: Add game-assemblies feed
-        run: nuget sources add -name xaddbx -source https://nuget.pkg.github.com/xADDBx/index.json -username ${{ github.repository_owner }} -password ${{ secrets.GITHUB_TOKEN }} -StorePasswordInClearText
+        run: nuget sources add -name xaddbx -source https://nuget.pkg.github.com/xADDBx/index.json -username ${{ github.repository_owner }} -password ${{ secrets.GH_PACKAGES_TOKEN }} -StorePasswordInClearText
 
       - name: Install game assemblies
         run: nuget install RogueTraderGameAssemblies -Source xaddbx -OutputDirectory GameFiles -DependencyVersion Highest -DirectDownload -PreRelease
