@@ -1,12 +1,12 @@
 ﻿{
   "Id": "RTAccess",
   "DisplayName": "RTAccess",
-  "Author": "",
+  "Author": "Alexander Epaneshnikov",
   "Version": "1.0.0",
   "ManagerVersion": "0.25.0",
   "Requirements": [],
   "AssemblyName": "RTAccess.dll",
   "EntryMethod": "RTAccess.Main.Load",
-  "HomePage": "",
-  "Repository": ""
+  "HomePage": "https://github.com/alex19EP/WH40KRTAccess",
+  "Repository": "https://raw.githubusercontent.com/alex19EP/WH40KRTAccess/main/Repository.json"
 }
