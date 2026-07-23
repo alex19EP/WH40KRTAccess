@@ -400,3 +400,8 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 /GamePath.props
+
+# Generated game reference assemblies + packed output (regenerate with `just refs`).
+/build/gamerefs/assemblies/
+/build/gamerefs/UnityModManager/
+/build/gamerefs/out/

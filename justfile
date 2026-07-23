@@ -69,3 +69,10 @@ check:
 # whose Deploy target (AfterTargets=Build) would fight the UMM-locked RTAccess.dll.
 test:
     dotnet test tests/RTAccess.Tests.csproj
+
+# Rebuild the WH40KRT.GameRefs NuGet package (Refasmer-stripped game assemblies for CI).
+# Rerun after a game patch, bumping the version. Add -Push -ApiKey <PAT> to publish.
+#   just refs                    # build build/gamerefs/out/*.nupkg at the default version
+#   just refs 4.1.3              # stamp a specific game version
+refs version='4.1.2':
+    pwsh -NoProfile -File scripts/build-gamerefs.ps1 -Version "{{version}}"

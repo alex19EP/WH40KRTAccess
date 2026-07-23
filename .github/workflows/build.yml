@@ -28,25 +28,29 @@ jobs:
   build:
     name: Build mod (Release)
     runs-on: windows-latest
+    permissions:
+      contents: read
+      packages: read      # lets the automatic GITHUB_TOKEN read our own WH40KRT.GameRefs package
     steps:
       - uses: actions/checkout@v4
 
-      # Game reference assemblies come from xADDBx's community package on GitHub
-      # Packages (the same source ToyBox uses for its CI). The registry demands a
-      # token even for public packages, and the workflow's own GITHUB_TOKEN is
-      # repo-scoped — it cannot read another owner's packages. GH_PACKAGES_TOKEN
-      # is a classic PAT with only the read:packages scope.
-      - name: Add game-assemblies feed
-        run: nuget sources add -name xaddbx -source https://nuget.pkg.github.com/xADDBx/index.json -username ${{ github.repository_owner }} -password ${{ secrets.GH_PACKAGES_TOKEN }} -StorePasswordInClearText
+      # Game reference assemblies come from WH40KRT.GameRefs — our own package of
+      # Refasmer-stripped (metadata-only) assemblies, published to GitHub Packages
+      # under this same account (see scripts/build-gamerefs.ps1). Because it's owned
+      # by the workflow's own account and public, the built-in GITHUB_TOKEN reads it;
+      # no PAT secret is needed. The registry still requires a token, hence the feed.
+      - name: Add game-refs feed
+        run: nuget sources add -name gamerefs -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username ${{ github.repository_owner }} -password ${{ secrets.GITHUB_TOKEN }} -StorePasswordInClearText
 
-      - name: Install game assemblies
-        run: nuget install RogueTraderGameAssemblies -Source xaddbx -OutputDirectory GameFiles -DependencyVersion Highest -DirectDownload -PreRelease
+      - name: Install game refs
+        run: nuget install WH40KRT.GameRefs -Source gamerefs -OutputDirectory GameFiles -DependencyVersion Highest
 
-      - name: Locate game files
+      - name: Locate game refs
         shell: pwsh
         run: |
-          $pkg = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\GameFiles" -Directory | Select-Object -First 1
-          Write-Output "Using game assemblies: $($pkg.Name)"
+          $pkg = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\GameFiles" -Directory -Filter 'WH40KRT.GameRefs*' | Select-Object -First 1
+          if (-not $pkg) { throw 'WH40KRT.GameRefs package not found under GameFiles/' }
+          Write-Output "Using $($pkg.Name)"
           echo "GAME_DIR=$($pkg.FullName)" >> $env:GITHUB_ENV
 
       - name: Build
@@ -54,12 +58,12 @@ jobs:
         run: |
           $props = @(
             "-p:Configuration=Release",
-            # ManagedDir: the package lays assemblies out flat (no WH40KRT_Data\Managed).
-            "-p:RogueTraderManagedDir=$env:GAME_DIR\Assemblies",
+            # The package mirrors the real layout: game refs in assemblies/, UnityModManager
+            # under a UnityModManager/ subfolder of the "data dir".
+            "-p:RogueTraderManagedDir=$env:GAME_DIR\assemblies",
+            "-p:RogueTraderData=$env:GAME_DIR",
             # InstallDir: any non-empty value skips the Player.log-derived GamePath.props generation.
             "-p:RogueTraderInstallDir=$env:GAME_DIR",
-            # Data dir: supplies UnityModManager.dll and redirects the Deploy copy harmlessly.
-            "-p:RogueTraderData=$env:GAME_DIR\UserDataDir",
             "-p:SolutionDir=$env:GITHUB_WORKSPACE\"
           )
           if ("${{ github.ref }}" -like "refs/tags/v*") {
