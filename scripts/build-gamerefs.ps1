@@ -13,9 +13,8 @@
     the BepInEx publicizer in RTAccess.csproj can still expose them.
 
 .PARAMETER Version
-    Package version, normally the game version (e.g. 4.1.2). GitHub Packages versions are
-    immutable, so bump this for every push (a patched game at the same version needs a 4th
-    component, e.g. 4.1.2.1).
+    Package version = the game version from WH40KRT_Data/StreamingAssets/Version.info (e.g.
+    1.6.1.514). GitHub Packages versions are immutable, so bump this for every push.
 
 .PARAMETER Managed
     The game's Managed directory. Defaults to the standard Steam install path.
@@ -28,13 +27,13 @@
     GH_PACKAGES_TOKEN environment variable, which `just publish` loads from a .env file.
 
 .EXAMPLE
-    pwsh scripts/build-gamerefs.ps1 -Version 4.1.2                       # build only
-    pwsh scripts/build-gamerefs.ps1 -Version 4.1.2 -Push -ApiKey ghp_xxx # build + publish
-    just publish 4.1.2                                                   # build + publish via .env
+    pwsh scripts/build-gamerefs.ps1 -Version 1.6.1.514                       # build only
+    pwsh scripts/build-gamerefs.ps1 -Version 1.6.1.514 -Push -ApiKey ghp_xxx # build + publish
+    just publish 1.6.1.514                                                   # build + publish via .env
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '4.1.2',
+    [string]$Version = '1.6.1.514',
     [string]$Managed = 'C:/Program Files (x86)/Steam/steamapps/common/Warhammer 40,000 Rogue Trader/WH40KRT_Data/Managed',
     [switch]$Push,
     [string]$ApiKey = $env:GH_PACKAGES_TOKEN

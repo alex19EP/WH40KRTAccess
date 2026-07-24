@@ -15,8 +15,9 @@
     <NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
 
     <PackageId>WH40KRT.GameRefs</PackageId>
-    <!-- Stamped by the game version. Override on the command line: dotnet pack -p:Version=4.1.3 -->
-    <Version>4.1.2</Version>
+    <!-- Stamped with the game version (see WH40KRT_Data/StreamingAssets/Version.info).
+         Override on the command line: dotnet pack -p:Version=1.6.2.x -->
+    <Version>1.6.1.514</Version>
     <Authors>alex19EP</Authors>
     <Description>Reference (metadata-only) assemblies for Warhammer 40,000: Rogue Trader, generated with JetBrains Refasmer (method bodies stripped). Build-time-only dependency for compiling the RTAccess accessibility mod in CI. Contains no game logic or resources.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
