@@ -16,6 +16,9 @@
     <Compile Include="..\RTAccess\UI\Graph\**\*.cs" LinkBase="GraphSources" />
     <!-- TextUtil is BCL-pure too (speech text cleanup — regex boundary logic worth pinning). -->
     <Compile Include="..\RTAccess\TextUtil.cs" Link="TextUtil.cs" />
+    <!-- The room segmentation core (clearance transform, persistence watershed, region merge, boundary scan).
+         RoomMap keeps everything that touches Unity/Kingmaker; this half is arithmetic and must stay that way. -->
+    <Compile Include="..\RTAccess\Exploration\RoomSegmenter.cs" Link="RoomSegmenter.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -11,26 +11,26 @@ using UnityEngine;
 namespace RTAccess.Exploration;
 
 /// <summary>
-/// Splits the current area's walkable space into ROOMS for orientation ("Room 12, large hall"): read the live
-/// A* <see cref="CustomGridGraph"/> walkability straight off the grid, compute per-cell clearance (distance to
-/// the nearest wall), then a persistence watershed — basins grow from clearance maxima and split where they meet
-/// across a pronounced dip (a doorway, or a doorless pinch; <see cref="Persist"/> is how deep the dip must be).
-/// Small regions merge into their biggest neighbour; survivors are numbered stably (sorted by centroid) and
-/// classified by area/elongation/clearance (passage / corridor / small / room / hall / stairs). Height-aware:
-/// cells never union across a height step (<see cref="DyGate"/>), and sloped cells (recast turns staircases into
-/// ramps) never union with flat ones — so stacked levels split into separate rooms and the staircase between them
-/// is its own "stairs" room, the obvious exit between levels.
+/// Splits the current area's walkable space into ROOMS for orientation ("Room 12, large hall"). This half owns the
+/// ENGINE side — reading the live A* <see cref="CustomGridGraph"/>, world positions, classification, naming, fog
+/// gating and speech; the arithmetic (clearance transform, persistence watershed, region merge, boundary scan)
+/// lives in the BCL-pure <see cref="RoomSegmenter"/> so it can be unit-tested without Unity or the game.
 ///
-/// This is a port of WrathAccess's <c>RoomMap</c> (a persistence-watershed of the recast navmesh) onto RT's
-/// square grid. The two substrate differences, both verified in-harness (see [[rt-room-classifier]]): (1) RT has
-/// NO recast navmesh — the grid IS the raster, so we read <see cref="CustomGridNodeBase.Walkable"/> + world
-/// position per cell instead of rasterizing triangles; (2) RT walls are mostly UNWALKABLE cells (not fences),
-/// which is exactly WA's "walls are holes in walkable space" assumption, so the watershed transfers directly.
-/// Fence edges (thin cover / rails between two walkable cells) are rare but honoured as cardinal wall gates in the
-/// watershed union and the exit-boundary scan (a full "burn the fence into the clearance field" is deferred — the
-/// measured count was ~8 per deck). Native 1.35 m cells resolve rooms cleanly (validated: 22 rooms on the
-/// Officers' Deck), so there is no sub-grid resample. Rebuilt when the area part changes; the graph streams in
-/// after the part key, so the build self-latches on <see cref="Ready"/> and retries on a cooldown while empty.
+/// **Passability comes from the engine, not from geometry.** For every walkable cell we read the eight
+/// <see cref="CustomGridNodeBase.HasConnectionInDirection"/> bits the pathfinder itself wrote, and the segmenter
+/// treats those as the ONLY way one cell reaches another. Those bits are computed by
+/// <c>CustomGridGraph.CalculateConnections</c> → <c>IsValidConnection</c>, which already folds in walkability on
+/// both sides, every connection cut (<c>IsConnectionCut</c> — all fences, cardinal and diagonal), the graph's own
+/// <c>maxClimb</c> height limit, and the no-corner-cutting rule. One bit read replaces the three separate
+/// approximations this used to make (raw grid adjacency, a one-sided cover-height fence test, and a hand-picked
+/// 0.6 m height gate) — and those approximations were exactly why the V cycle used to offer openings the party
+/// could not walk through. Rebuilt when the area part changes or the graph's own version index moves (a door
+/// swinging, scenery destroyed); the graph streams in after the part key, so the build self-latches on
+/// <see cref="Ready"/> and retries on a cooldown while empty.
+///
+/// Height-aware without a hand-tuned gate: stacked levels are separate rooms because the engine refuses to connect
+/// cells more than <c>maxClimb</c> apart, and a staircase is its own "stairs" room because the slope mask never
+/// unions sloped cells with flat ones.
 ///
 /// Consumers: X's "where am I" appends the room; V / Shift+V review the current room's ways out (doors,
 /// transitions, and the bare openings here — see Scanner.CycleExit); an announce-on-room-change watches the scan
@@ -38,17 +38,11 @@ namespace RTAccess.Exploration;
 /// </summary>
 internal static class RoomMap
 {
-    private const float Persist = 0.7f;      // clearance dip (m) required to split two basins
-    private const float MinRoomArea = 12f;   // m^2 — smaller regions merge into a neighbour
-    private const float CutFloor = 0.45f;    // cells with less clearance never seed a basin (assigned after)
-    private const float SlopeT = 0.35f;      // rise/run above which a cell is sloped (stairs ~0.6-0.8)
-    private const float DyGate = 0.6f;       // max height step (m) across which cells may join a room
-    private const float MinStairArea = 2.5f; // m^2 — stair regions below this merge away (vs 12 for flat)
-    private const float StairMinRise = 1.5f; // m a sloped region must CLIMB to count as stairs (bumps ~0.6m)
-    private const float FurnitureMax = 12f;  // m^2 — interior obstacle islands up to this cast no clearance shadow
-    private const float LevelGap = 3f;       // |y| beyond which a cell is "another floor" (RoomAt height guard)
-    private const int MaxCells = 3_000_000;  // grid budget; skip a build beyond it (surface areas are far smaller)
+    private const float LevelGap = 3f;        // |y| beyond which a cell is "another floor" (RoomAt height guard)
+    private const int MaxCells = 3_000_000;   // grid budget; skip a build beyond it (surface areas are far smaller)
     private const float DwellSeconds = 0.25f; // a new room must persist this long before it is announced
+    private const float RebuildCooldown = 3f; // s between graph-churn rebuilds, so a swinging door can't thrash
+    private const float RelatchWindow = 5f;   // s a churn rebuild may suppress the room announcement for
 
     public sealed class Room
     {
@@ -70,15 +64,16 @@ internal static class RoomMap
         public Room To;
     }
 
-    /// <summary>Is this exit object part of the CURRENT map? Selection liveness for the V cycle — a map
-    /// rebuild (area/part change) orphans old Exit objects, and a held selection must go stale with them.
-    /// A handful of rooms × exits, so a plain scan is fine (keypress work).</summary>
+    /// <summary>Is this exit still part of the CURRENT map? Selection liveness for the V cycle. A rebuild mints
+    /// fresh Exit objects, so identity alone would drop a held selection every time the graph changes under the
+    /// player — match by POSITION as well, the same rule the V cycle already uses to continue a cycle across the
+    /// two Exit objects that make up one threshold. A handful of rooms × exits, so a plain scan is fine.</summary>
     public static bool ContainsExit(Exit exit)
     {
         if (exit == null) return false;
         foreach (var room in _rooms)
             foreach (var e in room.Exits)
-                if (ReferenceEquals(e, exit)) return true;
+                if (ReferenceEquals(e, exit) || (e.Position - exit.Position).sqrMagnitude < 0.05f) return true;
         return false;
     }
 
@@ -86,6 +81,7 @@ internal static class RoomMap
     private static int[] _label;       // per-cell room index (-1 = not walkable / dropped), row-major [z*_w+x]
     private static float[] _cellY;     // per-cell surface height (for the RoomAt level guard)
     private static float[] _wx, _wz;   // per-cell world XZ (walkable cells only — read off the graph at build)
+    private static byte[] _conn;       // per-cell crossable-edge mask (RoomSegmenter direction order)
     private static float _cell;        // grid cell size (m) as built
     private static int _w, _h;
     private static readonly List<Room> _rooms = new List<Room>();
@@ -94,27 +90,119 @@ internal static class RoomMap
     public static bool Ready => _label != null && _rooms.Count > 0;
 
     /// <summary>The room at a world position, or null (off-mesh, other floor, or no map yet). Resolves through the
-    /// grid node nearest the point, then a 2-cell ring so a position hugging a wall / in a residual sliver still
-    /// finds its obvious room; height-guarded so a point above another floor doesn't match the floor below.</summary>
+    /// grid node nearest the point; if that cell belongs to no room (a residual sliver), it widens outward over
+    /// CROSSABLE edges only — the old raw 2-cell ring happily answered with the room on the far side of a wall,
+    /// which then leaked into the exit cycle. Height-guarded so a point above another floor doesn't match below.</summary>
     public static Room RoomAt(Vector3 pos)
     {
         if (_label == null || _rooms.Count == 0) return null;
-        var node = NavmeshProbe.NodeAt(pos);
-        if (node == null) return null;
-        int gx = node.XCoordinateInGrid, gz = node.ZCoordinateInGrid;
-        for (int ring = 0; ring <= 2; ring++)
-            for (int dz = -ring; dz <= ring; dz++)
-                for (int dx = -ring; dx <= ring; dx++)
+        if (!TryCell(pos, out int start)) return null;
+        return RoomOfCell(start, pos.y) ?? WalkToRoom(start, pos.y, 2);
+    }
+
+    /// <summary>Every room reachable from <paramref name="p"/> within <paramref name="steps"/> crossable edges,
+    /// starting from a raw square of <paramref name="seedRadius"/> cells around it.
+    /// The SEED square ignores connectivity — deliberately, because a closed door's own cells can be cut out of
+    /// the walkable grid and a door must still resolve the rooms it joins; a radius of 2 straddles a door set in
+    /// a thick bulkhead. Everything past the seed follows the engine's connectivity, so a probe can never reach
+    /// through a wall into the room beyond it. Keep the radius as small as the caller can stand: it is exactly
+    /// the wall-thickness at which a neighbouring room starts leaking into the answer.</summary>
+    internal static void RoomsNear(Vector3 p, int seedRadius, int steps, List<Room> into)
+    {
+        into.Clear();
+        if (_label == null || _conn == null || !TryCell(p, out int start)) return;
+
+        var seen = new HashSet<int>();
+        var frontier = new List<int>();
+        var next = new List<int>();
+        int gx0 = start % _w, gz0 = start / _w;
+        for (int dz = -seedRadius; dz <= seedRadius; dz++)
+            for (int dx = -seedRadius; dx <= seedRadius; dx++)
+            {
+                int nx = gx0 + dx, nz = gz0 + dz;
+                if (nx < 0 || nz < 0 || nx >= _w || nz >= _h) continue;
+                int i = nz * _w + nx;
+                if (!seen.Add(i)) continue;
+                frontier.Add(i);
+                Collect(i, p.y, into);
+            }
+
+        for (int s = 0; s < steps && frontier.Count > 0; s++)
+        {
+            next.Clear();
+            foreach (var i in frontier)
+                foreach (var j in Crossable(i))
                 {
-                    if (Math.Max(Math.Abs(dz), Math.Abs(dx)) != ring) continue;
-                    int nx = gx + dx, nz = gz + dz;
-                    if (nx < 0 || nz < 0 || nx >= _w || nz >= _h) continue;
-                    int idx = nz * _w + nx;
-                    int l = _label[idx];
-                    if (l < 0 || l >= _rooms.Count) continue;
-                    if (Mathf.Abs(_cellY[idx] - pos.y) > LevelGap) continue;
-                    return _rooms[l];
+                    if (!seen.Add(j)) continue;
+                    Collect(j, p.y, into);
+                    next.Add(j);
                 }
+            var swap = frontier; frontier = next; next = swap;
+        }
+    }
+
+    private static void Collect(int cell, float y, List<Room> into)
+    {
+        var room = RoomOfCell(cell, y);
+        if (room != null && !into.Contains(room)) into.Add(room);
+    }
+
+    // The grid cell a world point snaps to, or false when the point is off-graph / outside the built grid.
+    private static bool TryCell(Vector3 pos, out int cell)
+    {
+        cell = -1;
+        var node = NavmeshProbe.NodeAt(pos);
+        if (node == null) return false;
+        int gx = node.XCoordinateInGrid, gz = node.ZCoordinateInGrid;
+        if (gx < 0 || gz < 0 || gx >= _w || gz >= _h) return false;
+        cell = gz * _w + gx;
+        return true;
+    }
+
+    private static Room RoomOfCell(int cell, float y)
+    {
+        int l = _label[cell];
+        if (l < 0 || l >= _rooms.Count) return null;
+        if (Mathf.Abs(_cellY[cell] - y) > LevelGap) return null;
+        return _rooms[l];
+    }
+
+    // The cells one crossable step from `cell` — the engine's own connection bits, so walls, cuts, height steps
+    // and corner-cutting are all honoured for free.
+    private static IEnumerable<int> Crossable(int cell)
+    {
+        if (_conn == null) yield break;
+        int gz = cell / _w, gx = cell % _w;
+        for (int k = 0; k < 8; k++)
+        {
+            if ((_conn[cell] & (1 << k)) == 0) continue;
+            int nx = gx + RoomSegmenter.Dx[k], nz = gz + RoomSegmenter.Dz[k];
+            if (nx < 0 || nz < 0 || nx >= _w || nz >= _h) continue;
+            yield return nz * _w + nx;
+        }
+    }
+
+    // Breadth-first over crossable edges only, returning the first cell that resolves to a room.
+    private static Room WalkToRoom(int start, float y, int steps)
+    {
+        if (_conn == null) return null;
+        var seen = new HashSet<int> { start };
+        var frontier = new List<int> { start };
+        var next = new List<int>();
+        for (int s = 0; s < steps; s++)
+        {
+            next.Clear();
+            foreach (var i in frontier)
+                foreach (var j in Crossable(i))
+                {
+                    if (!seen.Add(j)) continue;
+                    var room = RoomOfCell(j, y);
+                    if (room != null) return room;
+                    next.Add(j);
+                }
+            if (next.Count == 0) return null;
+            var swap = frontier; frontier = next; next = swap;
+        }
         return null;
     }
 
@@ -185,7 +273,11 @@ internal static class RoomMap
 
     // ---- lifecycle ----
 
-    private static int _retryCooldown; // frames until the next attempt while the graph is empty
+    private static int _retryCooldown;      // frames until the next attempt while the graph is empty
+    private static int _graphVersion = -1;  // GraphParamsMechanicsCache.GraphVersionIndex the map was built at
+    private static float _lastBuild;        // unscaled time of the last successful build (churn throttle)
+    private static bool _quietRelatch;      // a churn rebuild must not re-announce the room you're standing in
+    private static float _relatchUntil;     // …but the suppression expires, see TickAnnounce
 
     public static void Tick()
     {
@@ -197,11 +289,22 @@ internal static class RoomMap
         if (key != _builtFor)
         {
             _builtFor = key;
-            _label = null;
-            _rooms.Clear();
-            _retryCooldown = 0;
+            Drop();
             ResetAnnounce();
-            DropDerived();
+        }
+        else if (Ready && GraphParamsMechanicsCache.GraphVersionIndex != _graphVersion
+                 && Time.unscaledTime - _lastBuild >= RebuildCooldown)
+        {
+            // The graph itself changed under us — a door opened or closed, cover was destroyed, a script toggled
+            // walkability. The map is built once and then answers forever, so without this a door that opens after
+            // the build never becomes an exit (and one that closes stays one). GraphVersionIndex is the game's own
+            // signal (bumped from AstarPath.OnGraphsUpdated), throttled here so a swinging door can't thrash.
+            // The room you are standing in is re-latched silently afterwards — churn must not re-announce it.
+            // The frontier survives: the grid's dimensions and cell size are unchanged by a graph update, so its
+            // cached blob coordinates stay valid and its own refresh re-points any stale room reference.
+            _quietRelatch = true;
+            _relatchUntil = Time.unscaledTime + RelatchWindow;
+            Drop(keepFrontier: true);
         }
         // The grid graph STREAMS IN after the part key changes — an immediate build can see an empty graph. Success
         // latches via Ready; until then, retry on a cooldown (an empty pass is cheap). A thrown build backs off.
@@ -213,12 +316,15 @@ internal static class RoomMap
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 Build();
                 if (_rooms.Count > 0)
+                {
+                    _graphVersion = GraphParamsMechanicsCache.GraphVersionIndex;
+                    _lastBuild = Time.unscaledTime;
                     Main.Log?.Log("[rooms] " + key + ": " + _rooms.Count + " rooms in " + sw.ElapsedMilliseconds + "ms");
+                }
             }
             catch (Exception e)
             {
-                _label = null; _rooms.Clear();
-                DropDerived();
+                Drop();
                 _retryCooldown = 300; // a real failure: back off; the next part change resets
                 Main.Log?.Warning("[rooms] build failed: " + e.Message);
             }
@@ -230,21 +336,25 @@ internal static class RoomMap
     public static void Invalidate()
     {
         _builtFor = null;
-        _label = null;
-        _rooms.Clear();
-        _retryCooldown = 0;
+        _quietRelatch = false;
+        Drop();
         ResetAnnounce();
-        DropDerived();
     }
 
-    // Derived overlays hang off the built grid — drop them whenever the grid drops, so the frontier's cached
-    // blobs can't resolve at a previous area's coordinates and the per-room fraction cache can't answer for a
-    // same-numbered room in the new area.
-    private static void DropDerived()
+    // Throw the built map away. Derived overlays hang off the grid, so by default they go too — otherwise the
+    // frontier's cached blobs resolve at a previous build's coordinates and the per-room fraction cache answers
+    // for a same-numbered room in the new one. A same-area rebuild keeps the frontier: the lattice is identical,
+    // so dropping it would only lose the player's place in the unexplored-space cycle for no gain.
+    private static void Drop(bool keepFrontier = false)
     {
+        _label = null;
+        _conn = null;
+        _rooms.Clear();
+        _retryCooldown = 0;
+        _graphVersion = -1;
         _wx = null; _wz = null; _cell = 0f;
         _unexplored.Clear();
-        FrontierModel.Invalidate();
+        if (!keepFrontier) FrontierModel.Invalidate();
     }
 
     // ---- announce on room change (dwell-gated so a boundary graze doesn't flap) ----
@@ -272,7 +382,18 @@ internal static class RoomMap
 
         var pos = MapCursor.Has ? MapCursor.Position : MapCursor.PlayerPosition;
         var room = RoomAt(pos);
-        if (room == null || room == _announced) { _pending = null; return; }
+        if (room == null) { _pending = null; return; }
+
+        // A rebuild triggered by graph churn re-numbers the rooms, so the latch points at an orphan and the room
+        // you never left would be announced again. Re-latch it silently, once — but only within a short window
+        // of the rebuild: this code does not run at all while a window or turn-based combat holds control, and an
+        // armed flag surviving a whole fight would swallow the first genuine room change afterwards.
+        if (_quietRelatch)
+        {
+            _quietRelatch = false;
+            if (Time.unscaledTime <= _relatchUntil) { _announced = room; _pending = null; return; }
+        }
+        if (room == _announced) { _pending = null; return; }
 
         // Dwell: the new room must be the stable pick for DwellSeconds before we speak it.
         if (room != _pending) { _pending = room; _pendingSince = Time.unscaledTime; return; }
@@ -302,14 +423,15 @@ internal static class RoomMap
     {
         if (!Ready) { Speaker.Speak(Loc.T("scan.no_rooms"), interrupt: true); return; }
         foreach (var r in _rooms)
-            Main.Log?.Log(string.Format("[rooms] {0}: {1} area={2:0}m2 centroid=({3:0.0},{4:0.0},{5:0.0}) exits={6}",
+            Main.Log?.Log(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "[rooms] {0}: {1} area={2:0}m2 centroid=({3:0.0},{4:0.0},{5:0.0}) exits={6}",
                 r.Id, r.ClassKey, r.Area, r.Centroid.x, r.Centroid.y, r.Centroid.z, r.Exits.Count));
         var cur = RoomAt(MapCursor.Has ? MapCursor.Position : MapCursor.PlayerPosition);
         string tail = cur != null ? "; " + Describe(cur) : "";
         Speaker.Speak(_rooms.Count + " rooms" + tail, interrupt: true);
     }
 
-    // ---- the pipeline (port of WrathAccess RoomMap.Build, re-sourced onto the CustomGridGraph) ----
+    // ---- the build: read the live grid, hand the arithmetic to RoomSegmenter, name what comes back ----
 
     private static CustomGridGraph FindGrid()
     {
@@ -325,6 +447,7 @@ internal static class RoomMap
     {
         _rooms.Clear();
         _label = null;
+        _conn = null;
 
         var graph = FindGrid();
         if (graph == null) return;
@@ -333,18 +456,15 @@ internal static class RoomMap
         if (n <= 0 || n > MaxCells) return;
         float cell = GraphParamsMechanicsCache.GridCellSize;
 
-        // 1) Read the walkable mask + per-cell height + world XZ + cardinal fence bits straight off the grid.
-        //    (In WA this step rasterized navmesh triangles; RT's grid IS the raster.) Walls are unwalkable cells;
-        //    a fence between two walkable cells (bit k, order S/N/W/E — matches the watershed's first four deltas)
-        //    is a thin wall/rail that also separates rooms.
+        // Read the walkable mask, per-cell height, world XZ and — the load-bearing part — the eight connection
+        // bits the pathfinder itself wrote for this node. No neighbour lookups and no geometry reasoning of our
+        // own: whatever the engine says a unit can step across is what a room is allowed to span.
         var walk = new bool[n];
         var cellY = new float[n];
         var wx = new float[n];
         var wz = new float[n];
-        var fence = new byte[n];
-        var wcells = new List<int>();
-        int[] cdz = { -1, 1, 0, 0 };
-        int[] cdx = { 0, 0, -1, 1 };
+        var conn = new byte[n];
+        bool any = false;
         for (int x = 0; x < W; x++)
             for (int z = 0; z < D; z++)
             {
@@ -352,267 +472,41 @@ internal static class RoomMap
                 if (node == null || !node.Walkable) continue;
                 int i = z * W + x;
                 walk[i] = true;
+                any = true;
                 var p = node.Vector3Position;
                 cellY[i] = p.y; wx[i] = p.x; wz[i] = p.z;
-                wcells.Add(i);
-                for (int k = 0; k < 4; k++)
-                {
-                    var nb = graph.GetNode(x + cdx[k], z + cdz[k]);
-                    if (nb != null && nb.Walkable && node.HasFenceWithNode(nb))
-                        fence[i] |= (byte)(1 << k);
-                }
+                int bits = 0;
+                for (int k = 0; k < 8; k++)
+                    if (node.HasConnectionInDirection(RoomSegmenter.EngineDir[k])) bits |= 1 << k;
+                conn[i] = (byte)bits;
             }
-        if (wcells.Count == 0) return;
+        if (!any) return;
 
-        // 1.5) Furniture mask: small interior unwalkable ISLANDS (crates, pillars, consoles you can walk around)
-        //      cast no clearance shadow, so the watershed never reads the pinch beside them as a doorway. Only
-        //      blobs fully surrounded by walkable space count; anything connected to the hull/border is structure.
-        var noShadow = new bool[n];
-        {
-            int[] dz8f = { -1, 1, 0, 0, -1, -1, 1, 1 };
-            int[] dx8f = { 0, 0, -1, 1, -1, 1, -1, 1 };
-            var visited = new bool[n];
-            var stack = new Stack<int>();
-            var blob = new List<int>();
-            for (int i = 0; i < n; i++)
-            {
-                if (walk[i] || visited[i]) continue;
-                blob.Clear();
-                bool touchesBorder = false;
-                visited[i] = true; stack.Push(i);
-                while (stack.Count > 0)
-                {
-                    int j = stack.Pop();
-                    blob.Add(j);
-                    int gz = j / W, gx = j % W;
-                    if (gz == 0 || gx == 0 || gz == D - 1 || gx == W - 1) touchesBorder = true;
-                    for (int k = 0; k < 8; k++)
-                    {
-                        int nz = gz + dz8f[k], nx = gx + dx8f[k];
-                        if (nz < 0 || nx < 0 || nz >= D || nx >= W) continue;
-                        int m = nz * W + nx;
-                        if (!walk[m] && !visited[m]) { visited[m] = true; stack.Push(m); }
-                    }
-                }
-                if (!touchesBorder && blob.Count * cell * cell <= FurnitureMax)
-                    foreach (var j in blob) noShadow[j] = true;
-            }
-        }
+        var seg = RoomSegmenter.Segment(walk, cellY, conn, W, D, cell);
+        if (seg.MergeCapHit)
+            Main.Log?.Warning("[rooms] wide-opening merge hit its round budget — the map may be over-segmented");
 
-        // 2) Chamfer 3-4 distance transform → clearance in metres (distance to the nearest wall).
-        var dist = new int[n];
-        const int INF = int.MaxValue / 4;
-        for (int i = 0; i < n; i++) dist[i] = (walk[i] || noShadow[i]) ? INF : 0;
-        for (int gz = 0; gz < D; gz++)
-            for (int gx = 0; gx < W; gx++)
-            {
-                int i = gz * W + gx;
-                if (dist[i] == 0) continue;
-                int best = dist[i];
-                if (gx > 0) best = Math.Min(best, dist[i - 1] + 3);
-                if (gz > 0)
-                {
-                    best = Math.Min(best, dist[i - W] + 3);
-                    if (gx > 0) best = Math.Min(best, dist[i - W - 1] + 4);
-                    if (gx < W - 1) best = Math.Min(best, dist[i - W + 1] + 4);
-                }
-                dist[i] = best;
-            }
-        for (int gz = D - 1; gz >= 0; gz--)
-            for (int gx = W - 1; gx >= 0; gx--)
-            {
-                int i = gz * W + gx;
-                if (dist[i] == 0) continue;
-                int best = dist[i];
-                if (gx < W - 1) best = Math.Min(best, dist[i + 1] + 3);
-                if (gz < D - 1)
-                {
-                    best = Math.Min(best, dist[i + W] + 3);
-                    if (gx < W - 1) best = Math.Min(best, dist[i + W + 1] + 4);
-                    if (gx > 0) best = Math.Min(best, dist[i + W - 1] + 4);
-                }
-                dist[i] = best;
-            }
-        var clear = new float[n];
-        for (int i = 0; i < n; i++) clear[i] = dist[i] * (cell / 3f);
-
-        // 2.5) Slope mask: cells on a sustained height gradient (recast/geometry renders stairs as ramps). Close
-        //      r2 absorbs small landings/speckle; open r1 drops isolated specks, so a staircase is one solid region.
-        var sloped = new bool[n];
-        for (int qi = 0; qi < wcells.Count; qi++)
-        {
-            int i = wcells[qi];
-            int gz = i / W, gx = i % W;
-            float dy = 0f;
-            if (gx > 0 && walk[i - 1]) dy = Math.Max(dy, Math.Abs(cellY[i] - cellY[i - 1]));
-            if (gx < W - 1 && walk[i + 1]) dy = Math.Max(dy, Math.Abs(cellY[i] - cellY[i + 1]));
-            if (gz > 0 && walk[i - W]) dy = Math.Max(dy, Math.Abs(cellY[i] - cellY[i - W]));
-            if (gz < D - 1 && walk[i + W]) dy = Math.Max(dy, Math.Abs(cellY[i] - cellY[i + W]));
-            sloped[i] = dy / cell > SlopeT;
-        }
-        Morph(sloped, W, D, 2, dilate: true); Morph(sloped, W, D, 2, dilate: false);
-        for (int i = 0; i < n; i++) sloped[i] &= walk[i];
-        Morph(sloped, W, D, 1, dilate: false); Morph(sloped, W, D, 1, dilate: true);
-        for (int i = 0; i < n; i++) sloped[i] &= walk[i];
-
-        // 3) Persistence watershed: visit cells by descending clearance; basins meeting across a saddle merge
-        //    unless BOTH rise at least Persist above it. Never union across a height step, a flat/slope class
-        //    change, or a cardinal fence (a thin wall between two open cells).
-        var order = new int[n];
-        var keys = new float[n];
-        for (int i = 0; i < n; i++) { order[i] = i; keys[i] = -clear[i]; }
-        Array.Sort(keys, order);
-
-        var parent = new int[n];
-        var peak = new float[n];
-        var seen = new bool[n];
-        for (int i = 0; i < n; i++) parent[i] = i;
-        Func<int, int> find = null;
-        find = a => { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
-
-        int[] dz8 = { -1, 1, 0, 0, -1, -1, 1, 1 };
-        int[] dx8 = { 0, 0, -1, 1, -1, 1, -1, 1 };
-        for (int oi = 0; oi < n; oi++)
-        {
-            int i = order[oi];
-            float c = clear[i];
-            if (c < CutFloor) break;
-            if (!walk[i]) continue;
-            seen[i] = true;
-            peak[i] = c;
-            int gz = i / W, gx = i % W;
-            int me = find(i);
-            for (int k = 0; k < 8; k++)
-            {
-                int nz = gz + dz8[k], nx = gx + dx8[k];
-                if (nz < 0 || nx < 0 || nz >= D || nx >= W) continue;
-                int j = nz * W + nx;
-                if (!seen[j]) continue;
-                if (sloped[j] != sloped[i] || Math.Abs(cellY[j] - cellY[i]) > DyGate) continue;
-                if (k < 4 && (fence[i] & (1 << k)) != 0) continue; // thin wall/rail between two open cells
-                int r = find(j);
-                if (r == me) continue;
-                if (sloped[i] || Math.Min(peak[r], peak[me]) - c < Persist)
-                {
-                    float pk = Math.Max(peak[r], peak[me]);
-                    parent[me] = r;
-                    me = r;
-                    peak[r] = pk;
-                }
-            }
-        }
-
-        // 4) Label basins; BFS-flood the sub-CutFloor walkable slivers to the nearest region (height-gated).
-        _label = new int[n];
-        var regionOf = new Dictionary<int, int>();
-        for (int i = 0; i < n; i++) _label[i] = -1;
-        for (int qi = 0; qi < wcells.Count; qi++)
-        {
-            int i = wcells[qi];
-            if (!seen[i]) continue;
-            int r = find(i);
-            int id;
-            if (!regionOf.TryGetValue(r, out id)) { id = regionOf.Count; regionOf[r] = id; }
-            _label[i] = id;
-        }
-        var q = new Queue<int>();
-        for (int qi = 0; qi < wcells.Count; qi++) { int i = wcells[qi]; if (_label[i] >= 0) q.Enqueue(i); }
-        while (q.Count > 0)
-        {
-            int i = q.Dequeue();
-            int gz = i / W, gx = i % W;
-            for (int k = 0; k < 8; k++)
-            {
-                int nz = gz + dz8[k], nx = gx + dx8[k];
-                if (nz < 0 || nx < 0 || nz >= D || nx >= W) continue;
-                int j = nz * W + nx;
-                if (walk[j] && _label[j] < 0 && Math.Abs(cellY[j] - cellY[i]) <= DyGate)
-                { _label[j] = _label[i]; q.Enqueue(j); }
-            }
-        }
-
-        // 5) Merge small regions into a neighbour. Stair regions get a smaller floor; borders only count where the
-        //    height is continuous; a region prefers a same-class (stairs vs flat) neighbour. Isolated tinies drop.
-        int regions = regionOf.Count;
-        var size = new int[regions];
-        var slopedCells = new int[regions];
-        var minY = new float[regions];
-        var maxY = new float[regions];
-        for (int r = 0; r < regions; r++) { minY[r] = float.MaxValue; maxY[r] = float.MinValue; }
-        for (int qi = 0; qi < wcells.Count; qi++)
-        {
-            int i = wcells[qi];
-            int l = _label[i];
-            if (l < 0) continue;
-            size[l]++;
-            if (sloped[i]) slopedCells[l]++;
-            if (cellY[i] < minY[l]) minY[l] = cellY[i];
-            if (cellY[i] > maxY[l]) maxY[l] = cellY[i];
-        }
-        // Stairs = majority-sloped AND actually CLIMBING (steep lips / rubble ~0.6m read as part of their room).
-        Func<int, bool> isStair = r => slopedCells[r] * 2 > size[r] && maxY[r] - minY[r] >= StairMinRise;
-        bool changed = true;
-        while (changed)
-        {
-            changed = false;
-            for (int rid = 0; rid < regions; rid++)
-            {
-                if (size[rid] == 0) continue;
-                float minArea = isStair(rid) ? MinStairArea : MinRoomArea;
-                if (size[rid] * cell * cell >= minArea) continue;
-                var border = new Dictionary<int, int>();
-                for (int qi = 0; qi < wcells.Count; qi++)
-                {
-                    int i = wcells[qi];
-                    if (_label[i] != rid) continue;
-                    int gz = i / W, gx = i % W;
-                    for (int k = 0; k < 8; k++)
-                    {
-                        int nz = gz + dz8[k], nx = gx + dx8[k];
-                        if (nz < 0 || nx < 0 || nz >= D || nx >= W) continue;
-                        int j = nz * W + nx;
-                        int l = _label[j];
-                        if (l >= 0 && l != rid && Math.Abs(cellY[j] - cellY[i]) <= DyGate)
-                        { int cnt; border.TryGetValue(l, out cnt); border[l] = cnt + 1; }
-                    }
-                }
-                int tgt = -1, btot = 0;
-                foreach (var kv in border)
-                    if (isStair(kv.Key) == isStair(rid) && kv.Value > btot) { btot = kv.Value; tgt = kv.Key; }
-                if (tgt < 0)
-                    foreach (var kv in border) if (kv.Value > btot) { btot = kv.Value; tgt = kv.Key; }
-                for (int qi = 0; qi < wcells.Count; qi++) { int i = wcells[qi]; if (_label[i] == rid) _label[i] = tgt; }
-                if (tgt >= 0)
-                {
-                    size[tgt] += size[rid];
-                    slopedCells[tgt] += slopedCells[rid];
-                    if (minY[rid] < minY[tgt]) minY[tgt] = minY[rid];
-                    if (maxY[rid] > maxY[tgt]) maxY[tgt] = maxY[rid];
-                }
-                size[rid] = 0;
-                changed = true;
-            }
-        }
-
-        // 6) Stable numbering (centroid sort) + classification.
+        // Gather the surviving regions, classify them, then number them by centroid so the ids are stable.
         var stats = new Dictionary<int, List<int>>();
-        for (int qi = 0; qi < wcells.Count; qi++)
+        for (int i = 0; i < n; i++)
         {
-            int i = wcells[qi];
-            if (_label[i] < 0) continue;
-            List<int> cells;
-            if (!stats.TryGetValue(_label[i], out cells)) { cells = new List<int>(); stats[_label[i]] = cells; }
+            int l = seg.Label[i];
+            if (l < 0) continue;
+            if (!stats.TryGetValue(l, out var cells)) { cells = new List<int>(); stats[l] = cells; }
             cells.Add(i);
         }
         var infos = new List<KeyValuePair<int, Room>>();
         foreach (var kv in stats)
         {
             var cells = kv.Value;
-            double sx = 0, sy = 0, sz = 0, sc = 0;
-            foreach (var i in cells) { sx += wx[i]; sy += cellY[i]; sz += wz[i]; sc += clear[i]; }
             int cnt = cells.Count;
+            double sx = 0, sy = 0, sz = 0;
             double gmx = 0, gmz = 0;
-            foreach (var i in cells) { gmx += i % W; gmz += i / W; }
+            foreach (var i in cells)
+            {
+                sx += wx[i]; sy += cellY[i]; sz += wz[i];
+                gmx += i % W; gmz += i / W;
+            }
             gmx /= cnt; gmz /= cnt;
             double cxx = 0, czz = 0, cxz = 0;
             foreach (var i in cells)
@@ -626,89 +520,66 @@ internal static class RoomMap
             double e1 = tr / 2 + disc, e2 = Math.Max(tr / 2 - disc, 1e-6);
             float elong = (float)Math.Sqrt(e1 / e2);
             float area = cnt * cell * cell;
+            double sc = 0;
+            foreach (var i in cells) sc += seg.Clear[i];
             float meanClear = (float)(sc / cnt);
             string cls;
-            if (isStair(kv.Key)) cls = "stairs";
+            if (kv.Key < seg.IsStair.Length && seg.IsStair[kv.Key]) cls = "stairs";
             else if (elong > 2.6f && meanClear < 2.2f) cls = "passage";
             else if (elong > 3.2f) cls = "corridor";
             else if (area < 35f) cls = "small";
             else if (area > 220f) cls = "hall";
             else cls = "room";
-            var room = new Room
+            infos.Add(new KeyValuePair<int, Room>(kv.Key, new Room
             {
                 ClassKey = cls,
                 Area = area,
                 Centroid = new Vector3((float)(sx / cnt), (float)(sy / cnt), (float)(sz / cnt)),
-            };
-            infos.Add(new KeyValuePair<int, Room>(kv.Key, room));
+            }));
         }
         infos.Sort((p1, p2) =>
         {
             int c1 = p1.Value.Centroid.z.CompareTo(p2.Value.Centroid.z);
             return c1 != 0 ? c1 : p1.Value.Centroid.x.CompareTo(p2.Value.Centroid.x);
         });
-        var remap = new Dictionary<int, int>();
+
+        var remap = new int[Math.Max(seg.Regions, 1)];
+        for (int r = 0; r < remap.Length; r++) remap[r] = -1;
         for (int k = 0; k < infos.Count; k++)
         {
             infos[k].Value.Id = k + 1;
-            remap[infos[k].Key] = k;
+            if (infos[k].Key < remap.Length) remap[infos[k].Key] = k;
             _rooms.Add(infos[k].Value);
         }
+        var label = seg.Label;
         for (int i = 0; i < n; i++)
-            _label[i] = _label[i] >= 0 && remap.ContainsKey(_label[i]) ? remap[_label[i]] : -1;
-
-        _w = W; _h = D; _cellY = cellY; _wx = wx; _wz = wz; _cell = cell;
-        BuildExits(W, D, cell, wx, wz, cellY, fence);
-    }
-
-    // 4-neighbourhood binary dilation/erosion passes (the slope mask's close-then-open).
-    private static void Morph(bool[] m, int W, int D, int iters, bool dilate)
-    {
-        int n = W * D;
-        var src = new bool[n];
-        for (int it = 0; it < iters; it++)
         {
-            Array.Copy(m, src, n);
-            for (int i = 0; i < n; i++)
-            {
-                int gz = i / W, gx = i % W;
-                if (dilate)
-                    m[i] = src[i] || (gx > 0 && src[i - 1]) || (gx < W - 1 && src[i + 1])
-                        || (gz > 0 && src[i - W]) || (gz < D - 1 && src[i + W]);
-                else
-                    m[i] = src[i] && (gx == 0 || src[i - 1]) && (gx == W - 1 || src[i + 1])
-                        && (gz == 0 || src[i - W]) && (gz == D - 1 || src[i + W]);
-            }
+            int l = label[i];
+            label[i] = l >= 0 && l < remap.Length ? remap[l] : -1;
         }
+
+        _label = label;
+        _conn = seg.Conn;
+        _w = W; _h = D; _cellY = cellY; _wx = wx; _wz = wz; _cell = cell;
+        BuildExits(seg.Boundaries, remap, W, cell, wx, wz, cellY);
     }
 
-    // Exits from the grid boundary: every cell edge where one room's cell meets a different room's cell (height-
-    // continuous, not fenced) is a threshold; the +x edge is engine dir East (fence bit 3), the +z edge is North
-    // (fence bit 1). Boundary midpoints cluster per room pair by proximity — one wide doorway = one contiguous
-    // cluster = one Exit; two separate doorways between the same pair = two Exits.
-    private static void BuildExits(int W, int D, float cell, float[] wx, float[] wz, float[] cellY, byte[] fence)
+    // Turn the segmenter's boundary edges into Exit objects: midpoints cluster per room pair by proximity, so one
+    // wide doorway is one contiguous cluster = one Exit, and two separate doorways between the same pair are two.
+    private static void BuildExits(List<RoomSegmenter.Edge> edges, int[] remap, int W, float cell,
+        float[] wx, float[] wz, float[] cellY)
     {
-        if (_label == null) return;
         var bounds = new Dictionary<long, List<Vector3>>();
-        for (int z = 0; z < D; z++)
-            for (int x = 0; x < W; x++)
-            {
-                int i = z * W + x;
-                int la = _label[i];
-                if (la < 0) continue;
-                if (x + 1 < W)
-                {
-                    int j = i + 1, lb = _label[j];
-                    if (lb >= 0 && lb != la && Math.Abs(cellY[i] - cellY[j]) <= DyGate && (fence[i] & (1 << 3)) == 0)
-                        AddBoundary(bounds, la, lb, wx, wz, cellY, i, j);
-                }
-                if (z + 1 < D)
-                {
-                    int j = i + W, lb = _label[j];
-                    if (lb >= 0 && lb != la && Math.Abs(cellY[i] - cellY[j]) <= DyGate && (fence[i] & (1 << 1)) == 0)
-                        AddBoundary(bounds, la, lb, wx, wz, cellY, i, j);
-                }
-            }
+        foreach (var e in edges)
+        {
+            int la = e.A < remap.Length ? remap[e.A] : -1;
+            int lb = e.B < remap.Length ? remap[e.B] : -1;
+            if (la < 0 || lb < 0 || la == lb) continue;
+            long key = ((long)Math.Min(la, lb) << 32) | (uint)Math.Max(la, lb);
+            if (!bounds.TryGetValue(key, out var pts)) { pts = new List<Vector3>(); bounds[key] = pts; }
+            int i = e.CellI, j = e.CellJ;
+            pts.Add(new Vector3((wx[i] + wx[j]) * 0.5f, (cellY[i] + cellY[j]) * 0.5f, (wz[i] + wz[j]) * 0.5f));
+        }
 
         float link2 = (cell * 1.8f) * (cell * 1.8f);
         foreach (var kv in bounds)
@@ -728,8 +599,7 @@ internal static class RoomMap
             for (int i = 0; i < pts.Count; i++)
             {
                 int r = f(i);
-                List<Vector3> g;
-                if (!groups.TryGetValue(r, out g)) { g = new List<Vector3>(); groups[r] = g; }
+                if (!groups.TryGetValue(r, out var g)) { g = new List<Vector3>(); groups[r] = g; }
                 g.Add(pts[i]);
             }
             var ra = _rooms[la];
@@ -746,14 +616,5 @@ internal static class RoomMap
                 rb.Exits.Add(new Exit { Position = pos, Boundary = boundary, To = ra });
             }
         }
-    }
-
-    private static void AddBoundary(Dictionary<long, List<Vector3>> map, int la, int lb,
-        float[] wx, float[] wz, float[] cellY, int i, int j)
-    {
-        long key = ((long)Math.Min(la, lb) << 32) | (uint)Math.Max(la, lb);
-        List<Vector3> pts;
-        if (!map.TryGetValue(key, out pts)) { pts = new List<Vector3>(); map[key] = pts; }
-        pts.Add(new Vector3((wx[i] + wx[j]) * 0.5f, (cellY[i] + cellY[j]) * 0.5f, (wz[i] + wz[j]) * 0.5f));
     }
 }

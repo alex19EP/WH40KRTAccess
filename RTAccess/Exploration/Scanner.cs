@@ -437,25 +437,27 @@ internal static class Scanner
         return -1;
     }
 
-    // Is a thing's position in (or within one probe step of) the room? A closed door's own cells can be cut out
-    // of the walkable grid, so its position may resolve to no room / the far side — probe the four cardinal
-    // offsets too, so a door on this room's boundary counts as one of its exits.
+    // Scratch for the room probes below — keypress work on a handful of rooms, so one shared buffer is plenty.
+    private static readonly List<RoomMap.Room> _nearRooms = new List<RoomMap.Room>();
+
+    // Is a thing's position in (or one step from) the room? A closed door's own cells can be cut out of the
+    // walkable grid, so its position may resolve to no room or to the far side — RoomsNear seeds from the whole
+    // cell ring around it for exactly that reason, but then expands only over edges the ENGINE says are
+    // crossable. The old version probed ±1.5 m blind in four directions on top of RoomAt's own 2-cell ring, an
+    // effective ~4 m radius that reached straight through thin walls and pulled the neighbouring corridor's
+    // doors into this room's exit list.
     private static bool InOrAdjacentTo(Vector3 p, RoomMap.Room room)
     {
-        for (int k = 0; k < 5; k++)
-        {
-            var probe = p;
-            if (k == 1) probe.x += 1.5f; else if (k == 2) probe.x -= 1.5f;
-            else if (k == 3) probe.z += 1.5f; else if (k == 4) probe.z -= 1.5f;
-            if (RoomMap.RoomAt(probe) == room) return true;
-        }
-        return false;
+        // Tight seed: this decides whether a door belongs to YOUR room's exit list, so a thin wall must be enough
+        // to keep the neighbouring corridor's doors out of it.
+        RoomMap.RoomsNear(p, seedRadius: 1, steps: 2, into: _nearRooms);
+        return _nearRooms.Contains(room);
     }
 
     /// <summary>The room on the far side of a door/transition item in the V cycle: the covered geometric
-    /// opening's destination when one is nearby, else probe around the thing — a CLOSED door can cut the
-    /// walkable grid, so no Exit record exists there. Null when nothing resolves (an area transition — the
-    /// map just ends).</summary>
+    /// opening's destination when one is nearby, else the nearest OTHER room reachable from the thing's own
+    /// cell ring — a CLOSED door can cut the walkable grid, so no Exit record exists there, but the ring still
+    /// straddles it. Null when nothing resolves (an area transition — the map just ends).</summary>
     private static RoomMap.Room ExitDestination(Vector3 p, RoomMap.Room from)
     {
         foreach (var exit in from.Exits)
@@ -463,16 +465,11 @@ internal static class Scanner
             float dx = exit.Position.x - p.x, dz = exit.Position.z - p.z;
             if (dx * dx + dz * dz < ExitCoverSq) return exit.To;
         }
-        for (int radius = 0; radius < 2; radius++)
-            for (int k = 0; k < 4; k++)
-            {
-                var probe = p;
-                float d = radius == 0 ? 1.5f : 2.5f;
-                if (k == 0) probe.x += d; else if (k == 1) probe.x -= d;
-                else if (k == 2) probe.z += d; else probe.z -= d;
-                var r = RoomMap.RoomAt(probe);
-                if (r != null && r != from) return r;
-            }
+        // Permissive seed: this only decorates the spoken line with where the door leads, and a door set in a
+        // thick bulkhead has no walkable cell of its own on either side within one cell of its centre.
+        RoomMap.RoomsNear(p, seedRadius: 2, steps: 3, into: _nearRooms);
+        foreach (var r in _nearRooms)
+            if (r != from) return r;
         return null;
     }
 
