@@ -1172,6 +1172,7 @@
   "levelup.advancing": "{name}, rank {rank} of {max}",
   "levelup.chosen": "chosen: {name}",
   "levelup.committed": "already applied: {name}",
+  "levelup.category": "Category",
   "levelup.not_chosen": "not chosen",
   "levelup.locked": "choose the earlier selections first",
   "levelup.ready": "All selections made. Ready to confirm.",

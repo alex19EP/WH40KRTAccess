@@ -7,6 +7,7 @@ using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.RankEnt
 using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.RankEntry.Feature; // BaseRankEntryFeatureVM, RankEntrySelectionStatVM
 using Kingmaker.UnitLogic.Levelup.Selections;                                          // FeatureGroup
 using Owlcat.Runtime.UI.Tooltips;                                                      // TooltipBaseTemplate
+using RTAccess.Accessibility;                                                          // TooltipReader, GlossaryLinks
 using RTAccess.UI.Graph;
 
 namespace RTAccess.UI
@@ -101,8 +102,8 @@ namespace RTAccess.UI
 
         /// <summary>A read-only feature node under a rank — an ability/talent/stat the rank grants
         /// AUTOMATICALLY (no choice to make). Reads its name (+ recommended); Space drills into the full
-        /// write-up. Not activatable — the rank's state (taken / gaining / locked) is carried by the group
-        /// label.</summary>
+        /// write-up plus its CATEGORY write-up (see <see cref="OpenFeatureTooltip"/>). Not activatable —
+        /// the rank's state (taken / gaining / locked) is carried by the group label.</summary>
         public static NodeVtable RankFeature(BaseRankEntryFeatureVM f)
         {
             return new NodeVtable
@@ -115,8 +116,59 @@ namespace RTAccess.UI
                         kind: AnnouncementKinds.Value),
                 },
                 SearchText = () => FeatureName(f),
-                OnTooltip = () => TooltipChooser.OpenTemplate(FeatureName(f), f.TooltipTemplate()),
+                OnTooltip = () => OpenFeatureTooltip(f),
             };
+        }
+
+        // Space on an automatic rank feature. A sighted PC player gets TWO panels here, not one:
+        //   * the feature card, on the button's hover tooltip (RankEntryFeatureItemCommonView →
+        //     m_MainButton.SetTooltip(ViewModel.Tooltip, …)), and
+        //   * the CATEGORY write-up, in the career screen's standing info panel — CareerPathVM
+        //     .UpdateSelectedItemInfoSection takes the LAST non-null of TooltipTemplates(), and
+        //     RankEntryFeatureItemVM orders its pair { card, hint }, so with no option focused the panel
+        //     shows HintTooltip: a TooltipTemplateSimple naming the group (Keystone features / Ultimate
+        //     upgrade / Improvement) and describing what that group means.
+        // We carried only the card, so the category was dropped. Note the ordering is NOT a general rule:
+        // RankEntrySelectionVM returns { hint, card } — last is the CARD — so a selection group's glossary
+        // hint is never rendered on PC and must NOT be spoken (see the audit doc; over-reporting it would
+        // break the see-what-a-sighted-player-sees law).
+        private static void OpenFeatureTooltip(BaseRankEntryFeatureVM f)
+        {
+            string title = FeatureName(f);
+            var tpl = f.TooltipTemplate();
+            var body = tpl != null ? TooltipReader.GetFull(tpl) : null;
+            var links = GlossaryLinks.Gather(tpl);
+
+            List<(string, string)> sections = null;
+            string category = CategorySection(f);
+            if (category != null)
+                sections = new List<(string, string)> { (CategoryLabel(f), category) };
+
+            TooltipChooser.Open(title, body, sections, links);
+        }
+
+        // The category panel's body, or null when the game ships it blank (nothing to drill into).
+        private static string CategorySection(BaseRankEntryFeatureVM f)
+        {
+            try
+            {
+                var hint = f.HintTooltip;
+                var body = hint != null ? TooltipReader.GetFull(hint) : null;
+                return string.IsNullOrWhiteSpace(body) ? null : body;
+            }
+            catch (Exception e) { Main.Log?.Log("rank feature category read failed: " + e.Message); return null; }
+        }
+
+        // The panel's own heading (a game string: Keystone features / Ultimate upgrade / Improvement).
+        private static string CategoryLabel(BaseRankEntryFeatureVM f)
+        {
+            try
+            {
+                var text = f.HintText;
+                if (!string.IsNullOrWhiteSpace(text)) return text;
+            }
+            catch (Exception e) { Main.Log?.Log("rank feature category label failed: " + e.Message); }
+            return Loc.T("levelup.category");
         }
 
         // The option's Space tooltip. PetKeystone (familiar) options ship a NULL TooltipTemplate by design

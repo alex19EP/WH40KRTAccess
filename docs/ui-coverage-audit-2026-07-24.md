@@ -191,12 +191,45 @@ Both the PC hover path (`ItemSlotPCView:95` → `this.SetTooltip(ViewModel.Toolt
 would replace. The mod's ordering assumption matches the game's exactly. Instantiating the VM would add
 nothing. Delist.
 
-One residual detail, unrelated to items: `RankEntrySelectionVM.TooltipTemplates()` returns
-`{ HintTooltip, Tooltip }` and `RankEntryFeatureItemVM.TooltipTemplates()` returns
-`{ Tooltip.Value, HintTooltip }` — note the **opposite order**. The extra template is a
-`TooltipTemplateGlossary(GlossaryEntryKey)` explaining what the selection *category* is. `CareerNodes`
-reads only the single `TooltipTemplate()`. Low value (glossary terms already drill via `GlossaryLinks`),
-but it is a real second panel a sighted player sees.
+### Career rank-entry second templates — RESOLVED 2026-07-25, half real
+
+The two career VMs return their pair in **opposite order**, and that ordering decides everything, because
+every consumer takes one end of the list:
+
+- `RankEntrySelectionVM.TooltipTemplates()` → `{ HintTooltip, Tooltip }` — hint FIRST.
+  `HintTooltip` is a `TooltipTemplateGlossary(GlossaryEntryKey)`.
+- `RankEntryFeatureItemVM.TooltipTemplates()` → `{ Tooltip.Value, HintTooltip }` — hint LAST.
+  `HintTooltip` is a `TooltipTemplateSimple` naming and describing the feature's *group*
+  (`BaseRankEntryFeatureVM.CreateHintTooltip`: Keystone features / Ultimate upgrade / Improvement).
+
+What a PC (mouse) player actually sees, traced through the **Common** views (shared PC + console, so this
+is not a console-only path):
+
+| Surface | Source | Which template |
+| --- | --- | --- |
+| hover tooltip on a rank item | `RankEntry{Selection,FeatureItem}CommonView` → `m_MainButton.SetTooltip(…Tooltip…)` | the card only — `SetTooltip`, singular, never `SetTooltips` |
+| hover hint on the same button | `m_MainButton.SetHint(m_HintText)` | a plain string (`HintText` / `GetHintText()`), not a template |
+| standing info panel | `CareerPathProgressionCommonView:98` binds `SelectedItemInfoSectionVM`; `CareerPathVM.UpdateSelectedItemInfoSection` | `templates.LastOrDefault(t => t != null)` |
+
+So the info panel resolves to **`Tooltip`** for a selection (last of `{hint, card}`) and to **`HintTooltip`**
+for an automatic feature (last of `{card, hint}`).
+
+Verdict, split:
+
+- **`RankEntrySelectionVM`: no change, and adding it would be a bug.** Its glossary `HintTooltip` is first
+  in the list, so neither the hover tooltip nor the info panel ever renders it on PC — it reaches only the
+  console navigation views. Speaking it would show a blind player something a sighted player cannot see.
+- **`RankEntryFeatureItemVM`: a real gap, fixed.** With no option focused
+  (`CareerPathVM.SetFocusOn(null)`), the info panel shows the category write-up while the card sits on
+  hover — two panels, and `CareerNodes.RankFeature` carried only the card. Space on an automatic rank
+  feature now opens the card plus a category section headed by the game's own `HintText`
+  (`CareerNodes.OpenFeatureTooltip`). Applies to both consumers of the factory: `LevelUpScreen` and the
+  ship Skills tab in `ShipCustomizationScreen`.
+
+Options (`RankOption` / `RankEntrySelectionFeatureVM`) are deliberately untouched: focusing one drives
+`SetFocusOn(featureVM)`, which puts **that option's own card** in the panel — already what
+`OptionTemplate` reads, PetKeystone special case included. Their category survives only as the button's
+hover-hint string, which is hover-only detail with no panel behind it.
 
 ### Space HUD notification toasts — CONFIRMED GAP, 2026-07-25
 
