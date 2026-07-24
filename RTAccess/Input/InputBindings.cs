@@ -358,6 +358,20 @@ namespace RTAccess.Input
             // uses for its sonar-mode toggle. Ships Off; per-type recorded stems, live-tracked in 3D. See Sonar.
             InputManager.Register("sonar.toggle", "Toggle sonar (off / when moving / continuous)",
                 InputCategory.Exploration, Ex.Sonar.ToggleMode).AddBinding(KeyCode.F2, ctrl: true).Grouped("scanner");
+
+            // ---- WorldMap: the sector-map LINK WALK (declared ONLY by SectorMapScreen, so these letters are free
+            // there — the game's bare-letter openers are relocated to Ctrl+letter, and the Exploration scanner's
+            // M / Slash aren't live on the sector map). Walk the warp-route graph off the current selection:
+            // m / Shift+m step the anchor's explored links, / re-anchors on the selected system, c returns to your
+            // current system. See RTAccess.Screens.SectorMapWalk. ----
+            InputManager.Register("sectormap.walk_next", "Sector map: next warp link", InputCategory.WorldMap,
+                Screens.SectorMapWalk.Next).AddBinding(KeyCode.M).Grouped("sectormap");
+            InputManager.Register("sectormap.walk_prev", "Sector map: previous warp link", InputCategory.WorldMap,
+                Screens.SectorMapWalk.Prev).AddBinding(KeyCode.M, shift: true).Grouped("sectormap");
+            InputManager.Register("sectormap.walk_anchor", "Sector map: explore links from selection", InputCategory.WorldMap,
+                Screens.SectorMapWalk.AnchorHere).AddBinding(KeyCode.Slash).Grouped("sectormap");
+            InputManager.Register("sectormap.walk_home", "Sector map: back to current system", InputCategory.WorldMap,
+                Screens.SectorMapWalk.Home).AddBinding(KeyCode.C).Grouped("sectormap");
         }
 
         // The review-buffer keys are Global (always polled), so their handlers stand down when not in a

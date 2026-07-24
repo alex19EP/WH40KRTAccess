@@ -35,5 +35,13 @@ namespace RTAccess.UI
 
         /// <summary>Return to the unfocused (exploration) state — see <see cref="Navigator.Blur"/>.</summary>
         public static void Blur() => Active?.Blur();
+
+        /// <summary>The domain object the focused node was declared from (its ControlId's Reference tier), or
+        /// null — e.g. the SectorMapObjectEntity behind a focused system node, read by the sector-map link walk.</summary>
+        public static object FocusedReference => Active?.FocusedNodeReference;
+
+        /// <summary>Move focus to a graph node by id (applied on the next render that contains it). Used to drive
+        /// focus programmatically — e.g. the sector-map link walk stepping the selection along warp links.</summary>
+        public static void FocusNode(Graph.ControlId id, bool announce = true) => Active?.FocusNode(id, announce);
     }
 }

@@ -52,6 +52,17 @@ namespace RTAccess.Screens
         public override int Layer => 0;                     // base context, sibling of ctx.systemmap / ctx.ingame
         public override bool StartUnfocused => true;        // camera keeps the arrows; Tab enters the list
 
+        // Type-ahead letter-search is OFF here: the link-walk keys (m / Shift+m step links, c = home) are bare
+        // letters that the Systems-list search would otherwise swallow. Search isn't worth much on the sector map
+        // (the frozen nearest-first list + the walk cover navigation), so we drop it to free the letters.
+        public override bool AllowsTypeahead => false;
+
+        // Declares the WorldMap input category (alongside UI) so the sector-map link-walk keys (registered as
+        // "sectormap.*" in InputBindings, handled by SectorMapWalk) are live ONLY while this screen is on top.
+        private static readonly IReadOnlyList<RTAccess.Input.InputCategory> Categories =
+            new[] { RTAccess.Input.InputCategory.UI, RTAccess.Input.InputCategory.WorldMap };
+        public override IReadOnlyList<RTAccess.Input.InputCategory> InputCategories => Categories;
+
         // The sector map is its own area type — naturally mutually exclusive with the star-system map and the
         // surface (you are in exactly one loaded area), so no extra exclusion predicate is needed.
         public override bool IsActive()
@@ -85,6 +96,7 @@ namespace RTAccess.Screens
         {
             _order.Clear();
             _orderArea = null;
+            SectorMapWalk.Reset();
         }
 
         // ---- the graph ----
@@ -310,23 +322,13 @@ namespace RTAccess.Screens
         private static List<string> ExploredLinks(SectorMapObject view)
         {
             var result = new List<string>();
-            var ctrl = Ctrl;
             var mine = view?.Data;
-            if (ctrl == null || mine == null) return result;
+            if (mine == null) return result;
             try
             {
                 var links = new List<string>();
-                foreach (var p in ctrl.AllPassagesForSystem(mine))
-                {
-                    if (p == null || !p.IsExplored) continue;
-                    var e1 = p.View?.StarSystem1Entity;
-                    var e2 = p.View?.StarSystem2Entity;
-                    var other = (e1 != null && e1.UniqueId != mine.UniqueId) ? e1
-                              : (e2 != null && e2.UniqueId != mine.UniqueId) ? e2 : null;
-                    var nv = other?.View;
-                    if (nv == null || !nv.IsExploredOrHasQuests || string.IsNullOrWhiteSpace(nv.Name)) continue;
-                    links.Add(Loc.T("sectormap.link", new { name = nv.Name, difficulty = DifficultyWord(p.CurrentDifficulty) }));
-                }
+                foreach (var n in ExploredNeighbors(mine))
+                    links.Add(Loc.T("sectormap.link", new { name = n.system.View.Name, difficulty = DifficultyWord(n.passage.CurrentDifficulty) }));
                 if (links.Count > 0)
                 {
                     links.Sort(StringComparer.CurrentCultureIgnoreCase);
@@ -336,6 +338,54 @@ namespace RTAccess.Screens
             }
             catch (Exception e) { Main.Log?.Log("sector links enum failed: " + e.Message); }
             return result;
+        }
+
+        // The explored warp links radiating from a system, as (neighbour, passage) pairs — the ONE parity-correct
+        // adjacency source, shared by the tooltip's ExploredLinks and the SectorMapWalk link-walk. Mirrors
+        // SectorMapPassageView.UpdateVisibility exactly: a passage is drawn (and so exposed here) iff it IsExplored
+        // and the far endpoint is named/known (IsExploredOrHasQuests) — half-explored and unexplored links draw no
+        // line for a sighted player, so we omit them too ([[rt-visual-parity]]).
+        internal static List<(SectorMapObjectEntity system, SectorMapPassageEntity passage)> ExploredNeighbors(SectorMapObjectEntity mine)
+        {
+            var result = new List<(SectorMapObjectEntity, SectorMapPassageEntity)>();
+            var ctrl = Ctrl;
+            if (ctrl == null || mine == null) return result;
+            foreach (var p in ctrl.AllPassagesForSystem(mine))
+            {
+                if (p == null || !p.IsExplored) continue;
+                var e1 = p.View?.StarSystem1Entity;
+                var e2 = p.View?.StarSystem2Entity;
+                var other = (e1 != null && e1.UniqueId != mine.UniqueId) ? e1
+                          : (e2 != null && e2.UniqueId != mine.UniqueId) ? e2 : null;
+                var nv = other?.View;
+                if (nv == null || !nv.IsExploredOrHasQuests || string.IsNullOrWhiteSpace(nv.Name)) continue;
+                result.Add((other, p));
+            }
+            return result;
+        }
+
+        // Shortest number of explored-passage hops from the ship's current system to `target` (BFS over the same
+        // parity-filtered adjacency the walk uses). 0 if it IS the current system, -1 if unreachable through
+        // explored links. Cheap — the explored graph is small.
+        internal static int JumpsFromCurrent(SectorMapObjectEntity target)
+        {
+            var start = Ctrl?.CurrentStarSystem;
+            if (start == null || target == null) return -1;
+            if (start == target) return 0;
+            var seen = new HashSet<string> { start.UniqueId };
+            var queue = new Queue<(SectorMapObjectEntity sys, int dist)>();
+            queue.Enqueue((start, 0));
+            while (queue.Count > 0)
+            {
+                var (sys, dist) = queue.Dequeue();
+                foreach (var n in ExploredNeighbors(sys))
+                {
+                    if (!seen.Add(n.system.UniqueId)) continue;
+                    if (n.system == target) return dist + 1;
+                    queue.Enqueue((n.system, dist + 1));
+                }
+            }
+            return -1;
         }
 
         private static bool SafeCheckQuests(SectorMapObject view)
@@ -406,12 +456,20 @@ namespace RTAccess.Screens
                     rows.Add(ChoiceSubmenuScreen.Row.Action(
                         () => Loc.T("sectormap.verb_visit", new { name }), () => DoVisit(view, overtip, name)));
 
-                // Make an existing route one difficulty tier safer (a Navigator's-Resource spend).
+                // Make an existing route safer — one row per REACHABLE safer tier, mirroring the sighted popup's
+                // up-to-3 upgrade buttons (SpaceSystemNavigationButtonsBaseView.CheckUpgradeButtonsVisible): target
+                // tier T in [Safe .. CurrentDifficulty-1], cost = (current - T) * per-tier, enabled iff affordable.
                 if (hasRoute && passage.CurrentDifficulty > SectorMapPassageEntity.PassageDifficulty.Safe)
                 {
                     var p = passage;
-                    rows.Add(ChoiceSubmenuScreen.Row.Action(
-                        () => UpgradeLabel(name), () => DoUpgradeRoute(entity, p, name)));
+                    for (int t = 0; t < (int)p.CurrentDifficulty && t < 3; t++)
+                    {
+                        var target = (SectorMapPassageEntity.PassageDifficulty)t; // fresh per iteration (closure-safe)
+                        rows.Add(ChoiceSubmenuScreen.Row.Action(
+                            () => UpgradeLabel(name, p, target),
+                            () => DoUpgradeRoute(entity, p, target, name),
+                            () => NavResource >= UpgradeCostTo(p, target)));
+                    }
                 }
 
                 // Create a new route to a non-current, un-routed system. Mirrors the sighted "Create way" button:
@@ -421,10 +479,13 @@ namespace RTAccess.Screens
                 {
                     var from = current;
                     var to = entity;
+                    // The game gates Create Way on the CURRENT system's scan flag (have I scanned from where I am),
+                    // NOT the destination's — see SpaceSystemNavigationButtonsVM.CheckEverything /
+                    // SpaceSystemNavigationButtonsBaseView.BindViewImplementation. IsAvailable is the target's.
                     rows.Add(ChoiceSubmenuScreen.Row.Action(
-                        () => CreateLabel(to, name),
+                        () => CreateLabel(name),
                         () => DoCreateRoute(from, to, name),
-                        () => to.IsScannedFrom && to.IsAvailable));
+                        () => from.IsScannedFrom && to.IsAvailable));
                 }
 
                 if (rows.Count == 0)
@@ -476,27 +537,48 @@ namespace RTAccess.Screens
         // "Create route to X, costs N" when scanned + affordable; "…scan required" when unscanned (the row is
         // disabled, so the announcer adds "disabled" — the game's ScanRequired hint); "…not enough" when scanned
         // but you can't pay (still enabled, mirroring the sighted button that stays clickable and warns).
-        private static string CreateLabel(SectorMapObjectEntity to, string name)
+        private static string CreateLabel(string name)
         {
-            if (!to.IsScannedFrom) return Loc.T("sectormap.verb_create_scan", new { name });
+            // "Scan required" keys off the CURRENT system's scan flag (matching the sighted button hint), not the target.
+            if (Ctrl?.CurrentStarSystem?.IsScannedFrom != true) return Loc.T("sectormap.verb_create_scan", new { name });
             int cost = CreateCost;
             return NavResource >= cost
                 ? Loc.T("sectormap.verb_create", new { name, cost })
                 : Loc.T("sectormap.verb_create_poor", new { name, cost });
         }
 
-        private static string UpgradeLabel(string name)
+        // Cost to lower a passage to a target tier — (current - target) * per-tier cost, matching the game's own
+        // SectorMapController.LowerPassageDifficulty.
+        private static int UpgradeCostTo(SectorMapPassageEntity passage, SectorMapPassageEntity.PassageDifficulty target)
+            => ((int)passage.CurrentDifficulty - (int)target) * UpgradeCost;
+
+        private static string UpgradeLabel(string name, SectorMapPassageEntity passage,
+            SectorMapPassageEntity.PassageDifficulty target)
         {
-            int cost = UpgradeCost;
+            int cost = UpgradeCostTo(passage, target);
+            string tier = TierWord(target);
             return NavResource >= cost
-                ? Loc.T("sectormap.verb_upgrade", new { name, cost })
-                : Loc.T("sectormap.verb_upgrade_poor", new { name, cost });
+                ? Loc.T("sectormap.verb_upgrade", new { name, tier, cost })
+                : Loc.T("sectormap.verb_upgrade_poor", new { name, tier, cost });
+        }
+
+        // The bare target-tier adjective (safe / unsafe / dangerous). Target is always < CurrentDifficulty, so Deadly
+        // never appears here.
+        private static string TierWord(SectorMapPassageEntity.PassageDifficulty d)
+        {
+            switch (d)
+            {
+                case SectorMapPassageEntity.PassageDifficulty.Safe: return Loc.T("sectormap.tier_safe");
+                case SectorMapPassageEntity.PassageDifficulty.Unsafe: return Loc.T("sectormap.tier_unsafe");
+                case SectorMapPassageEntity.PassageDifficulty.Dangerous: return Loc.T("sectormap.tier_dangerous");
+                default: return Loc.T("sectormap.tier_unsafe");
+            }
         }
 
         private static void DoCreateRoute(SectorMapObjectEntity from, SectorMapObjectEntity to, string name)
         {
             if (!Interactive) { Tts.Speak(Loc.T("sectormap.not_now"), interrupt: true); return; }
-            if (!to.IsScannedFrom) { Tts.Speak(Loc.T("sectormap.verb_create_scan", new { name }), interrupt: true); return; }
+            if (!from.IsScannedFrom) { Tts.Speak(Loc.T("sectormap.verb_create_scan", new { name }), interrupt: true); return; }
             if (NavResource < CreateCost) { Tts.Speak(Loc.T("sectormap.no_resource"), interrupt: true); return; }
             try
             {
@@ -506,14 +588,15 @@ namespace RTAccess.Screens
             catch (Exception e) { Main.Log?.Error("SectorMapScreen.DoCreateRoute failed: " + e); }
         }
 
-        private static void DoUpgradeRoute(SectorMapObjectEntity to, SectorMapPassageEntity passage, string name)
+        private static void DoUpgradeRoute(SectorMapObjectEntity to, SectorMapPassageEntity passage,
+            SectorMapPassageEntity.PassageDifficulty target, string name)
         {
             if (!Interactive) { Tts.Speak(Loc.T("sectormap.not_now"), interrupt: true); return; }
-            if (passage.CurrentDifficulty <= SectorMapPassageEntity.PassageDifficulty.Safe) return;
-            if (NavResource < UpgradeCost) { Tts.Speak(Loc.T("sectormap.no_resource"), interrupt: true); return; }
+            if (target >= passage.CurrentDifficulty) return; // not actually safer than the current tier
+            if (NavResource < UpgradeCostTo(passage, target)) { Tts.Speak(Loc.T("sectormap.no_resource"), interrupt: true); return; }
             try
             {
-                Game.Instance.GameCommandQueue.LowerWarpRouteDifficulty(to, passage.CurrentDifficulty - 1);
+                Game.Instance.GameCommandQueue.LowerWarpRouteDifficulty(to, target);
                 Tts.Speak(Loc.T("sectormap.verb_upgrade_go", new { name }), interrupt: true);
             }
             catch (Exception e) { Main.Log?.Error("SectorMapScreen.DoUpgradeRoute failed: " + e); }
