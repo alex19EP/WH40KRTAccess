@@ -14,6 +14,10 @@ public static class Main {
     internal static ModLog Log;
     /// <summary>The mod's install directory (UMM modEntry.Path) — root for bundled assets (locale JSON, …).</summary>
     internal static string ModDir;
+    /// <summary>The mod's UMM id (<c>Info.json</c> "Id" = "RTAccess"). Matches the game's own
+    /// <c>ExtendedModInfo.Id</c> for our row in the "Mods and DLC" window, so <see cref="Screens.DlcManagerScreen"/>
+    /// can tell OUR row apart and open the accessible <see cref="Screens.ModSettingsScreen"/> for it.</summary>
+    internal static string ModId;
     /// <summary>Master enable flag, toggled from the UMM UI (OnToggle). Defaults true (a freshly loaded mod is
     /// enabled). The <see cref="Speaker"/> chokepoint gates all speech on this, so a UMM-disabled mod goes fully
     /// silent even though its EventBus subscribers / Harmony postfixes stay wired.</summary>
@@ -23,6 +27,7 @@ public static class Main {
 
     public static bool Load(UnityModManager.ModEntry modEntry) {
         ModDir = modEntry.Path;
+        ModId = modEntry.Info.Id;
         // Wrap UMM's logger so everything we log also lands in rtaccess_log.txt (there is no UnityModManager.log
         // on disk here). Set up before the try below so an early init crash is captured too.
         Log = new ModLog(modEntry.Logger, modEntry.Path);
@@ -106,8 +111,23 @@ public static class Main {
         modEntry.OnUpdate = OnUpdate;
         modEntry.OnUnload = OnUnload;
         modEntry.OnToggle = OnToggle;
+        // Registering an OnGUI handler is what makes the game advertise a "settings" affordance for this mod
+        // in its own "Mods and DLC" window (the Owlcat UMM sets ExtendedModInfo.HasSettings = modEntry.OnGUI
+        // != null). The accessible path never opens this IMGUI overlay — DlcManagerScreen intercepts our row
+        // and opens ModSettingsScreen — but the flag makes the sighted Mods tab show the button too, and this
+        // hint tells a sighted user where the accessible menu lives.
+        modEntry.OnGUI = DrawUmmGui;
         Log.Log("RTAccess loaded. Speech backend: " + Speaker.ActiveBackend);
         return true;
+    }
+
+    // The raw UMM (Ctrl+F10) overlay's section for this mod: a one-line pointer to the in-game accessible
+    // settings. Deliberately minimal — the real settings UI is the navigable ModSettingsScreen reached from
+    // the game's Mods window; this only needs to (a) be non-null so the game marks the mod as having settings
+    // and (b) orient a sighted user. Wrapped so an IMGUI hiccup can't spam the per-frame draw.
+    private static void DrawUmmGui(UnityModManager.ModEntry modEntry) {
+        try { GUILayout.Label(Loc.T("umm.gui_hint")); }
+        catch { }
     }
 
     // Enable/disable from the UMM UI. Disabling must leave the player with a VANILLA keyboard AND silence: flip the

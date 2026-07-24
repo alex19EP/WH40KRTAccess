@@ -179,6 +179,14 @@ namespace RTAccess.Screens
             Register(new CharGenScreen());
             // Settings (CommonVM.SettingsVM) — layer 25, sits above the menu/in-game context when opened.
             Register(new SettingsScreen());
+            // "Mods and DLC" window (CommonVM.DlcManagerVM) — layer 25. The native entry point for the mod's
+            // own settings: the Mods tab lists this mod (UMM mods merge into the game's list), and its Settings
+            // action opens the accessible ModSettingsScreen below. Reachable from the main-menu Mods button and
+            // the Esc-menu "Mods and DLC" entry.
+            Register(new DlcManagerScreen());
+            // The mod's OWN settings browser (mod-pushed via a static flag) — layer 40, above the mods window
+            // it's launched from. Escape returns there.
+            Register(new ModSettingsScreen());
             // Key-binding capture dialog (SettingsVM.CurrentKeyBindDialog) — layer 27, raw-input
             // passthrough while the game's own capture view reads the pressed combo.
             Register(new KeyBindCaptureScreen());
