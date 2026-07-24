@@ -35,16 +35,23 @@ namespace RTAccess.Exploration;
 /// </summary>
 internal static class Sonar
 {
-    // ---- tuning (metres / seconds); consts for v1, promoted to settings once the ear pass picks the knobs ----
-    private const float MaxDist = 25f;    // sense radius: beyond it a thing drops from the sweep (no deceptive floor)
-    private const float RefDist = 5f;     // distance→volume reference (vol = refDist/(refDist+dist))
-    private const float MinVol = 0.08f;   // floor so a far-but-visible thing stays audible
-    private const float PanWidth = 3f;    // lateral pan crossover (~2 tiles)
+    // ---- tuning ---- FIXED knobs (WA keeps these const too):
+    private const float MinVol = 0.08f;    // floor so a far-but-visible thing stays audible
+    private const float PanWidth = 3f;     // lateral pan crossover (~2 tiles)
     private const float SpreadSec = 0.75f; // K: per-ping gap at one thing (then clamped by GapMin/Max)
-    private const float GapMin = 0.10f;
-    private const float GapMax = 0.20f;
-    private const float RestSec = 0.40f;  // pause between sweeps
     private const float MoveGrace = 1.25f; // "moving recently" window for the When-moving mode
+
+    // Cadence + range knobs — now user SETTINGS (exploration.sonar_*), read live each frame, matching WrathAccess's
+    // tunables so the sweep is shapeable by ear. RestSec is the silence BETWEEN sweeps (set 0 → continuous); the
+    // gaps bound the per-ping spacing; RefDist/MaxDist set the volume rolloff + sense radius. Defaults match WA
+    // (rest 400 ms, gaps 100–200 ms) with the radius tightened to WA's ~12 m / 3 m (was 25 m / 5 m — a sparser,
+    // gappier sweep). See Settings/Defaults.cs for the ranges.
+    private static int IntSet(string path, int fallback) => ModSettings.GetSetting<IntSetting>(path)?.Get() ?? fallback;
+    private static float MaxDist => IntSet("exploration.sonar_max_dist", 12);   // sense radius (m); drop beyond it
+    private static float RefDist => IntSet("exploration.sonar_ref_dist", 3);    // distance→volume reference (m)
+    private static float GapMin  => IntSet("exploration.sonar_gap_min", 100) / 1000f;
+    private static float GapMax  => IntSet("exploration.sonar_gap_max", 200) / 1000f;
+    private static float RestSec => IntSet("exploration.sonar_rest", 400) / 1000f; // pause between sweeps
 
     private static readonly List<ScanItem> _sweep = new List<ScanItem>();
     private static int _index;
@@ -67,6 +74,7 @@ internal static class Sonar
     }
 
     private static float Volume => (ModSettings.GetSetting<IntSetting>("exploration.sonar_volume")?.Get() ?? 60) / 100f;
+    private static string ReviewSound => ModSettings.GetSetting<ChoiceSetting>("exploration.sonar_review_sound")?.Current?.Id ?? "silent";
 
     /// <summary>Per-frame sweep step. Gated on exploration control + the play mode; silent (and reset) otherwise so
     /// a fresh sweep starts when control/movement returns. Never throws out of the update loop.</summary>
@@ -128,14 +136,20 @@ internal static class Sonar
     private static void Snapshot()
     {
         var c = MapCursor.Position;
+        float maxDist = MaxDist; // read the setting once per sweep
         _sweep.Clear();
         foreach (var it in WorldModel.Items)
         {
-            if (!it.CurrentlySeen || it.IsDead) continue;   // perceivable-now gate (fog/LOS via CurrentlySeen); skip corpses
+            // Detectable-from-cursor gate (matches WA's SonarSystem + RT's scanner review cycles): currently seen,
+            // OR a remembered thing under fog with a CLEAR line of sight from the cursor. Fogged persistent OBJECTS
+            // (chests/doors/mechanisms — IsVisible stays reveal-latched) come back in; fogged CREATURES do NOT
+            // (ProxyUnit.IsVisible follows IsVisibleForPlayer, which the game clears under fog) — the visual-parity
+            // law holds automatically. Skip dead units.
+            if (!it.DetectableFrom(c) || it.IsDead) continue;
             if (StemFor(it.Primary) == null) continue;       // no sound configured for this thing
             var np = it.NearestPoint(c);
             float dx = np.x - c.x, dz = np.z - c.z;
-            if (dx * dx + dz * dz > MaxDist * MaxDist) continue;
+            if (dx * dx + dz * dz > maxDist * maxDist) continue;
             _sweep.Add(it);
         }
         _sweep.Sort((a, b) => (a.Position.x - c.x).CompareTo(b.Position.x - c.x));
@@ -143,7 +157,7 @@ internal static class Sonar
 
     private static void FirePing(ScanItem item)
     {
-        if (!item.CurrentlySeen) return; // went out of perception since the snapshot
+        if (!item.IsVisible) return; // still known/exists since the snapshot (a remembered fogged object keeps pinging)
         var stem = StemFor(item.Primary);
         if (stem == null) return;
         // A LIVE source: heard from the moving cursor, positioned at the nearest point on the item's actual shape
@@ -160,6 +174,31 @@ internal static class Sonar
     // gap = clamp(K/count, GapMin, GapMax): spacious for a few, compressing toward the floor as the crowd grows,
     // so the whole sweep lengthens with count but pings stay individually audible.
     private static float GapSec(int count) => Mathf.Clamp(SpreadSec / Mathf.Max(1, count), GapMin, GapMax);
+
+    /// <summary>The REVIEW-CURSOR ping: a one-shot positional sound at the just-selected item, heard from the review
+    /// origin <paramref name="from"/> (FROZEN — it does NOT chase the movement cursor like the tracked sweep pings;
+    /// a deliberate "this thing, relative to where you looked" cue). Selection feedback for the scanner's browse /
+    /// review cycles (fired from <c>Scanner.Select</c>), SEPARATE from the ambient sweep and NOT gated on the sonar
+    /// mode — it's controlled only by <c>exploration.sonar_review_sound</c> (Silent = off, the default, so the whole
+    /// soundscape still ships silent). Uses a root-level cue wav (review.wav / tracking.wav) with the sonar volume +
+    /// spatial model. Ported from WrathAccess <c>SonarSystem.PlayReview</c>.</summary>
+    public static void PlayReview(ScanItem item, Vector3 from)
+    {
+        try
+        {
+            if (item == null) return;
+            var stem = ReviewSound;
+            if (string.IsNullOrEmpty(stem) || stem == "silent") return;
+            var buf = AudioMixer.Instance.LoadFile(AudioAssets.Cue(stem)); // root-level wav, decoded + cached
+            if (buf == null || buf.Length == 0) return;
+            var np = item.NearestPoint(from);
+            float dx = np.x - from.x, dz = np.z - from.z;
+            float dist = Mathf.Sqrt(dx * dx + dz * dz);
+            // Fire-and-forget: a frozen positional one-shot (ignore the returned voice so it isn't cursor-tracked).
+            AudioMixer.Instance.PlaySpatial(buf, Spatializer.Cue(dx, dz, PanWidth), Spatializer.VolumeFor(dist, RefDist, MinVol) * Volume);
+        }
+        catch (Exception e) { Main.Log?.Error("Sonar.PlayReview failed: " + e); }
+    }
 
     // ---- per-type recorded stems (WA's assets/audio/interactables/*.wav) ----
     // Each taxonomy node maps to WrathAccess's own default stem for that thing, so types are told apart by their

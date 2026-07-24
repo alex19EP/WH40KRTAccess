@@ -248,6 +248,10 @@ public static class Main {
         // (the grid streams in late) and rebuilds once per load. See RTAccess.Exploration.RoomMap.
         Safe(() => Exploration.RoomMap.Tick(), "RoomMap");
 
+        // Master output volume: refresh the mixer's global gain from the audio.master_volume setting (main thread;
+        // the audio thread only reads the cached float). Cheap and harmless when the soundscape is off.
+        Safe(() => Audio.AudioMixer.RefreshMaster(), "AudioMaster");
+
         // Ambient sonar sweep: ping the perceivable things around the shared cursor with their recorded per-type
         // stems (the "feel the room" layer). Gated OFF by default (exploration.sonar); reads the current-frame
         // WorldModel registry above. See RTAccess.Exploration.Sonar.

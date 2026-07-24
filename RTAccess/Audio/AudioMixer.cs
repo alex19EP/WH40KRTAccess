@@ -1,9 +1,8 @@
 using System.Collections.Generic;
 using System.IO;
-using NAudio.Dsp;   // BiQuadFilter (front/back low-pass)
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using UnityEngine;  // Mathf (spatial voice clamps)
+using RTAccess.Settings; // IntSetting (master volume)
 
 namespace RTAccess.Audio
 {
@@ -26,6 +25,21 @@ namespace RTAccess.Audio
 
         public static AudioMixer Instance { get; } = new AudioMixer();
 
+        /// <summary>Master output gain (0..1), applied at the final mix stage to EVERY voice (earcons, wall tones,
+        /// live sonar) uniformly — one global attenuation the maintainer can pull down without touching each
+        /// per-feature volume. A plain <c>volatile</c> the audio thread reads; the main thread refreshes it each
+        /// frame from the <c>audio.master_volume</c> setting via <see cref="RefreshMaster"/>.</summary>
+        public static volatile float Master = 1f;
+
+        /// <summary>Re-read the master-volume setting into <see cref="Master"/> (main thread, once per frame from
+        /// <c>Main.OnUpdate</c>). Kept out of the audio thread — the setting lookup happens here, the audio thread
+        /// only reads the cached float.</summary>
+        public static void RefreshMaster()
+        {
+            int v = ModSettings.GetSetting<IntSetting>("audio.master_volume")?.Get() ?? 100;
+            Master = (v < 0 ? 0 : v > 100 ? 100 : v) / 100f;
+        }
+
         private MixingSampleProvider _mixer;
         private IWavePlayer _out;
         private readonly object _gate = new object();
@@ -38,7 +52,7 @@ namespace RTAccess.Audio
             _mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(Rate, 2)) { ReadFully = true };
             // 100 ms buffer rides through managed-thread (GC/CPU) pauses without underrunning.
             _out = new WaveOutEvent { DesiredLatency = 100, NumberOfBuffers = 4 };
-            _out.Init(_mixer);
+            _out.Init(new MasterStage(_mixer)); // final master-volume stage in front of the device
             _out.Play();
         }
 
@@ -141,7 +155,7 @@ namespace RTAccess.Audio
         }
 
         /// <summary>Fire a LIVE, self-draining positional one-shot on a cached interleaved-stereo buffer (its LEFT
-        /// lane is the mono source): constant-power pan + interaural delay + front/back low-pass from
+        /// lane is the mono source): capped-ILD pan + interaural delay + rear/ear-shadow high-shelves from
         /// <paramref name="cue"/>, at <paramref name="volume"/>. Returns an <see cref="ISpatialVoice"/> so
         /// <see cref="SpatialSources"/> can re-place it every frame as the cursor moves; it removes itself from the
         /// mixer when the buffer (plus the ITD tail) drains. This is the real-3D object-sonar ping.</summary>
@@ -165,6 +179,25 @@ namespace RTAccess.Audio
                 try { _out?.Stop(); _out?.Dispose(); } catch { }
                 _out = null; _mixer = null;
                 _fileCache.Clear();
+            }
+        }
+
+        // Final master-volume stage between the mixer and the output device: scales the whole mod mix by
+        // Master (0..1), read once per block on the audio thread (a plain volatile the main thread updates from
+        // the setting). One chokepoint so every voice — earcons, wall tones, live sonar — is attenuated
+        // uniformly; at unity gain the block passes through untouched.
+        private sealed class MasterStage : ISampleProvider
+        {
+            private readonly ISampleProvider _src;
+            public MasterStage(ISampleProvider src) { _src = src; WaveFormat = src.WaveFormat; }
+            public WaveFormat WaveFormat { get; }
+
+            public int Read(float[] buffer, int offset, int count)
+            {
+                int n = _src.Read(buffer, offset, count);
+                float g = Master;
+                if (g != 1f) for (int i = 0; i < n; i++) buffer[offset + i] *= g;
+                return n;
             }
         }
 
@@ -249,31 +282,68 @@ namespace RTAccess.Audio
             }
         }
 
+        // Minimal RBJ-cookbook high-shelf biquad (shelf slope S = 1), retunable IN PLACE with state preserved —
+        // NAudio's BiQuadFilter has a HighShelf factory but no SetHighShelf, and allocating a filter per block
+        // on the audio thread is off-limits (Boehm full-GC pauses underrun the output). At 0 dB the coefficients
+        // reduce exactly to identity, so a "no cue" shelf is genuinely transparent. Ported from WA NAudioEngine.
+        private struct HighShelf
+        {
+            private float _b0, _b1, _b2, _a1, _a2; // normalized coefficients
+            private float _z1, _z2;                // transposed direct form II state
+
+            public void Set(float rate, float cornerHz, float dbGain)
+            {
+                double A = Math.Pow(10.0, dbGain / 40.0);
+                double w0 = 2.0 * Math.PI * cornerHz / rate;
+                double cosw = Math.Cos(w0);
+                double alpha = Math.Sin(w0) / 2.0 * Math.Sqrt(2.0); // S = 1
+                double k = 2.0 * Math.Sqrt(A) * alpha;
+                double b0 = A * ((A + 1) + (A - 1) * cosw + k);
+                double b1 = -2.0 * A * ((A - 1) + (A + 1) * cosw);
+                double b2 = A * ((A + 1) + (A - 1) * cosw - k);
+                double a0 = (A + 1) - (A - 1) * cosw + k;
+                double a1 = 2.0 * ((A - 1) - (A + 1) * cosw);
+                double a2 = (A + 1) - (A - 1) * cosw - k;
+                _b0 = (float)(b0 / a0); _b1 = (float)(b1 / a0); _b2 = (float)(b2 / a0);
+                _a1 = (float)(a1 / a0); _a2 = (float)(a2 / a0);
+            }
+
+            public float Transform(float x)
+            {
+                float y = _b0 * x + _z1;
+                _z1 = _b1 * x - _a1 * y + _z2;
+                _z2 = _b2 * x - _a2 * y;
+                return y;
+            }
+        }
+
         // A spatialised, LIVE one-shot. The cached buffer is treated as MONO (left lane — our stems are mono,
-        // duplicated to stereo on decode), low-passed for the front/back cue, then split L/R with a constant-power
-        // pan and a fractional ITD delay on the FAR channel (a small ring of recent FILTERED samples). Crucially
-        // the placement is re-settable while it plays: SetPlacement (main thread) writes target gains/ITD/cutoff
-        // and Read (audio thread) ramps the current values toward them across each block, so a source tracks the
-        // moving cursor without clicks. Goes silent past the buffer end, draining the delay tail, then returns 0
-        // so the mixer auto-removes it. Ported verbatim from WrathAccess NAudioEngine.PositionalEmitter.
+        // duplicated to stereo on decode). Signal path: rear high-shelf cut (the front/back cue) on the mono
+        // source → split L/R with capped-ILD constant-power gains (Spatializer.PanGains) and a fractional ITD
+        // delay on the FAR channel (a tiny ring of recent shelved samples) → a second, laterality-scaled
+        // high-shelf on the far ear only (frequency-dependent head shadow). Crucially the placement is
+        // re-settable while it plays: SetPlacement (main thread) writes targets and Read (audio thread) ramps
+        // the current values toward them across each block (shelves retune per block, state preserved), so a
+        // source tracks the moving cursor without clicks. Goes silent past the buffer end, draining the delay
+        // tail, then returns 0 so the mixer auto-removes it. Ported from WrathAccess NAudioEngine.PositionalEmitter.
         private sealed class PositionalEmitter : ISampleProvider, ISpatialVoice
         {
             private const int RingSize = 64;          // >= max ITD (~29 frames) + margin; power of two
             private const int RingMask = RingSize - 1;
             private const int TailFrames = RingSize;  // drain the delay line after the source ends
-            private const float OpenHz = 20000f;      // "no filter" cutoff (effectively transparent)
-            private const float Q = 0.707f;
+            private const float DbEps = 0.05f;        // retune threshold; below this the shelf stays put
 
             private readonly float[] _buf;            // interleaved stereo; left lane sampled as mono
             private readonly int _srcFrames;
             private readonly int _rate;
             private readonly float[] _ring = new float[RingSize];
-            private readonly BiQuadFilter _lp;        // always present; cutoff ramped (OpenHz ≈ bypass)
+            private HighShelf _rear;                  // front/back darkening, on the whole source
+            private HighShelf _shadow;                // head shadow, on the far ear only
 
             // Targets — written by SetPlacement (main thread), read by Read (audio thread).
-            private volatile float _tGainL, _tGainR, _tItd, _tCutoff, _tWet;
+            private volatile float _tGainL, _tGainR, _tItd, _tRearDb, _tShadowDb;
             // Current smoothed values — audio thread only.
-            private float _cGainL, _cGainR, _cItd, _cCutoff, _cWet;
+            private float _cGainL, _cGainR, _cItd, _cRearDb, _cShadowDb;
             private bool _primed;
             private int _frame;
             private volatile bool _finished;
@@ -283,8 +353,8 @@ namespace RTAccess.Audio
                 _buf = buf;
                 _srcFrames = buf.Length / 2;
                 _rate = rate;
-                _tCutoff = _cCutoff = OpenHz;
-                _lp = BiQuadFilter.LowPassFilter(rate, OpenHz, Q);
+                _rear.Set(rate, Spatializer.RearCornerHz, 0f);
+                _shadow.Set(rate, Spatializer.ShadowCornerHz, 0f);
                 WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, 2);
             }
 
@@ -293,12 +363,12 @@ namespace RTAccess.Audio
 
             public void SetPlacement(SpatialCue cue, float volume)
             {
-                float t = (cue.Pan + 1f) * 0.5f * (float)(Math.PI / 2.0);
-                _tGainL = volume * (float)Math.Cos(t);
-                _tGainR = volume * (float)Math.Sin(t);
+                Spatializer.PanGains(cue.Pan, out float gl, out float gr);
+                _tGainL = volume * gl;
+                _tGainR = volume * gr;
                 _tItd = cue.ItdSamples;
-                _tCutoff = Mathf.Clamp(cue.LowpassHz, 20f, _rate * 0.49f);
-                _tWet = cue.WetMix < 0f ? 0f : (cue.WetMix > 1f ? 1f : cue.WetMix);
+                _tRearDb = cue.RearShelfDb;
+                _tShadowDb = cue.FarShadowDb;
             }
 
             public int Read(float[] buffer, int offset, int count)
@@ -306,38 +376,41 @@ namespace RTAccess.Audio
                 int frames = count / 2;
                 if (frames == 0) return 0;
 
-                float tGainL = _tGainL, tGainR = _tGainR, tItd = _tItd, tCutoff = _tCutoff, tWet = _tWet;
+                float tGainL = _tGainL, tGainR = _tGainR, tItd = _tItd, tRearDb = _tRearDb, tShadowDb = _tShadowDb;
                 if (!_primed)
                 {
-                    _cGainL = tGainL; _cGainR = tGainR; _cItd = tItd; _cCutoff = tCutoff; _cWet = tWet;
-                    _lp.SetLowPassFilter(_rate, Mathf.Clamp(_cCutoff, 20f, _rate * 0.49f), Q);
+                    _cGainL = tGainL; _cGainR = tGainR; _cItd = tItd; _cRearDb = tRearDb; _cShadowDb = tShadowDb;
+                    _rear.Set(_rate, Spatializer.RearCornerHz, _cRearDb);
+                    _shadow.Set(_rate, Spatializer.ShadowCornerHz, _cShadowDb);
                     _primed = true;
                 }
 
-                // Cutoff lerps once per block (retuning per sample is too costly; filter state is preserved).
-                if (Mathf.Abs(tCutoff - _cCutoff) > 1f)
+                // Shelf gains lerp once per block (retuning per sample is too costly; filter state is preserved).
+                if (Math.Abs(tRearDb - _cRearDb) > DbEps)
                 {
-                    _cCutoff += (tCutoff - _cCutoff) * 0.5f;
-                    _lp.SetLowPassFilter(_rate, Mathf.Clamp(_cCutoff, 20f, _rate * 0.49f), Q);
+                    _cRearDb += (tRearDb - _cRearDb) * 0.5f;
+                    _rear.Set(_rate, Spatializer.RearCornerHz, _cRearDb);
+                }
+                if (Math.Abs(tShadowDb - _cShadowDb) > DbEps)
+                {
+                    _cShadowDb += (tShadowDb - _cShadowDb) * 0.5f;
+                    _shadow.Set(_rate, Spatializer.ShadowCornerHz, _cShadowDb);
                 }
 
-                // Gains + ITD + wet-mix ramp linearly to target across the block — click-free moving source.
+                // Gains + ITD ramp linearly to target across the block — click-free tracking of a moving source.
                 float dGainL = (tGainL - _cGainL) / frames;
                 float dGainR = (tGainR - _cGainR) / frames;
                 float dItd = (tItd - _cItd) / frames;
-                float dWet = (tWet - _cWet) / frames;
 
                 int produced = 0;
                 for (int f = 0; f < frames; f++)
                 {
                     if (_frame >= _srcFrames + TailFrames) break;
-                    _cGainL += dGainL; _cGainR += dGainR; _cItd += dItd; _cWet += dWet;
+                    _cGainL += dGainL; _cGainR += dGainR; _cItd += dItd;
 
-                    // Blend the dry source with its low-passed copy by the rear wet-mix. Dry ahead/at the side
-                    // (wet ≈ 0); behind, the filtered copy fades in — keeping bright cues audible.
+                    // Rear cue: shelve the mono source (transparent at 0 dB — identity coefficients).
                     float dry = _frame < _srcFrames ? _buf[_frame * 2] : 0f;
-                    float wet = _lp.Transform(dry);
-                    float m = dry + _cWet * (wet - dry);
+                    float m = _rear.Transform(dry);
                     _ring[_frame & RingMask] = m;
 
                     float itdMag = _cItd < 0f ? -_cItd : _cItd;
@@ -346,7 +419,10 @@ namespace RTAccess.Audio
                     int d0 = _frame - itdInt, d1 = d0 - 1;
                     float s0 = d0 >= 0 ? _ring[d0 & RingMask] : 0f;
                     float s1 = d1 >= 0 ? _ring[d1 & RingMask] : 0f;
-                    float far = s0 + (s1 - s0) * frac;
+                    // Far ear: delayed, then head-shadowed (highs shadow more than lows). The shadow filter lives
+                    // on the far-ear STREAM; when the ITD sign flips mid-flight the ears swap roles, but at that
+                    // instant itd ≈ 0, gains ≈ equal, and the shadow ≈ 0 dB — no discontinuity.
+                    float far = _shadow.Transform(s0 + (s1 - s0) * frac);
                     float near = m;
 
                     bool delayLeft = _cItd >= 0f; // +ve = source east = right ear leads, left ear lags

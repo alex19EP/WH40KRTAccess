@@ -436,11 +436,22 @@
   "exploration.camera_follow": "Camera follows cursor",
   "exploration.sonar": "Sonar",
   "exploration.sonar_volume": "Sonar volume",
+  "exploration.sonar_rest": "Sonar rest between sweeps (ms)",
+  "exploration.sonar_gap_min": "Sonar minimum ping gap (ms)",
+  "exploration.sonar_gap_max": "Sonar maximum ping gap (ms)",
+  "exploration.sonar_ref_dist": "Sonar reference distance (m)",
+  "exploration.sonar_max_dist": "Sonar maximum distance (m)",
+  "exploration.sonar_review_sound": "Review cursor sound",
+  "exploration.sonar_review_sound.silent": "Silent",
+  "exploration.sonar_review_sound.review": "Review ping",
+  "exploration.sonar_review_sound.tracking": "Tracking tone",
   "exploration.walltones": "Wall tones",
   "exploration.walltones_volume": "Wall tone volume",
   "exploration.walltones_set": "Wall tone set",
   "exploration.walltones_set.1": "Set 1",
   "exploration.walltones_set.2": "Set 2",
+  "audio.master_volume": "Master volume",
   "audio.itd": "Interaural time delay (stereo depth)",
-  "audio.front_back_filter": "Front/back muffling"
+  "audio.front_back_filter": "Front/back muffling",
+  "audio.head_shadow": "Ear shadowing (head between the ears)"
 }

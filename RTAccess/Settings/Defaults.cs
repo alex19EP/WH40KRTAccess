@@ -15,18 +15,45 @@ namespace RTAccess.Settings
             var explCat = ModSettingsRegistry.EnsureCategory("exploration", "Exploration");
             if (explCat.GetByKey("camera_follow") == null)
                 explCat.Add(new BoolSetting("camera_follow", "Camera follows cursor", true, "exploration.camera_follow"));
-            // Ambient sonar (Exploration/Sonar.cs) — the first spatial-audio system. GATED OFF by default: audio
-            // quality is un-self-verifiable, so it ships silent for the maintainer's ear-tuning pass (Off / When
-            // moving / Continuous). See docs/plans/echoing-charting-lovelace.md (audio pass, Phase G).
+            // Ambient sonar (Exploration/Sonar.cs) — the first spatial-audio system. ON by default (When moving)
+            // as of the audio-ON-by-default policy (2026-07-25): the soundscape is a core accessibility feature, so
+            // it ships live once ear-tuned rather than gated off. Off / When moving / Continuous; the maintainer runs
+            // When moving. See docs/plans/echoing-charting-lovelace.md (audio pass, Phase G).
             if (explCat.GetByKey("sonar") == null)
                 explCat.Add(new ChoiceSetting("sonar", "Sonar", new[]
                 {
                     new Choice("off", "Off", "overlay.mode.off"),
                     new Choice("when_moving", "When moving", "overlay.mode.when_moving"),
                     new Choice("continuous", "Continuous", "overlay.mode.continuous"),
-                }, "off", "exploration.sonar"));
+                }, "when_moving", "exploration.sonar"));
             if (explCat.GetByKey("sonar_volume") == null)
                 explCat.Add(new IntSetting("sonar_volume", "Sonar volume", 60, 0, 100, 5, "exploration.sonar_volume"));
+            // Sonar CADENCE + RANGE knobs (read live by Exploration/Sonar.cs) — ported from WrathAccess's tunables
+            // so the sweep can be shaped by ear. rest = the silence BETWEEN sweeps (set 0 for a continuous sweep);
+            // gap_min/max bound the per-ping spacing (which compresses as the crowd grows); ref/max distance set
+            // the volume rolloff and the sense radius. Defaults match WA (rest 400 ms, gaps 100–200 ms) with the
+            // radius tightened to WA's ~12 m / 3 m (RT previously sensed to 25 m, a sparser, gappier sweep).
+            if (explCat.GetByKey("sonar_rest") == null)
+                explCat.Add(new IntSetting("sonar_rest", "Sonar rest between sweeps (ms)", 400, 0, 1500, 50, "exploration.sonar_rest"));
+            if (explCat.GetByKey("sonar_gap_min") == null)
+                explCat.Add(new IntSetting("sonar_gap_min", "Sonar minimum ping gap (ms)", 100, 30, 400, 10, "exploration.sonar_gap_min"));
+            if (explCat.GetByKey("sonar_gap_max") == null)
+                explCat.Add(new IntSetting("sonar_gap_max", "Sonar maximum ping gap (ms)", 200, 50, 600, 10, "exploration.sonar_gap_max"));
+            if (explCat.GetByKey("sonar_ref_dist") == null)
+                explCat.Add(new IntSetting("sonar_ref_dist", "Sonar reference distance (m)", 3, 1, 30, 1, "exploration.sonar_ref_dist"));
+            if (explCat.GetByKey("sonar_max_dist") == null)
+                explCat.Add(new IntSetting("sonar_max_dist", "Sonar maximum distance (m)", 12, 3, 60, 1, "exploration.sonar_max_dist"));
+            // Review-cursor ping (Exploration/Sonar.PlayReview, fired from Scanner.Select) — a one-shot positional
+            // sound at the item you land on while cycling the scanner (M / , / . / N / Ctrl+PageUp/Down / O), so you
+            // hear WHERE it is, not just its spoken line. Separate from the ambient sweep. ON by default (review.wav)
+            // as of the audio-ON-by-default policy; pick tracking.wav or Silent to change. Mirrors WA's overlay.sonar.review_sound.
+            if (explCat.GetByKey("sonar_review_sound") == null)
+                explCat.Add(new ChoiceSetting("sonar_review_sound", "Review cursor sound", new[]
+                {
+                    new Choice("silent", "Silent", "exploration.sonar_review_sound.silent"),
+                    new Choice("review", "Review ping", "exploration.sonar_review_sound.review"),
+                    new Choice("tracking", "Tracking tone", "exploration.sonar_review_sound.tracking"),
+                }, "review", "exploration.sonar_review_sound"));
             // Fog-of-war boundary cue (Exploration/FogCue.cs) — a brief tone as the cursor crosses the edge of the
             // party's current sight. ON by default: it's a discrete event, not a continuous bed, so it ships live
             // without the ear-tuning pass (no keybind — toggle it here). Pitch/length match WrathAccess's fog wavs.
@@ -38,16 +65,16 @@ namespace RTAccess.Settings
             if (explCat.GetByKey("announce_rooms") == null)
                 explCat.Add(new BoolSetting("announce_rooms", "Announce room changes", true, "overlay.cursor.announce_rooms"));
             // Directional wall tones (Exploration/WallTones.cs) — the continuous "shape of the room" bed: four
-            // looping cardinal voices whose volume rises as a wall nears. Ships OFF: the continuous bed is
-            // ambient/fatiguing, so the maintainer opts in with the Ctrl+F1 toggle (Off → When moving →
-            // Continuous, same chord as WrathAccess) and the volume defaults low. See the audio pass, Phase H.
+            // looping cardinal voices whose volume rises as a wall nears. ON by default (When moving) as of the
+            // audio-ON-by-default policy — NOT Continuous, since an always-on bed is fatiguing; Ctrl+F1 cycles
+            // Off → When moving → Continuous (same chord as WrathAccess) and the volume defaults low. See the audio pass, Phase H.
             if (explCat.GetByKey("walltones") == null)
                 explCat.Add(new ChoiceSetting("walltones", "Wall tones", new[]
                 {
                     new Choice("off", "Off", "overlay.mode.off"),
                     new Choice("when_moving", "When moving", "overlay.mode.when_moving"),
                     new Choice("continuous", "Continuous", "overlay.mode.continuous"),
-                }, "off", "exploration.walltones"));
+                }, "when_moving", "exploration.walltones"));
             if (explCat.GetByKey("walltones_volume") == null)
                 explCat.Add(new IntSetting("walltones_volume", "Wall tone volume", 25, 0, 100, 5, "exploration.walltones_volume"));
             if (explCat.GetByKey("walltones_set") == null)
@@ -57,13 +84,21 @@ namespace RTAccess.Settings
                     new Choice("2", "Set 2", "exploration.walltones_set.2"),
                 }, "1", "exploration.walltones_set"));
             // Spatial-audio realism toggles (read by Audio/Spatializer.Cue) — the object sonar's per-source 3D on
-            // top of pan: an interaural time delay (headphone left/right sharpness) and a rear low-pass (muffled =
-            // behind). Both default ON; separated so the maintainer can A/B each by ear. See the audio pass.
+            // top of the capped-ILD pan: an interaural time delay (headphone left/right sharpness), a rear
+            // high-shelf cut (darker = behind), and a far-ear head-shadow shelf (a head between the ears). All
+            // default ON; separated so the maintainer can A/B each by ear. See the audio pass.
             var audioCat = ModSettingsRegistry.EnsureCategory("audio", "Audio");
+            // Master output volume — one global attenuation over ALL mod audio (sonar, wall tones, earcons, fog),
+            // applied at the mixer's final stage (AudioMixer.Master). Default 100 (no change) so it only ever pulls
+            // the whole soundscape down; the per-feature volumes still balance the mix under it.
+            if (audioCat.GetByKey("master_volume") == null)
+                audioCat.Add(new IntSetting("master_volume", "Master volume", 100, 0, 100, 5, "audio.master_volume"));
             if (audioCat.GetByKey("itd") == null)
                 audioCat.Add(new BoolSetting("itd", "Interaural time delay (stereo depth)", true, "audio.itd"));
             if (audioCat.GetByKey("front_back_filter") == null)
                 audioCat.Add(new BoolSetting("front_back_filter", "Front/back muffling", true, "audio.front_back_filter"));
+            if (audioCat.GetByKey("head_shadow") == null)
+                audioCat.Add(new BoolSetting("head_shadow", "Ear shadowing (head between the ears)", true, "audio.head_shadow"));
         }
     }
 }

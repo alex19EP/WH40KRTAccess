@@ -76,7 +76,7 @@ internal static class WallTones
         }
     }
 
-    private static float Volume => (ModSettings.GetSetting<IntSetting>("exploration.walltones_volume")?.Get() ?? 50) / 100f;
+    private static float Volume => (ModSettings.GetSetting<IntSetting>("exploration.walltones_volume")?.Get() ?? 25) / 100f;
     private static string ToneSet => ModSettings.GetSetting<ChoiceSetting>("exploration.walltones_set")?.Current?.Id ?? "1";
     private static float CellSize => GraphParamsMechanicsCache.GridCellSize;
 
