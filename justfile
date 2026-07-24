@@ -20,6 +20,10 @@
 
 set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 
+# Load a git-ignored .env at the repo root if present (supplies GH_PACKAGES_TOKEN for
+# `just publish`). Absent .env is fine — recipes that don't need it are unaffected.
+set dotenv-load := true
+
 # Path to the game's Managed assemblies folder (override on the command line if it differs).
 managed := "C:/Program Files (x86)/Steam/steamapps/common/Warhammer 40,000 Rogue Trader/WH40KRT_Data/Managed"
 
@@ -71,8 +75,16 @@ test:
     dotnet test tests/RTAccess.Tests.csproj
 
 # Rebuild the WH40KRT.GameRefs NuGet package (Refasmer-stripped game assemblies for CI).
-# Rerun after a game patch, bumping the version. Add -Push -ApiKey <PAT> to publish.
+# Rerun after a game patch, bumping the version. Use `just publish` to also push.
 #   just refs                    # build build/gamerefs/out/*.nupkg at the default version
 #   just refs 4.1.3              # stamp a specific game version
 refs version='4.1.2':
     pwsh -NoProfile -File scripts/build-gamerefs.ps1 -Version "{{version}}"
+
+# Build AND publish WH40KRT.GameRefs to GitHub Packages. Needs GH_PACKAGES_TOKEN
+# (a PAT with the write:packages scope) in a .env file at the repo root — see .env.example.
+# GitHub Packages versions are immutable, so bump the version for every publish.
+#   just publish                 # publish at the default version
+#   just publish 4.1.3           # publish a specific game version
+publish version='4.1.2':
+    pwsh -NoProfile -File scripts/build-gamerefs.ps1 -Version "{{version}}" -Push

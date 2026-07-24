@@ -24,18 +24,20 @@
     After packing, push the .nupkg to GitHub Packages under alex19EP. Requires -ApiKey.
 
 .PARAMETER ApiKey
-    A GitHub PAT with the write:packages scope. Only needed with -Push.
+    A GitHub PAT with the write:packages scope. Only needed with -Push. Defaults to the
+    GH_PACKAGES_TOKEN environment variable, which `just publish` loads from a .env file.
 
 .EXAMPLE
-    pwsh scripts/build-gamerefs.ps1 -Version 4.1.2
-    pwsh scripts/build-gamerefs.ps1 -Version 4.1.2 -Push -ApiKey ghp_xxx
+    pwsh scripts/build-gamerefs.ps1 -Version 4.1.2                       # build only
+    pwsh scripts/build-gamerefs.ps1 -Version 4.1.2 -Push -ApiKey ghp_xxx # build + publish
+    just publish 4.1.2                                                   # build + publish via .env
 #>
 [CmdletBinding()]
 param(
     [string]$Version = '4.1.2',
     [string]$Managed = 'C:/Program Files (x86)/Steam/steamapps/common/Warhammer 40,000 Rogue Trader/WH40KRT_Data/Managed',
     [switch]$Push,
-    [string]$ApiKey
+    [string]$ApiKey = $env:GH_PACKAGES_TOKEN
 )
 $ErrorActionPreference = 'Stop'
 
@@ -81,7 +83,7 @@ $nupkg = Get-ChildItem "$outDir/*.nupkg" | Select-Object -First 1
 Write-Host ("Built {0} ({1:N1} MB)" -f $nupkg.Name, ($nupkg.Length/1MB)) -ForegroundColor Green
 
 if ($Push) {
-    if (-not $ApiKey) { throw '-Push requires -ApiKey (a GitHub PAT with write:packages)' }
+    if (-not $ApiKey) { throw '-Push needs a token: pass -ApiKey, or set GH_PACKAGES_TOKEN (a write:packages PAT) in .env and use `just publish`' }
     Write-Host 'Pushing to GitHub Packages (alex19EP)...'
     dotnet nuget push $nupkg.FullName `
         --source 'https://nuget.pkg.github.com/alex19EP/index.json' `

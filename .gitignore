@@ -405,3 +405,6 @@ FodyWeavers.xsd
 /build/gamerefs/assemblies/
 /build/gamerefs/UnityModManager/
 /build/gamerefs/out/
+
+# Local secrets for `just publish` (GH_PACKAGES_TOKEN). Never commit; see .env.example.
+/.env
