@@ -81,9 +81,10 @@ namespace RTAccess.Screens
         }
 
         // Paragraphs (\n) then sentences (after sentence-ending punctuation + space) → one navigable line
-        // each, so a long description reads line by line instead of in one long breath.
+        // each, so a long description reads line by line instead of in one long breath. Shared with the
+        // document screens (the licence), which declare their body the same way in place of a reader.
         private static readonly Regex SentenceSplit = new Regex(@"(?<=[\.!?]) +", RegexOptions.Compiled);
-        private static IEnumerable<string> SplitLines(string body)
+        internal static IEnumerable<string> SplitLines(string body)
         {
             foreach (var para in body.Split('\n'))
             {

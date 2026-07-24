@@ -177,6 +177,22 @@ namespace RTAccess.Screens
             Register(new NewGameScreen());
             // Character generation (MainMenuVM.CharGenContextVM.CharGenVM) — layer 15, full-screen flow.
             Register(new CharGenScreen());
+            // The main menu's own windows, each of which used to leave the mod silent when opened. All are
+            // MainMenuVM children, all Exclusive, all below the message modal (30) so their confirm boxes
+            // still read.
+            // First-launch settings wizard (language / display / accessibility) — layer 26. The FIRST
+            // screen of a fresh install, before the licence and the menu.
+            Register(new FirstLaunchScreen());
+            // Terms of use / licence — layer 27: the menu's License entry, and the mandatory first-launch
+            // agreement (Accept / Decline) shown right after the wizard.
+            Register(new TermsOfUseScreen());
+            // Dark Heresy promo popup — layer 27, raised once after a version change. Its VM is never
+            // nulled (only the view hides), so both it and MainMenuScreen gate on DarkHeresyScreen.IsShowing.
+            Register(new DarkHeresyScreen());
+            // Credits — layer 26: section selector + the selected section's rows.
+            Register(new CreditsScreen());
+            // Feedback popup — layer 26: the outward link list.
+            Register(new FeedbackScreen());
             // Settings (CommonVM.SettingsVM) — layer 25, sits above the menu/in-game context when opened.
             Register(new SettingsScreen());
             // "Mods and DLC" window (CommonVM.DlcManagerVM) — layer 25. The native entry point for the mod's
