@@ -90,6 +90,10 @@ public static class Main {
             // charting) — the SpaceEvents sibling for the GlobalMap layer. Persistent subscriber; unsubscribed
             // below. See docs/plans/warp-sector-map-accessibility.md.
             EventBus.Subscribe(WarpEvents.Instance);
+            // Voice the space HUD's toast layer (mining start/stop, new encyclopedia entry, new colony
+            // event/chronicle) — four of those five cards have no game-log counterpart, so LogTap never sees
+            // them. Persistent subscriber; unsubscribed below. See docs/ui-coverage-audit-2026-07-24.md.
+            EventBus.Subscribe(SpaceNotifications.Instance);
             // Voice the player ship's per-sector shield hits in space combat — the one attack detail the
             // game log omits (the sighted cue is the shield-diamond flash). Persistent subscriber;
             // unsubscribed below. Phase 1 of docs/plans/inertial-broadsiding-tsiolkovsky.md.
@@ -369,6 +373,7 @@ public static class Main {
         EventBus.Unsubscribe(ConvictionEvents.Instance);
         EventBus.Unsubscribe(SpaceEvents.Instance);
         EventBus.Unsubscribe(WarpEvents.Instance);
+        EventBus.Unsubscribe(SpaceNotifications.Instance);
         EventBus.Unsubscribe(SpaceCombatEvents.Instance);
         Speaker.Stop();
         Speaker.Shutdown();

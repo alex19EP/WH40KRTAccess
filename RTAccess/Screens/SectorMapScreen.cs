@@ -139,6 +139,11 @@ namespace RTAccess.Screens
             b.AddLabel(ControlId.Structural("status:nav"), NavigatorResourceLine);
             b.AddLabel(ControlId.Structural("status:current"), CurrentSystemLine);
             b.AddLabel(ControlId.Structural("status:state"), TravelStateLine);
+            // The space HUD's standing colony-event icon (shared across the space layer), as a line — declared
+            // only while it is lit. See SystemMapScreen for the same row.
+            if (Accessibility.SpaceNotifications.ColonyEventLine() != null)
+                b.AddLabel(ControlId.Structural("status:colony"),
+                    () => Accessibility.SpaceNotifications.ColonyEventLine());
             b.PopContext();
 
             // -- Actions --

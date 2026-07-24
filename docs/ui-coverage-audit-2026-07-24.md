@@ -176,10 +176,69 @@ covers defeat; the victory/ending path is unhandled. (`BookEventScreen` does alr
 
 ## Tier 3 — parity details, not missing screens
 
-- `ComparativeTooltipVM` — the equipped-vs-candidate compare tooltip is a distinct VM the tooltip reader
-  never names; worth confirming the compare path reads it.
-- Notification toasts: `ExperienceNotificationVM`, `MiningNotificationVM`, `EncyclopediaNotificationVM`,
-  `ColonyNotificationVM`, `ColonyEventIngameMenuNotificatorVM`. Voiced only insofar as the game also
-  writes them to the log for `LogTap`; whichever don't log are silent.
 - The game's own `ContextMenuVM` (`ContextMenuHelper`, used by the inventory views) is unreferenced but
   functionally replaced by the mod's verb submenu. Listed for completeness only.
+
+### `ComparativeTooltipVM` — RESOLVED 2026-07-25, no gap
+
+Not a reader gap. `ComparativeTooltipVM` is a pure *rendering container*: its constructor wraps an
+already-built `List<TooltipBaseTemplate>` into one `TooltipVM` per template, and exposes
+`MainTooltip => TooltipVms.LastOrDefault()` / `FirstCompareTooltip => TooltipVms.FirstOrDefault()`.
+Both the PC hover path (`ItemSlotPCView:95` → `this.SetTooltip(ViewModel.Tooltip, …)` →
+`TooltipHandler.EnterAction` → `HandleComparativeTooltipRequest`) and the console path
+(`InventoryConsoleView:402`) feed it from the **same** `ItemSlotVM.Tooltip` list the mod already reads in
+`ItemNodes.OpenItemTooltip` — last element = the item's own card, leading elements = the equipped items it
+would replace. The mod's ordering assumption matches the game's exactly. Instantiating the VM would add
+nothing. Delist.
+
+One residual detail, unrelated to items: `RankEntrySelectionVM.TooltipTemplates()` returns
+`{ HintTooltip, Tooltip }` and `RankEntryFeatureItemVM.TooltipTemplates()` returns
+`{ Tooltip.Value, HintTooltip }` — note the **opposite order**. The extra template is a
+`TooltipTemplateGlossary(GlossaryEntryKey)` explaining what the selection *category* is. `CareerNodes`
+reads only the single `TooltipTemplate()`. Low value (glossary terms already drill via `GlossaryLinks`),
+but it is a real second panel a sighted player sees.
+
+### Space HUD notification toasts — CONFIRMED GAP, 2026-07-25
+
+All five live on `SpaceStaticPartVM` (`:83–91`, bound in `SpaceStaticPartPCView:222–226`) — they are the
+**space HUD's** toast layer, so they fire over the system map, the sector map and the planet-scan
+(exploration) window. Four of the five have no game-log counterpart, so `LogTap` never sees them and they
+are **silent** for us. Two of them are *actionable*, not just informational — `BaseSystemMapNotificationPCView`
+wires an action button, a full-body click and a close button, and auto-hides after
+`UIConsts.QuestNotificationTime`.
+
+| VM | Sighted content | Button | Logged? |
+| --- | --- | --- | --- |
+| `ExperienceNotificationVM` | floating `+N xp` after a planet scan | none | **yes** — `GameHelper.GainExperience` → `GameLogEventPartyGainExperience` → `PartyGainExperienceLogThread` ("XpGain"). Covered by `LogTap`. |
+| `EncyclopediaNotificationVM` | `"<name> added to encyclopedia"` | "To Encyclopedia" → `IEncyclopediaHandler.HandleEncyclopediaPage(link)` | no |
+| `MiningNotificationVM` | start/stop mining (`UIExplorationTexts.Start/StopMiningNotificationText`) | none | no |
+| `ColonyNotificationVM` | `"new event / new chronicle at <colony>"` (`ColonyNotificationType`) | "Colony Management" → `INewServiceWindowUIHandler.HandleOpenColonyManagement()` | no |
+| `ColonyEventIngameMenuNotificatorVM` | persistent HUD icon, hint `ColonyEventsTexts.NeedsVisitMechanicString` | — (state, not a toast) | no |
+
+Why the four don't log, verified against the thread list: the colony log threads are
+`ColonyCreate` / `ColonyProject` / `ColonyResources` / `ColonyStatChange` / `ColonyChronicle`, and
+`GameLogEventColonyChronicle`'s handler implements `HandleChronicleStarted` as an **empty method** — only
+*finished* chronicles log. There is no `GameLogEvent` for a colonization event starting
+(`Colony.cs:333` raises `IColonizationEventHandler` + `IColonyNotificationUIHandler` and nothing else), and
+no mining or encyclopedia log thread exists at all.
+
+The underlying content is reachable — `ColonyManagementScreen` builds `ColonyEventsVM`, and
+`EncyclopediaScreen` can be opened manually — so this is a *prompting* gap, not a dead end: the player is
+never told to go look.
+
+**Shipped 2026-07-25** as `RTAccess/Accessibility/SpaceNotifications.cs` — one long-lived `EventBus`
+subscriber alongside `SpaceEvents` / `WarpEvents` implementing `IMiningUIHandler`,
+`IEncyclopediaNotificationUIHandler` and `IColonyNotificationUIHandler`. Each card is spoken the way it
+reads (`{status}: {text}`), with the text taken from the game's own `UIStrings` so it follows the player's
+language. Queued speech per [[rt-interrupt-speech-rule]]. `IExperienceNotificationUIHandler` is deliberately
+not implemented (LogTap already covers it), and neither is `IColonizationEventHandler` — it fires
+immediately before the colony card for the same event, so it would double.
+
+The persistent colony-event icon has no toast to voice, so it became a live **status line** instead:
+`SpaceNotifications.ColonyEventLine()` is declared as a `status:colony` label on both `SystemMapScreen` and
+`SectorMapScreen`, present only while lit (the icon renders at alpha 0 with no pending event, so a standing
+"no events" row would over-report). The toasts' action buttons are deliberately NOT mirrored as verbs: the
+card auto-hides after `UIConsts.QuestNotificationTime`, so a transient verb would go stale, and both
+destinations already sit in the space screens' Actions zone.
+
+Compile-clean, 59 unit tests pass. **Untested in-harness** — mining and colony events are progression-gated.

@@ -119,6 +119,11 @@ namespace RTAccess.Screens
             b.AddLabel(ControlId.Structural("status:ship"), () => Loc.T(
                 ZoneExit()?.ShipIsMoving.Value == true ? "systemmap.ship_underway" : "systemmap.ship_holding"));
             b.AddLabel(ControlId.Structural("status:radar"), RadarLine);
+            // The space HUD's standing colony-event icon, as a line. Declared only while it is lit — the icon
+            // itself is hidden (alpha 0) with no pending event, so a permanent "no events" row would over-report.
+            if (Accessibility.SpaceNotifications.ColonyEventLine() != null)
+                b.AddLabel(ControlId.Structural("status:colony"),
+                    () => Accessibility.SpaceNotifications.ColonyEventLine());
             b.PopContext();
 
             // -- Actions --
