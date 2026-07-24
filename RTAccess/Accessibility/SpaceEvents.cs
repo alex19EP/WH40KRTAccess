@@ -40,7 +40,9 @@ internal sealed class SpaceEvents :
     /// the game's movement-started event (raised when the command executes, frames later) then stays silent.</summary>
     internal static void MarkCommandedMove() => _commandedMoveTime = Time.unscaledTime;
 
-    private static bool OnSystemMap => Game.Instance?.CurrentMode == GameModeType.StarSystem;
+    // Pause-transparent (see ControlState.EffectiveMode) — a raw CurrentMode read silenced space narration
+    // for as long as the player stayed paused.
+    private static bool OnSystemMap => ControlState.EffectiveMode == GameModeType.StarSystem;
 
     // ---- ship movement ----
 

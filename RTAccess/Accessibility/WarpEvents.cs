@@ -47,7 +47,8 @@ internal sealed class WarpEvents :
     /// <summary>Called by the screen right before it issues a travel command it has already spoken.</summary>
     internal static void MarkCommandedTravel() => _suppressNextStart = true;
 
-    private static bool OnSectorMap => Game.Instance?.CurrentMode == GameModeType.GlobalMap;
+    // Pause-transparent (see ControlState.EffectiveMode), matching SpaceEvents.OnSystemMap.
+    private static bool OnSectorMap => ControlState.EffectiveMode == GameModeType.GlobalMap;
 
     // ---- warp travel ----
 

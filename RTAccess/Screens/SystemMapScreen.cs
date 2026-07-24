@@ -54,10 +54,13 @@ namespace RTAccess.Screens
                && SpaceCombatScreen.Component() == null;
 
         /// <summary>Map verbs may act: this screen is the live top screen and the map is the CURRENT mode —
-        /// not a dialog/cutscene/book event layered over it (acting there desyncs the game; WA lesson).</summary>
+        /// not a dialog/cutscene/book event layered over it (acting there desyncs the game; WA lesson).
+        /// Pause is transparent (<see cref="ControlState.EffectiveMode"/>): the engine buffers orders issued
+        /// while paused and runs them on unpause, which is the whole point of real-time-with-pause, so refusing
+        /// them was our bug and not the game's rule.</summary>
         public static bool Interactive =>
             ScreenManager.Current?.Key == "ctx.systemmap"
-            && Game.Instance?.CurrentMode == GameModeType.StarSystem;
+            && ControlState.EffectiveMode == GameModeType.StarSystem;
 
         // ---- frozen list order (nearest-first at entry; newcomers append, also by distance) ----
 

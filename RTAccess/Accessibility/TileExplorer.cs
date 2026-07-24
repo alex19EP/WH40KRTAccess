@@ -179,7 +179,11 @@ internal static class TileExplorer
             }
             else
             {
-                if (game.IsPaused) { Speaker.Speak(Loc.T("path.paused_no_move"), interrupt: true); return; }
+                // No pause guard: the engine ACCEPTS a move order while paused and runs it on unpause — that is
+                // the point of real-time-with-pause, and the sighted right-click does exactly this. The command
+                // is buffered by UnitCommandBuffer (registered for every game mode, Pause included) and applied
+                // once UnitCommandController / UnitMoveController resume, which sit out Pause. Refusing it here
+                // was ours, not the game's.
                 if (GetAnchor() == null) { Speaker.Speak(Loc.T("path.no_character"), interrupt: true); return; }
                 UnitCommandsRunner.MoveSelectedUnitsToPoint(node.Vector3Position);
                 Speaker.Speak(MovingAnnounce(), interrupt: true);

@@ -240,6 +240,11 @@ namespace RTAccess.Screens
             Register(new CargoScreen());
             Register(new JournalScreen());
             Register(new CharacterInfoScreen());
+            // Local Map service window (the game's "OpenMap" key, and the HUD windows list) — layer 10. The map
+            // image itself carries no text, so the screen mirrors the PIN SET off LocalMapVM.MarkersVm (party +
+            // their pending destinations, landmarks, currently-seen hostiles, legend) and carries the window's
+            // one real verb: order the selected units to a pin, the sighted right-click.
+            Register(new LocalMapScreen());
             // Colony Management service window (Ctrl+Y; remote colony administration) — layer 10; content
             // renders through the shared ColonyNodes builders the exploration tablet also uses. M3 of
             // docs/plans/orbital-listing-wilkes.md.

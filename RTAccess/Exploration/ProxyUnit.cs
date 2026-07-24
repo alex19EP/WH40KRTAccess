@@ -2,10 +2,12 @@ using Kingmaker;                                 // Game
 using Kingmaker.Controllers.Clicks.Handlers;     // ClickUnitHandler (loot a corpse)
 using Kingmaker.EntitySystem.Entities;           // BaseUnitEntity
 using Kingmaker.UI.Common;                        // UIUtilityUnit.GetSurfaceEnemyDifficulty (enemy threat tier)
+using Kingmaker.UI.Pointer;                       // ClickPointerManager.UnitMarksLocalMap (pending move destination)
 using Kingmaker.UnitLogic;                        // HasMechanicFeature (ext)
 using Kingmaker.UnitLogic.Enums;                  // MechanicsFeatureType (HideRealHealthInUI), UnitCondition (Stunned)
 using Kingmaker.UnitLogic.Parts;                  // UnitPartInteractions (HasDialogInteractions)
 using Kingmaker.UnitLogic.Squads;                 // GetSquadOptional (squad grouping)
+using RTAccess.Accessibility;                     // InteractableDescriber.DirectionAndDistance
 using UnityEngine;
 
 namespace RTAccess.Exploration;
@@ -159,6 +161,21 @@ internal sealed class ProxyUnit : ScanItem
                         bits.Add(_unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
                             ? Loc.T("scan.unit_hp_hidden")
                             : Loc.T("scan.unit_hp", new { current = health.HitPointsLeft, max = health.MaxHitPoints }));
+                    // Where this character is currently walking to. The local map draws a second pin per party
+                    // member for a pending move order (LocalMapDestinationMarkerVM off
+                    // ClickPointerManager.UnitMarksLocalMap) and the world draws a click marker on the ground —
+                    // both purely visual, so without this a blind player can't tell a moving companion's
+                    // destination from a stationary one. Measured from the UNIT (not the scan origin, which
+                    // Detail can't see), so it reads "heading to 8 tiles, north" — where THEY are going.
+                    if (_unit.IsPlayerFaction)
+                    {
+                        var dest = MoveDestination();
+                        if (dest.HasValue)
+                            bits.Add(Loc.T("scan.heading_to", new
+                            {
+                                where = InteractableDescriber.DirectionAndDistance(_unit.Position, dest.Value),
+                            }));
+                    }
                     // #15 Enemy difficulty tier — the roman-numeral threat rating the game shows on an enemy
                     // (SurfaceCombatUnitVM.ShowDifficulty → UIUtilityUnit difficulty = DifficultyType+1). Enemy-only
                     // (party/neutral carry no tier), gated on the enemy being visible so it never leaks pre-reveal;
@@ -288,4 +305,20 @@ internal sealed class ProxyUnit : ScanItem
         => Loc.T(_unit.IsPlayerFaction ? "scan.faction.party"
               : _unit.IsPlayerEnemy ? "scan.faction.enemy"
               : "scan.faction.neutral");
+
+    /// <summary>This character's pending move destination, or null when they aren't going anywhere. Read from the
+    /// same dictionary the local map's destination pins use (<c>ClickPointerManager.UnitMarksLocalMap</c>), which
+    /// the game clears once the unit arrives or the order is replaced. Defensive: the manager is a scene singleton
+    /// and is absent outside a loaded area.</summary>
+    private Vector3? MoveDestination()
+    {
+        try
+        {
+            var marks = ClickPointerManager.Instance?.UnitMarksLocalMap;
+            if (marks == null) return null;
+            Vector3 dest;
+            return marks.TryGetValue(_unit, out dest) ? dest : (Vector3?)null;
+        }
+        catch { return null; }
+    }
 }

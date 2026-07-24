@@ -133,11 +133,15 @@ namespace RTAccess.Screens
         /// <summary>The shared gate the exploration helpers ride: this screen is the live top screen (no window
         /// or dialogue layered over it), the game exists, and we're on-foot (Default = exploration AND surface
         /// tactical combat). Replaces the helpers' old <c>ControllerMode == Gamepad</c> check so they work in
-        /// mouse mode.</summary>
+        /// mouse mode.
+        ///
+        /// Reads the mode through <see cref="ControlState.EffectiveMode"/>, NOT <c>Game.CurrentMode</c>: pause is
+        /// a mode pushed on top of Default, so a raw comparison went false the instant the player paused and took
+        /// the whole exploration layer — scanner, tile cursor, party selection — down with it.</summary>
         public static bool ExplorationActive =>
             ScreenManager.Current?.Key == "ctx.ingame"
             && Game.Instance != null
-            && Game.Instance.CurrentMode == GameModeType.Default;
+            && ControlState.EffectiveMode == GameModeType.Default;
 
 
         public override void Build(GraphBuilder b)

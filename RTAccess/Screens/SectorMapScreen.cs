@@ -80,7 +80,10 @@ namespace RTAccess.Screens
         {
             get
             {
-                if (Game.Instance?.CurrentMode != GameModeType.GlobalMap) return false;
+                // Pause-transparent like the other two contexts (ControlState.EffectiveMode). The pause key is
+                // refused on the sector map (Game.PauseBind checks UIUtility.IsGlobalMap), but scripted pauses
+                // exist and the raw CurrentMode read would silently disable every verb under one.
+                if (ControlState.EffectiveMode != GameModeType.GlobalMap) return false;
                 var vm = Sector();
                 if (vm == null) return true; // no VM to consult → assume actable (defensive; IsActive already true)
                 return vm.IsTraveling.Value != true && vm.IsDialogActive.Value != true;

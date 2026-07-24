@@ -8,6 +8,7 @@ using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;            // ServiceWindowsVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.Augmentations; // AugmentationsVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CargoManagement; // CargoManagementVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.Inventory;  // InventoryVM
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.LocalMap;   // LocalMapVM
 using Kingmaker.Code.UI.MVVM.VM.Space;                     // SpaceStaticPartVM
 using Kingmaker.Code.UI.MVVM.VM.Surface;                   // SurfaceStaticPartVM
 using Kingmaker.Code.UI.MVVM.VM.Transition;                // TransitionVM
@@ -77,6 +78,11 @@ namespace RTAccess.UI
 
         public static VendorVM Vendor()
             => FromLiveStaticPart<VendorVM>(s => s.VendorVM?.Value, s => s.VendorVM?.Value);
+
+        public static LocalMapVM LocalMap()
+            => FromLiveStaticPart<LocalMapVM>(
+                s => s.ServiceWindowsVM?.LocalMapVM?.Value,
+                s => s.ServiceWindowsVM?.LocalMapVM?.Value);
 
         // The defeat screen (GameModeType.GameOver). Surface exposes it as its own ReactiveProperty; Space
         // routes it through the static-component dictionary (SpaceStaticComponentType.GameOver), so read it

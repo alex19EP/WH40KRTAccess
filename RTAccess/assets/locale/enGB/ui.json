@@ -225,7 +225,6 @@
   "path.preview.ends_in": "Ends in {names}.",
   "path.preview.press_again": "Press again to move.",
   "path.moving": "Moving.",
-  "path.paused_no_move": "Paused, unpause to move.",
   "path.no_character": "No character selected.",
   "geo.feet": "{feet} ft",
   "geo.here": "here",
@@ -1388,7 +1387,6 @@
   "groupchanger.cannot_close": "A party must be chosen to continue.",
   "systemmap.radar": "Radar contacts: {n}",
   "systemmap.no_anomalies": "No anomalies in system",
-
   "sectormap.screen": "Sector map",
   "sectormap.systems": "Systems",
   "sectormap.status": "Status",
@@ -1448,7 +1446,6 @@
   "sectormap.evt_route_created": "New warp route charted.",
   "sectormap.evt_route_safer": "Warp route difficulty reduced.",
   "sectormap.evt_warp_event": "Warp disturbance.",
-
   "colonymgmt.colonies": "Colonies",
   "colonymgmt.no_colonies": "No colonies established",
   "colony.rewards": "Rewards since last visit",
@@ -1457,7 +1454,6 @@
   "colony.cargo_received": "{n} cargo received",
   "colony.other_rewards": "{n} other rewards",
   "colony.collect": "Collect",
-
   "tile.obstacle": "obstacle",
   "tile.clear": "clear",
   "tile.wall": "wall",
@@ -1558,5 +1554,17 @@
   "ship.armor": "Armor: fore {fore}, port {port}, starboard {starboard}, aft {aft}",
   "ship.shields": "Shields: fore {fore}, port {port}, starboard {starboard}, aft {aft}",
   "ship.speed": "Speed {speed}, inertia {inertia}",
-  "ship.rating": "Military rating {military}, turret rating {turret}"
+  "ship.rating": "Military rating {military}, turret rating {turret}",
+  "localmap.counts": "{landmarks} landmarks, {hostiles} hostiles",
+  "localmap.party": "Party",
+  "localmap.no_party": "No party members on this map",
+  "localmap.heading": "heading to {where}",
+  "localmap.landmarks": "Landmarks",
+  "localmap.no_landmarks": "No landmarks on this map",
+  "localmap.hostiles": "Hostiles",
+  "localmap.no_hostiles": "No hostiles in sight",
+  "localmap.legend": "Legend",
+  "localmap.centre": "Centre on Rogue Trader",
+  "localmap.actions": "Actions",
+  "scan.heading_to": "heading to {where}"
 }
