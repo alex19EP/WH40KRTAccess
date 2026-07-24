@@ -181,9 +181,17 @@ pause/speed control on the system map; we surface none of it.
 `BugReportDrawingVM`, `BugReportDuplicatesVM`) — a full-screen UI the player can trip into.
 
 ### End of campaign
-`TitlesVM` on `CommonVM` (`ModalWindowUIType.GameEndingTitles`) and `EndOfGameVM`. `GameOverScreen`
-covers defeat; the victory/ending path is unhandled. (`BookEventScreen` does already cover the
-`Dialog.Epilog` / `Dialog.Interchapter` readers.)
+`TitlesVM` on `CommonVM` (`ModalWindowUIType.GameEndingTitles`), raised by the `StartEndGameTitles` game
+action (and a cheat). `GameOverScreen` covers defeat; the victory/ending path is unhandled.
+(`BookEventScreen` does already cover the `Dialog.Epilog` / `Dialog.Interchapter` readers.)
+
+It generates `List<(string, BlueprintCreditsGroup)>` — pre-formatted blocks, the same
+`PageGenerator.Write{Company,Header,Person,Role,Text}` shapes `CreditsScreen` already flattens — plus
+`OpenCancelSettingsDialog()`, the game's own "skip the titles?" confirm box, and `CloseTitles()`.
+
+**Correction (2026-07-25):** the audit originally paired this with `EndOfGameVM`. That type is **dead in
+the shipped build** — `new EndOfGameVM` appears nowhere in `Code.dll`, and `EndOfGameView` is never bound.
+Drop it from the list; the item is `TitlesVM` alone.
 
 ## Tier 3 — parity details, not missing screens
 
