@@ -265,16 +265,24 @@ internal static class Scanner
     /// continuous walkable floor allows (<see cref="Geo.SnapToWalkable"/>) and issues the game's own formation move.
     /// Refused in combat (travelling across the area mid-fight makes no sense — mirrors the old landmark walk gate).</summary>
     private static void TravelTo(ScanItem landmark)
+        => TravelToPoint(landmark.Position, landmark.Name);
+
+    /// <summary>The travel verb by raw world point, for callers that hold a position rather than a
+    /// <see cref="ScanItem"/> — the Local Map window's pin rows, whose sighted twin is a right-click on the map
+    /// running the very same <c>MoveSelectedUnitsToPoint</c> (<c>LocalMapVM.OnClick</c>). Shares the combat
+    /// refusal, the walkable snap and the spoken confirmation with the landmark cycle's I key so the two
+    /// surfaces behave identically.</summary>
+    internal static void TravelToPoint(Vector3 target, string label)
     {
         if (Game.Instance?.Player?.IsInCombat == true) { Speak(Loc.T("travel.combat")); return; }
         var self = Anchor();
         if (self == null) { Speak(Loc.T("status.no_selection")); return; }
 
         var from = Geo.Live(self);
-        var dest = Geo.SnapToWalkable(landmark.Position, from);
+        var dest = Geo.SnapToWalkable(target, from);
         if (Geo.Distance(from, dest) < 1.5f) { Speak(Loc.T("landmark.cant_head")); return; }
         UnitCommandsRunner.MoveSelectedUnitsToPoint(dest);
-        Speak(Loc.T("landmark.walking_to", new { dest = landmark.Name }));
+        Speak(Loc.T("landmark.walking_to", new { dest = label }));
     }
 
     /// <summary>Re-speak the resolved selection (any group) from the current scan origin — the O key. While aiming
@@ -284,10 +292,12 @@ internal static class Scanner
     {
         var item = ResolveSelected();
         if (item == null) { Speak(Loc.T("scan.no_selection")); return; }
-        var line = item.Describe(ScanFrom());
+        var refPos = ScanFrom();
+        var line = item.Describe(refPos);
         var pred = Targeting.PredictLine(item, verbose: true);
         if (!string.IsNullOrEmpty(pred)) line += ". " + pred;
         Speak(line);
+        Sonar.PlayReview(item, refPos); // re-ping on O re-announce, same as a cycle landing
     }
 
     /// <summary>Home/Slash: plant the shared cursor on the current review selection's tile — the coupling core.
@@ -678,6 +688,7 @@ internal static class Scanner
         var pred = Targeting.PredictLine(item, verbose: false);
         if (!string.IsNullOrEmpty(pred)) line += ". " + pred;
         Speak(line);
+        Sonar.PlayReview(item, refPos); // review-cursor ping: hear WHERE the selection is (off unless review_sound set)
     }
 
     private static int IndexOfSelected(List<ScanItem> list)
