@@ -159,6 +159,12 @@ namespace RTAccess.Screens
             b.AddItem(ControlId.Structural("act:ship"), GraphNodes.Button(
                 () => Loc.T("sectormap.act_ship"),
                 () => { if (Interactive) Hud()?.OpenShipCustomization(); }));
+            // The map HUD's own "known star systems" toggle — a mouse-only button on the sighted map, so this
+            // is the only way in. Drives the same SectorMapVM method; the panel itself is AllSystemsInfoScreen.
+            b.AddItem(ControlId.Structural("act:allsystems"), GraphNodes.Button(
+                () => GameText.Or(() => Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.GlobalMap.AllSystems,
+                    "allsystems.screen"),
+                AllSystemsInfoScreen.Toggle));
             foreach (var t in WindowButtons)
             {
                 var type = t; // capture
@@ -192,7 +198,7 @@ namespace RTAccess.Screens
 
         // The SectorMapVM, reached through the space static-part component dictionary (it is disposed and recreated
         // on mode change — never cache it).
-        private static SectorMapVM Sector()
+        internal static SectorMapVM Sector()
             => Game.Instance?.RootUiContext?.SpaceVM?.StaticPartVM
                 ?.TryGetComponentVM(SpaceStaticComponentType.SectorMap) as SectorMapVM;
 

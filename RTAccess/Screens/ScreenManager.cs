@@ -143,6 +143,12 @@ namespace RTAccess.Screens
             // Layer 0, mutually exclusive with the other base contexts (distinct area type). Systems/Status/Actions
             // tab stops; WarpEvents voices warp/scan/route events. See docs/plans/warp-sector-map-accessibility.md.
             Register(new SectorMapScreen());
+            // The sector map's two information panels (SectorMapVM children, each closing the other) — layer 11,
+            // above the service windows (10) that also open there, below dialogue (15). Not Exclusive: they are
+            // side panels over a live map. The per-system one auto-opens on warp arrival; the roster is opened
+            // from SectorMapScreen's "known star systems" action (the sighted toggle is mouse-only).
+            Register(new SectorSystemInfoScreen());
+            Register(new AllSystemsInfoScreen());
             // Voidship combat base context (the game's SpaceCombat HUD component is alive) — Layer 0,
             // mutually exclusive with the other base contexts by that component gate (SystemMapScreen
             // excludes it explicitly: in-system encounter fights keep the star-system AREA). Ship/Battle
@@ -185,6 +191,18 @@ namespace RTAccess.Screens
             // RespecCompanion game action) — layer 26, Exclusive; its confirm prompt is the game's own
             // message box (30). See docs/respec-appearance-teardown.md.
             Register(new RespecScreen());
+            // Soul-mark reward popup (DialogContextVM.SoulMarkRewardVM — raised mid-conversation on a conviction
+            // rank-up) — layer 26, Exclusive: above dialogue (15), below its own confirm-free modal band.
+            Register(new SoulMarkRewardScreen());
+            // The vendor-selecting gate (SurfaceStaticPartVM/SpaceStaticPartVM.VendorSelectingWindowVM, raised by
+            // the OpenVendorSelectingWindow game action) — layer 18, Exclusive: above dialogue, BELOW VendorScreen
+            // (24), which the game opens on top of it without closing it.
+            Register(new VendorSelectingScreen());
+            // Twitch-drops reward popup (LootContextVM.TwitchDropsRewardsVM) — layer 26, Exclusive.
+            Register(new TwitchDropsScreen());
+            // End-of-campaign titles (CommonVM.TitlesVM, raised by StartEndGameTitles) — layer 26, Exclusive; the
+            // skip prompt it raises is the game's own message box (30).
+            Register(new TitlesScreen());
             // The main menu's own windows, each of which used to leave the mod silent when opened. All are
             // MainMenuVM children, all Exclusive, all below the message modal (30) so their confirm boxes
             // still read.

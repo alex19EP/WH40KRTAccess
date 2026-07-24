@@ -40,6 +40,14 @@ closed**:
   radio list). The other four are deployed but not yet walked through in a live session.
 - **Co-op lobby — still open.** The one Tier 1 item deliberately left: a subsystem, not a popup (see below).
 
+**Tier 2 closed out 2026-07-25** in two passes: respec + change appearance first, then soul-mark reward,
+vendor selecting, both sector-map information panels, the Twitch-drops popup and the end-of-campaign
+titles. Two of the listed items turned out not to exist in the shipped build — `EndOfGameVM` and the
+whole `TimeRewindVM` star-system time control — leaving **the co-op lobby and the bug-report UI as the
+only deliberate omissions**, both by decision rather than oversight. Everything in this tier was built
+from the decompile and compile-verified; none of it is live-tested (each flow is story-, campaign-end- or
+service-gated).
+
 Two engine facts that fell out of the work and are easy to get wrong:
 
 - **`DarkHeresyPopUpVM` is never nulled** — dismissing the promo is a *view* operation
@@ -153,41 +161,82 @@ buttons are new, and Accept/Cancel go through the game's own confirm boxes as th
 `VisualSettingsScreen` gained this window's cosmetics panel as a second source (and a layer that follows
 it, 17 vs 13) — which is also the only place its `Cloth` toggle is non-null.
 
-### Vendor selecting window
+### Vendor selecting window — SHIPPED 2026-07-25
 `VendorSelectingWindowVM` — the faction list you pick a trade partner from (one
 `CharInfoFactionReputationItemVM` per `FactionType`, `canTrade: true`). The engine tracks it as a
 first-class state (`RootUIContext.IsVendorSelectingWindowShow`); `VendorScreen` does not handle it.
 
-### Soul-mark reward popup
+Now `Screens/VendorSelectingScreen.cs` (layer **18**, Exclusive): one row per faction (name, the game's
+reputation caption, rank, "current / next" progress; the faction description on Space) followed by that
+faction's vendor rows, each activating `FactionVendorInformationVM.StartTrade()`. Layer 18 is deliberate —
+the game does **not** dispose this window when a trade starts, so `VendorScreen` (24) opens *on top of*
+it and closing the trade returns you here. Closing has no VM method: `OnCloseClick` is a VIEW method
+(capital-party co-op gate → queued `CloseScreen(VendorSelecting)` → `HandleExitSelectingVendor`), all
+three steps reproduced in `VendorSelectingScreen.Close`.
+
+### Soul-mark reward popup — SHIPPED 2026-07-25
 `SoulMarkRewardVM`, spawned from `DialogContextVM:148` after a conviction rank-up. Carries the feature
 name, a `TooltipTemplateSoulMarkFeature`, and two buttons — `OnAcceptPressed` (opens the character sheet)
 and `OnDeclinePressed`. `ConvictionEvents` announces the underlying *shift*, so the player learns the
-fact, but the modal and its buttons are unreachable.
+fact, but the modal and its buttons were unreachable.
 
-### Sector-map information windows
+Now `Screens/SoulMarkRewardScreen.cs` (layer 26, Exclusive). Gotcha worth keeping: **the buttons are
+named opposite to their VM methods** — the window's *Accept* is `OnDeclinePressed` (just close) and *See
+other ranks* is `OnAcceptPressed` (opens the character sheet). The screen drives them by their LABEL, so
+Escape = the sighted Accept.
+
+### Sector-map information windows — SHIPPED 2026-07-25
 `SpaceSystemInformationWindowVM` (per-system, with `PlanetInfo…`, `AdditionalAnomaliesInfo…`,
 `OtherObjectsInfo…` sub-VMs) and `AllSystemsInformationWindowVM` (+ `SystemInfoAllSystemsInformationWindowVM`
 — every system in the sector at a glance). Both are fields of `SectorMapVM` (`:26,28`) with their own
-`RootUIContext`-visible show flags. `SectorMapScreen` has systems/status/actions stops but mirrors neither
-window.
+show flags (`SystemInformationIsShowed` / `AllSystemInformationIsShowed`, mirrored into the VM's own
+reactives — **not** `RootUIContext` flags, as first written here).
 
-### Star-system time control
-`TimeRewindVM` (`SystemMapVM`): `TimeState`, `TimeControlEnabled`, `TimeMultiplier`, `CurrentSegment`,
-`CurrentVVYear`, `CurrentAMRCYear`, `CurrentMillenium`. Sighted players get the Imperial date plus
-pause/speed control on the system map; we surface none of it.
+Now `Screens/SectorSystemInfoScreen.cs` + `Screens/AllSystemsInfoScreen.cs`, both **layer 11**, both
+non-Exclusive (they are side panels over a live map, and the game closes each when the other opens).
+How each is reached on PC:
+
+- **Per-system:** the game slides it in BY ITSELF when a warp jump ends on a star system
+  (`OvertipEntitySystemVM.HandleWarpTravelStopped`, gated on `IsControllerMouse` — which we force). It is
+  the arrival dossier. Stops: summary / planets / other objects / anomalies, each declared only when the
+  panel shows it. The **visited gate** (all three lists hidden until the system is visited) and the
+  per-planet explored gate ("not explored" instead of a name) are the panel's own fog rules, mirrored
+  exactly.
+- **All systems:** the sighted entry is a mouse-only toggle button on the map HUD, so `SectorMapScreen`'s
+  Actions stop gained a "known star systems" item driving the same `SectorMapVM.ShowHideAllSystemsInformation`.
+
+### Star-system time control — DEAD CODE, dropped 2026-07-25
+`TimeRewindVM` (`ShouldShow` / `TimeControlEnabled` / `TimeMultiplier` / `TimeState` / `CurrentSegment` /
+`CurrentVVYear` / `CurrentAMRCYear` / `CurrentMillenium`) looked like a standing Imperial-date + pause/speed
+strip on the system map. It is **not shipped**: nothing in `Code.dll` ever constructs `TimeRewindVM`, and
+`TimeRewindPCView` is never bound by any parent view. `CalendarRoot.GetCurrentWHDateText()` — the only
+other Imperial-date formatter — has no callers either. There is no sighted date readout or time control to
+mirror, so there is nothing to build. (Second dead-code find of this audit, after `EndOfGameVM`.)
 
 ### Minor popups
-`TwitchDropsRewardsVM` (an item-grant popup off `LootContextVM:197`) and `BugReportVM` (+
-`BugReportDrawingVM`, `BugReportDuplicatesVM`) — a full-screen UI the player can trip into.
+`TwitchDropsRewardsVM` — **SHIPPED 2026-07-25** as `Screens/TwitchDropsScreen.cs` (layer 26, Exclusive):
+the awaiting line, then either the granted item rows (ordinary `ItemNodes` loot rows) or the game's own
+status reason, plus Accept. Accept *and* Escape are gated on `IsAwaiting`, exactly as the sighted view
+hides its Accept button until the claim settles — closing mid-await would dispose the VM the pending
+request is still writing into.
 
-### End of campaign
+`BugReportVM` (+ `BugReportDrawingVM`, `BugReportDuplicatesVM`) — a full-screen UI the player can trip
+into — remains open by decision (2026-07-25): out of scope alongside the co-op lobby.
+
+### End of campaign — SHIPPED 2026-07-25
 `TitlesVM` on `CommonVM` (`ModalWindowUIType.GameEndingTitles`), raised by the `StartEndGameTitles` game
-action (and a cheat). `GameOverScreen` covers defeat; the victory/ending path is unhandled.
+action (and a cheat). `GameOverScreen` covers defeat; the victory/ending path was unhandled.
 (`BookEventScreen` does already cover the `Dialog.Epilog` / `Dialog.Interchapter` readers.)
 
 It generates `List<(string, BlueprintCreditsGroup)>` — pre-formatted blocks, the same
 `PageGenerator.Write{Company,Header,Person,Role,Text}` shapes `CreditsScreen` already flattens — plus
 `OpenCancelSettingsDialog()`, the game's own "skip the titles?" confirm box, and `CloseTitles()`.
+
+Now `Screens/TitlesScreen.cs` (layer 26, Exclusive): the "The End" plate then one row per printed line,
+unwrapped with the game's own `PageGenerator` readers and the role KEY resolved through the block's
+`RolesData` (the `<role>` tag holds the key, not the display name — the visual page resolves it in
+`CreditsOneColumnPage.Append`). Escape drives `OpenCancelSettingsDialog`. The game's own view still owns
+the scroll underneath, so ignoring the screen simply lets the roll finish as it would.
 
 **Correction (2026-07-25):** the audit originally paired this with `EndOfGameVM`. That type is **dead in
 the shipped build** — `new EndOfGameVM` appears nowhere in `Code.dll`, and `EndOfGameView` is never bound.
