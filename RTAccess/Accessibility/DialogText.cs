@@ -41,6 +41,13 @@ internal static class DialogText
     }
 
     /// <summary>
+    /// The current speaker's name exactly as <see cref="BuildCueLine"/> would prepend it (empty/whitespace for
+    /// the narrator). Exposed so the live screen can suppress re-naming the speaker across a run of cues from the
+    /// same NPC: it compares this between deliveries and passes <c>includeSpeaker: true</c> only when it changes.
+    /// </summary>
+    public static string CurrentSpeaker() => Game.Instance?.DialogController?.CurrentSpeakerName;
+
+    /// <summary>
     /// The rich-text-stripped skill-check result the game prepends to a cue after a roll (e.g. "Failed a
     /// Persuasion check"), or null when the cue rolled no check. Honors the game's own
     /// <c>ShowSkillcheckResult</c> toggle internally (returns "" when off — matching the answer side, which

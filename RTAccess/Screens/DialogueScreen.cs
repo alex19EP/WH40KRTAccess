@@ -48,6 +48,13 @@ namespace RTAccess.Screens
         // _focused/_spoken markers key on cue identity; this latches the conversation so a fresh VM re-homes.
         private DialogVM _convVm;
 
+        // The speaker name last prepended to a spoken cue. We name the speaker on the first cue and only again
+        // when it changes (a new NPC takes over), so a run of lines from the same speaker isn't re-named every
+        // line. Sentinel: unset (never spoken this conversation) — distinct from "" (the narrator, no name), so
+        // the very first cue always names its speaker. Reset per conversation in PreUpdate and in Reset().
+        private const string SpeakerUnset = "\0";
+        private string _lastSpeaker = SpeakerUnset;
+
         protected override DialogVM Vm() => Context()?.DialogVM?.Value; // == RootUiContext.HasDialog
 
         // Escape opens the game's pause menu, exactly like the game's own Esc during a conversation —
@@ -81,6 +88,7 @@ namespace RTAccess.Screens
                 _convVm = vm;
                 _focused = null;
                 _spoken = null;
+                _lastSpeaker = SpeakerUnset; // a fresh conversation always names its first speaker
             }
         }
 
@@ -92,10 +100,18 @@ namespace RTAccess.Screens
 
         protected override ControlId HomeNode(DialogVM vm, CueVM cue) => CueId(vm, cue);
 
+        // Name the speaker on the first cue and only again when it changes: a run of cues from the same NPC
+        // reads as one voice speaking, so re-announcing "Abelard. Abelard. Abelard." on every line is noise the
+        // sighted player never gets (their cue view shows the name, but they're not re-reading it aloud). We
+        // compare the delivered cue's speaker against the last one we named and drop it when unchanged.
         protected override void SpeakLine(DialogVM vm, CueVM cue)
         {
-            var line = DialogText.BuildCueLine(cue, includeSpeaker: true);
-            if (!string.IsNullOrEmpty(line)) Tts.Speak(line, interrupt: false);
+            var speaker = DialogText.CurrentSpeaker() ?? string.Empty;
+            bool changed = !string.Equals(speaker, _lastSpeaker, StringComparison.Ordinal);
+            var line = DialogText.BuildCueLine(cue, includeSpeaker: changed);
+            if (string.IsNullOrEmpty(line)) return; // no readable cue — leave _lastSpeaker so nothing was "named"
+            _lastSpeaker = speaker;
+            Tts.Speak(line, interrupt: false);
         }
 
         protected override void PostUpdate(DialogVM vm) => TryNumberSelect(vm);
@@ -114,6 +130,7 @@ namespace RTAccess.Screens
         {
             base.Reset(); // clears the shell's _focused / _spoken markers
             _convVm = null;
+            _lastSpeaker = SpeakerUnset;
             _fadeSub?.Dispose();
             _fadeSub = null;
             _subCtx = null;
