@@ -13,8 +13,10 @@
     the BepInEx publicizer in RTAccess.csproj can still expose them.
 
 .PARAMETER Version
-    Package version = the game version from WH40KRT_Data/StreamingAssets/Version.info (e.g.
-    1.6.1.514). GitHub Packages versions are immutable, so bump this for every push.
+    Package version. Defaults to auto-detecting the installed game version from
+    WH40KRT_Data/StreamingAssets/Version.info (e.g. 1.6.1.514) — so after a game update you just
+    rerun with no version argument. Pass a value to override. GitHub Packages versions are
+    immutable, so each distinct game build gets its own package version.
 
 .PARAMETER Managed
     The game's Managed directory. Defaults to the standard Steam install path.
@@ -27,13 +29,13 @@
     GH_PACKAGES_TOKEN environment variable, which `just publish` loads from a .env file.
 
 .EXAMPLE
-    pwsh scripts/build-gamerefs.ps1 -Version 1.6.1.514                       # build only
-    pwsh scripts/build-gamerefs.ps1 -Version 1.6.1.514 -Push -ApiKey ghp_xxx # build + publish
-    just publish 1.6.1.514                                                   # build + publish via .env
+    pwsh scripts/build-gamerefs.ps1                        # build, version auto-detected
+    pwsh scripts/build-gamerefs.ps1 -Push -ApiKey ghp_xxx  # build + publish, auto version
+    just publish                                           # build + publish via .env, auto version
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '1.6.1.514',
+    [string]$Version = '',
     [string]$Managed = 'C:/Program Files (x86)/Steam/steamapps/common/Warhammer 40,000 Rogue Trader/WH40KRT_Data/Managed',
     [switch]$Push,
     [string]$ApiKey = $env:GH_PACKAGES_TOKEN
@@ -49,6 +51,17 @@ $ummDll  = Join-Path $env:LOCALAPPDATA '..\LocalLow\Owlcat Games\Warhammer 40000
 
 if (-not (Test-Path $Managed))  { throw "Managed dir not found: $Managed" }
 if (-not (Test-Path $ummDll))   { throw "UnityModManager.dll not found: $ummDll (enable UMM once in-game)" }
+
+# Auto-detect the game version from Version.info (sibling of the Managed dir) unless overridden.
+# Line format: "<date> <time> <commit-hash> <version> <branch>", e.g. "... 1.6.1.514 release/...".
+if (-not $Version) {
+    $versionInfo = Join-Path (Split-Path $Managed) 'StreamingAssets/Version.info'
+    if (-not (Test-Path $versionInfo)) { throw "No -Version given and Version.info not found: $versionInfo" }
+    $token = (Get-Content $versionInfo -Raw) -split '\s+' | Where-Object { $_ -match '^\d+\.\d+\.\d+(\.\d+)?$' } | Select-Object -First 1
+    if (-not $token) { throw "Could not parse a version from $versionInfo" }
+    $Version = $token
+    Write-Host "Auto-detected game version: $Version" -ForegroundColor Cyan
+}
 
 # Ensure Refasmer is available.
 if (-not (Get-Command refasmer -ErrorAction SilentlyContinue)) {

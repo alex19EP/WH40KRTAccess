@@ -75,17 +75,17 @@ test:
     dotnet test tests/RTAccess.Tests.csproj
 
 # Rebuild the WH40KRT.GameRefs NuGet package (Refasmer-stripped game assemblies for CI).
-# Version = the game version in WH40KRT_Data/StreamingAssets/Version.info. Use `just publish`
-# to also push.
-#   just refs                    # build build/gamerefs/out/*.nupkg at the default version
-#   just refs 1.6.2.x            # stamp a specific game version
-refs version='1.6.1.514':
+# Version auto-detected from WH40KRT_Data/StreamingAssets/Version.info. Use `just publish` to push.
+#   just refs                    # build build/gamerefs/out/*.nupkg at the installed game version
+#   just refs 1.6.2.x            # override the version
+refs version='':
     pwsh -NoProfile -File scripts/build-gamerefs.ps1 -Version "{{version}}"
 
 # Build AND publish WH40KRT.GameRefs to GitHub Packages. Needs GH_PACKAGES_TOKEN
 # (a PAT with the write:packages scope) in a .env file at the repo root — see .env.example.
-# GitHub Packages versions are immutable, so bump the version for every publish.
-#   just publish                 # publish at the default version
-#   just publish 1.6.2.x         # publish a specific game version
-publish version='1.6.1.514':
+# Version auto-detected from the install; GitHub Packages versions are immutable so each
+# game build gets its own package version.
+#   just publish                 # publish at the installed game version
+#   just publish 1.6.2.x         # override the version
+publish version='':
     pwsh -NoProfile -File scripts/build-gamerefs.ps1 -Version "{{version}}" -Push
