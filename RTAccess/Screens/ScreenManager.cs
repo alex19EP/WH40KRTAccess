@@ -177,6 +177,14 @@ namespace RTAccess.Screens
             Register(new NewGameScreen());
             // Character generation (MainMenuVM.CharGenContextVM.CharGenVM) — layer 15, full-screen flow.
             Register(new CharGenScreen());
+            // Standalone Change Appearance (CharGenContextVM.ChangeAppearanceVM — the in-play appearance
+            // service) — layer 16, Exclusive: the chargen Appearance phase on its own, above dialogue (15)
+            // since the raising game action can fire from an answer. Reuses AppearancePhaseContent.
+            Register(new ChangeAppearanceScreen());
+            // Respecialisation window (SurfaceStaticPartVM.RespecContextVM.RespecVM, raised by the
+            // RespecCompanion game action) — layer 26, Exclusive; its confirm prompt is the game's own
+            // message box (30). See docs/respec-appearance-teardown.md.
+            Register(new RespecScreen());
             // The main menu's own windows, each of which used to leave the mod silent when opened. All are
             // MainMenuVM children, all Exclusive, all below the message modal (30) so their confirm boxes
             // still read.

@@ -21,14 +21,22 @@ namespace RTAccess.Screens
     /// explanation (enable clothes / disabled for this character). Labels and title are all the game's
     /// UIStrings — nothing to re-localize.
     ///
-    /// Exclusive, layer 13 — above the InventoryScreen (10) it's raised from and clear of the
-    /// EquipSelectorScreen (12), so it owns input while open. Escape closes through the VM's own Close()
-    /// (→ the doll's HideVisualSettings). Carries its own ScreenName (the game's window title).
+    /// Two windows raise this panel — the inventory doll and the standalone Change Appearance window (whose
+    /// own doll owns a second instance of the same VM). The Cloth toggle, dead on the inventory path (the
+    /// unit ctor leaves it null), is live on that one: it's the CharGen doll.
+    ///
+    /// Exclusive, and layered to sit on whichever window raised it: 13 above the InventoryScreen (10) and
+    /// clear of the EquipSelectorScreen (12), or 17 above the ChangeAppearanceScreen (16). Either way it owns
+    /// input while open. Escape closes through the VM's own Close() (→ the raising doll's
+    /// HideVisualSettings). Carries its own ScreenName (the game's window title).
     /// </summary>
     public sealed class VisualSettingsScreen : Screen
     {
         public override string Key => "inventory.visualsettings";
-        public override int Layer => 13;
+        // Follows whichever window raised the panel: 13 over the InventoryScreen (10), 17 over the
+        // ChangeAppearanceScreen (16). The two sources can never be live together, so the choice is
+        // unambiguous — and Layer is re-read every frame by ScreenManager.Resolve, so it tracks.
+        public override int Layer => AppearanceSettings() != null ? 17 : 13;
         public override bool Exclusive => true;
         public override string ScreenName
             => Vm() != null ? UIStrings.Instance.CharacterSheet.VisualSettingsTitle.Text : null;
@@ -45,8 +53,13 @@ namespace RTAccess.Screens
 
         // The settings live on the currently-viewed doll of whichever inventory window is live (surface or
         // space), mirroring InventoryScreen.Vm()'s resolution; the doll disposes them on a character switch.
+        // The standalone Change Appearance window owns a second instance of the same VM (its own doll's
+        // cosmetics panel) — same window, same drive paths, so it just becomes a second source.
         private static CharacterVisualSettingsVM Vm()
-            => UiContexts.Inventory()?.DollVM?.VisualSettingsVM?.Value;
+            => UiContexts.Inventory()?.DollVM?.VisualSettingsVM?.Value ?? AppearanceSettings();
+
+        private static CharacterVisualSettingsVM AppearanceSettings()
+            => ChangeAppearanceScreen.Vm()?.VisualSettingsVM?.Value;
 
 
         public override void Build(GraphBuilder b)

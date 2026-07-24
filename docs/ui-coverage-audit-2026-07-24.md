@@ -131,16 +131,27 @@ Large surface; worth a deliberate in-or-out decision rather than drift.
 
 ## Tier 2 — gameplay content with no accessible path
 
-### Respec / retrain
+### Respec / retrain — SHIPPED 2026-07-25
 `RespecContextVM` → `RespecVM` (`CharacterSelectionGroupRadioVM<RespecCharacterVM>`, `RespecCost`,
 `CanRespec`, `SystemMapSpaceResourcesVM`), a field of `SurfaceStaticPartVM` (`:64`).
 `ModalWindowUIType.Respec`. Raised via `ICharacterSelectorHandler.HandleSelectCharacter`, whose only
-caller is the `RespecCompanion` game action — i.e. story/service-triggered. Zero mod references.
+caller is the `RespecCompanion` game action — i.e. story/service-triggered.
 
-### Change appearance
+Now `Screens/RespecScreen.cs` (layer 26, Exclusive): characters / details / actions Tab stops. Rows read
+the **name only**, mirroring `RespecCharacterCommonView`'s portrait+name card. Accept drives
+`RespecVM.OnConfirm()`, whose confirm prompt is the game's own message box → `MessageBoxScreen`.
+Teardown: `docs/respec-appearance-teardown.md`. Built from the decompile, not live-tested.
+
+### Change appearance — SHIPPED 2026-07-25
 `ChangeAppearanceVM`, created by `CharGenContextVM` (`:97`) and driven by the `ChangeAppearance` game
-action. `CharGenScreen` resolves only `CharGenContextVM.CharGenVM`, so this sibling flow is dark even
+action. `CharGenScreen` resolves only `CharGenContextVM.CharGenVM`, so this sibling flow was dark even
 though the surrounding chargen machinery is fully built.
+
+Now `Screens/ChangeAppearanceScreen.cs` (layer 16, Exclusive) — the VM's `CharGenAppearancePhaseVM` is the
+same type the wizard renders, so the content stop **reuses `AppearancePhaseContent` verbatim**; only the
+buttons are new, and Accept/Cancel go through the game's own confirm boxes as the view does.
+`VisualSettingsScreen` gained this window's cosmetics panel as a second source (and a layer that follows
+it, 17 vs 13) — which is also the only place its `Cloth` toggle is non-null.
 
 ### Vendor selecting window
 `VendorSelectingWindowVM` — the faction list you pick a trade partner from (one
