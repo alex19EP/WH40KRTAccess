@@ -2,8 +2,9 @@
 
 A screen-reader accessibility mod for **Warhammer 40,000: Rogue Trader**, for blind and
 visually-impaired players. It speaks the game's menus, character creation, dialogue, exploration,
-loot, and turn-based combat, and adds a custom keyboard layer over the game's UI, spatial audio for
-the world around you, and review "buffers" for inspecting characters in detail.
+loot, turn-based combat, and the whole void-travel layer — the sector map, star systems, and voidship
+battles — and adds a custom keyboard layer over the game's UI, spatial audio for the world around
+you, and review "buffers" for inspecting characters in detail.
 
 > **Status: pre-alpha.** Under active development and not yet feature-complete — expect rough edges,
 > gaps, and breaking changes. Bug reports are very welcome; that's what this stage is for.
@@ -18,13 +19,23 @@ install first.
 - **Speech** through your screen reader (NVDA, JAWS, etc.) via Prism, with a stopgap fallback voice
   if Prism isn't available.
 - **Custom keyboard navigation** in mouse mode, with key-repeat matching your OS settings.
-- **Character creation** and the in-game UI (windows, menus, settings).
+- **Menus and first run**: the main menu, the first-launch settings wizard, terms of use, credits,
+  feedback, the DLC & Mods window, save / load, and the game's own settings. The mod's **own settings
+  live inside the game's Mods window**, so you never have to touch Unity Mod Manager's overlay.
+- **Character creation**, **level-up**, respec / retrain, and change appearance.
+- **Service windows**: inventory and equipment, cargo, the character sheet, journal, the
+  encyclopedia / codex, the local map, formation editor, vendors and trade, ship customization,
+  colony management, and augmentations.
 - **Exploration**: an always-on tile cursor you move around the world, a categorized **scanner** of
-  everything in the area, **wall tones** and an object **sonar**, room and area awareness, and
-  move-to orders.
+  everything in the area (including unexplored frontier and shootable scenery), **wall tones** and an
+  object **sonar**, room classification with named exits, and move-to orders.
 - **Dialogue**, book events, tutorial popups, and the in-game log / character barks.
-- **Turn-based combat** and **targeting**, with per-turn status readouts, cover/vantage checks from
-  a tile, and pre-combat **deployment**.
+- **Turn-based combat** and **targeting**: per-turn status readouts, the action bar led by
+  availability, cover / vantage checks from a tile, hit odds and line-of-sight, hazard warnings on a
+  path, a **move preview** you plant and then confirm, and pre-combat **deployment**.
+- **Void travel and space**: the sector map with warp-route creation and upgrades, star-system maps,
+  planetary exploration, anomalies and expeditions, and **voidship combat** — movement with inertia,
+  weapon arcs, shields, bridge posts, and the end-of-battle popup.
 - **Review buffers** (Alt+arrows) for reading a unit's details line by line — name, HP, defenses,
   and every buff / debuff, with the game's own tooltip detail one key away.
 - **RT-specific readouts**: momentum, the veil / psychic-phenomena pressure, profit factor, and
@@ -32,6 +43,19 @@ install first.
 
 The mod follows the game's language setting; English (enGB) is included and is the complete string
 set — other languages can be dropped in as a folder.
+
+## Settings
+
+RTAccess has its own settings, and they are reached **through the game's own menus** rather than
+Unity Mod Manager's inaccessible on-screen overlay: open **DLC & Mods** from the main menu, find the
+**RTAccess** row in the mods list, and activate its **Settings** action. Three categories:
+
+- **Exploration** — the camera follow, the sonar and wall tones (mode, volume, cadence, range), the
+  fog-boundary cue, and room-change announcements.
+- **Audio** — master volume and the stereo-realism switches.
+- **Announcements** — how much is spoken, and per-element overrides.
+
+Settings are stored separately from the mod itself, so updating never resets them.
 
 ## Requirements
 
@@ -83,46 +107,121 @@ UMM re-adds it enabled on the next launch.)
 
 ## Keys
 
-Press **Ctrl+Shift+A** to toggle accessibility focus mode. The essentials:
+Press **Ctrl+Shift+A** to toggle accessibility focus mode.
+
+### Anywhere
 
 | Key | Action |
 | --- | --- |
 | Ctrl+Shift+A | Toggle focus mode |
-| Arrow keys | Navigate / adjust the focused control; move the tile cursor while exploring |
-| Tab / Shift+Tab | Move between regions / panels |
-| Enter | Primary action (activate; interact at the cursor) |
-| Backspace | Secondary action (e.g. move the party to the cursor) |
-| Escape | Back / close; on the bare HUD, open the game menu |
-| Space / F1 | Read the focused item's tooltip |
 | Alt+Left / Right | Pick a review buffer |
 | Alt+Up / Down | Read the current buffer's lines |
 | Alt+T | Read the current buffer line's detail (a buff's description / sources) |
-| PageUp / PageDown | Scanner: previous / next item |
-| Ctrl+PageUp / PageDown | Scanner: previous / next category |
-| , / . / N / M / V | Cycle party / enemies / neutrals / objects / room exits (hold Shift to go back) |
-| I | Interact with the scanner selection (or target an ability at it) |
-| Home or / | Move the tile cursor to the scanner selection |
+| L | Message-log review (press again to close) |
+| F12 | Speech self-test (is my speech alive?) |
+
+### Menus and windows
+
+| Key | Action |
+| --- | --- |
+| Arrow keys | Navigate / adjust the focused control |
+| Tab / Shift+Tab | Move between panels |
+| Ctrl+Up / Ctrl+Down | Jump between the regions of a long sheet |
+| Home / End | First / last item |
+| Enter | Activate |
+| Shift+Enter / Ctrl+Enter | Split a stack / split it in half (inventory) |
+| Backspace | Secondary action |
+| Space / F1 | Read the focused item's tooltip |
+| Escape | Back / close; on the bare HUD, open the game menu |
+| Ctrl+P | Re-announce the current character-creation phase |
+
+**Space** is shared: it reads the tooltip, unless the open window claims it for the action the game
+puts there — collecting everything in a loot window, or starting the battle during deployment.
+**F1 always reads the tooltip**, whatever is open.
+
+### Exploring
+
+| Key | Action |
+| --- | --- |
+| Arrow keys | Move the tile cursor |
+| Shift+arrows | Move the cursor even when a panel would take the arrows |
+| Enter | Interact at the cursor |
+| Backspace | Move the party to the cursor (in combat: plant the move, then press again to commit) |
 | C | Recenter the cursor on the party |
+| Delete | Re-announce the cursor tile |
 | X | Where am I (area, room, whether the spot is unexplored) |
+| Home or / | Move the tile cursor to the scanner selection |
+
+### The scanner
+
+| Key | Action |
+| --- | --- |
+| PageUp / PageDown | Previous / next item |
+| Ctrl+PageUp / PageDown | Previous / next category |
+| , / . / N / M / V | Cycle party / enemies / neutrals / objects / room exits (hold Shift to go back) |
+| O | Re-announce the current selection |
+| I | Interact with the selection (or target an ability at it) |
+| ' / Y | Inspect the cursor's occupant / the scanner selection |
 | P | Read the party |
 | U | Battlefield summary (counts, reach, threat) |
-| ' / Y | Inspect the cursor's occupant / the scanner selection |
+
+### Party and combat
+
+| Key | Action |
+| --- | --- |
 | Ctrl+A | Select the whole party |
 | Alt+1 … Alt+6 | Select a single party member |
 | Shift+A / Shift+D | Select the previous / next party member |
 | H / G | Hold position / stop |
 | R | Status readout (whose turn, actions and movement left) |
 | K | RT gauges — momentum, veil, profit factor, timers, objectives |
-| L | Open the message-log review |
-| Semicolon | Cover / vantage from the cursor tile (combat) |
-| B | Start the battle during deployment |
-| Ctrl+F1 / Ctrl+F2 | Cycle wall tones / sonar (off → when moving → continuous) |
-| F12 | Speech self-test (is my speech alive?) |
-| Ctrl+C / Ctrl+I / Ctrl+J / Ctrl+L | Character sheet / inventory / journal / encyclopedia |
+| Z | This turn's movement options (how far on foot; the facing fan for a voidship) |
+| Semicolon | Cover / vantage from the cursor tile |
+| Space | Start the battle during deployment |
 
-The game's own service-window shortcuts (the bare letters C, I, J, M, L, and so on) are moved to
-**Ctrl+letter** so the bare letters are free for exploration; the game's on-screen hints update to
-match.
+### Audio
+
+| Key | Action |
+| --- | --- |
+| Ctrl+F1 | Cycle wall tones (off → when moving → continuous) |
+| Ctrl+F2 | Cycle the sonar (off → when moving → continuous) |
+
+### Sector map only
+
+| Key | Action |
+| --- | --- |
+| M / Shift+M | Step through the warp links leading off the anchor system |
+| / | Re-anchor the walk on the selected system |
+| C | Back to the system you're currently in |
+
+### Formation editor only (while the placement field is focused)
+
+| Key | Action |
+| --- | --- |
+| W / A / S / D | Step the formation cursor (hold Shift to glide) |
+| , / Shift+, | Review the next / previous member |
+| / | Move the cursor to the reviewed member |
+| C | Recentre the cursor |
+| Alt+1 … Alt+6 | Grab the Nth member of the list |
+
+### The game's own keys, relocated
+
+The game's bare-letter shortcuts are moved to **Ctrl+letter** so the bare letters are free for
+exploration; the game's on-screen hints update to match.
+
+| Key | What it does |
+| --- | --- |
+| Ctrl+C | Character sheet |
+| Ctrl+I | Inventory |
+| Ctrl+J | Journal |
+| Ctrl+M | Local map |
+| Ctrl+L | Encyclopedia |
+| Ctrl+N | Formation |
+| Ctrl+V | Ship customization |
+| Ctrl+Y | Colony management |
+| Ctrl+B | Cargo management |
+| Ctrl+U | Augmentations |
+| Ctrl+X | Swap weapon set (the game gives no audio for this one yet) |
 
 ## Getting started
 
@@ -146,10 +245,12 @@ cursor, **Backspace** to send your selected party there, and **C** to recenter t
 party leader.
 
 Alongside it is the **scanner**: a categorized, distance-sorted browse of everything in the area.
-Use **PageUp / PageDown** to step through items and **Ctrl+PageUp / PageDown** to switch category
-(everything, enemies, allies, objects, hazards, points of interest, and so on). Press **I** to
-interact with the current scanner selection — including targeting an ability at it — and **Home**
-or **/** to jump the tile cursor to it.
+Use **PageUp / PageDown** to step through items and **Ctrl+PageUp / PageDown** to switch category —
+party, enemies, neutrals, containers, corpses, doors, area exits, points of interest, search points,
+traps, mechanisms, destructible scenery, hazards, buff zones, and **unexplored space** (the fog edges
+where exploration can still continue). Press **I** to interact with the current scanner selection —
+including targeting an ability at it, or shooting a destructible to open a path — **O** to hear the
+selection again, and **Home** or **/** to jump the tile cursor to it.
 
 You can also cycle quickly through nearby things: **.** enemies, **,** party, **N** neutrals,
 **M** interactable objects, **V** the current room's exits (hold **Shift** on any of these to go
@@ -169,7 +270,14 @@ for it (the full description, and which sources are overriding it when a bonus d
 Think of the tile cursor as an audio camera. **Wall tones** play a tone for each nearby wall in the
 four cardinal directions, louder as a wall gets closer — cycle them with **Ctrl+F1**. The **sonar**
 periodically pings nearby things, each with a sound for its type, placed by distance and direction —
-cycle it with **Ctrl+F2**. Both cycle off → when moving → continuous, and ship off by default.
+cycle it with **Ctrl+F2**. Both cycle off → when moving → continuous, and both are **on ("when
+moving") by default**: they play while you move and fall silent when you stop. A short tone also
+marks the moment the cursor crosses the edge of what your party can currently see, and landing on a
+scanner item pings it where it stands.
+
+Everything above is tunable in the mod's settings (see [Settings](#settings)) — a master volume, the
+sonar's range and cadence, wall-tone volume and tone set, and the stereo-realism switches. If the
+soundscape is too much, set both to **Off** there or with the keys above.
 
 ### Party, orientation, and combat
 
@@ -179,9 +287,32 @@ Shift+D** step through members. **H** holds position and **G** stops. **P** read
 timers.
 
 In **turn-based combat** you'll hear whose turn it is; press **R** at any time for a status readout
-(actions and movement remaining). Move the cursor onto a tile and press **Semicolon** to hear the
-cover, range, and threat the acting unit would have from there before committing. During pre-combat
-**deployment**, place characters with the cursor and press **B** to start the battle.
+(actions and movement remaining) and **Z** for how far the acting unit can move this turn. Move the
+cursor onto a tile and press **Semicolon** to hear the cover, range, and threat the acting unit would
+have from there before committing.
+
+Moving in combat is a **two-step preview**, the same one a sighted player gets. The first
+**Backspace** on a tile plants the move — you hear the distance, what it costs, and whether the path
+provokes — and every readout from then on answers *from that planned tile*, so you can cycle enemies
+and check cover before deciding. A second **Backspace** on the same tile commits it; **Escape**
+cancels. The plan doesn't expire, so take as long as you like between the two presses.
+
+During pre-combat **deployment**, place characters with the cursor and press **Space** to start the
+battle.
+
+### Space, the sector map, and voidship combat
+
+Warp travel and the void layer are covered too. The **sector map** is navigated as a graph rather
+than a picture: **M / Shift+M** walk the warp links leading off the anchor system, **/** re-anchors
+the walk on whatever you've selected, and **C** returns you to where you actually are. Routes can be
+created and upgraded from the same screen. Star-system maps, planetary exploration, anomalies,
+expeditions, and colony management each have their own accessible window.
+
+**Voidship battles** work like ground combat with a ship's physics on top: movement carries inertia,
+so **Z** reads the fan of end positions grouped by the facing you'd arrive at, and the cursor tells
+you whether a tile is reachable this turn. Weapons, abilities, and bridge posts are separate panels
+reached with **Tab**, enemy readouts name the firing arc you'd be in, and the end-of-battle popup is
+navigable.
 
 ### Dialogue, the log, and tutorials
 
@@ -193,9 +324,12 @@ read past messages by channel. Tutorial popups are read out as they appear.
 
 ## Notes and limitations
 
-- **Pre-alpha**: not everything in the game is accessible yet, and some screens are partial. Keys
-  and behaviour may change between builds.
-- Space / starship combat accessibility is planned as its own effort and isn't fully covered yet.
+- **Pre-alpha**: some screens are partial, and keys and behaviour may change between builds. Much of
+  the newest coverage is built from the game's own code and compile-verified but not yet walked
+  through in a real playthrough — story- and campaign-gated windows especially.
+- **Co-op / multiplayer** (the lobby and role assignment) is not covered — it's a subsystem in its
+  own right and is a deliberate open decision rather than an oversight. The same goes for the game's
+  built-in bug-report window.
 - **Report bugs** with as much detail as you can — where you were, what you pressed, and what you
   heard versus what you expected.
 
