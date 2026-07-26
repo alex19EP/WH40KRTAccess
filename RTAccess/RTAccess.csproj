@@ -57,6 +57,12 @@
 		<None Include="assets\**\*.wav" CopyToOutputDirectory="PreserveNewest" Link="assets\%(RecursiveDir)%(Filename)%(Extension)" />
 		<None Include="prism.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('prism.dll')" />
 		<None Include="nvdaControllerClient64.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('nvdaControllerClient64.dll')" />
+		<!-- Docs + licences from the repo root. They land in $(TargetDir), so the Deploy target carries them
+		     into the UMM mod folder AND into the release zip — the MIT licence and the third-party notices
+		     have to travel with the redistributed binaries. -->
+		<None Include="..\README.md" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+		<None Include="..\LICENSE" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+		<None Include="..\THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
 	</ItemGroup>
 	<Target Name="Deploy" AfterTargets="Build">
 		<ItemGroup>
