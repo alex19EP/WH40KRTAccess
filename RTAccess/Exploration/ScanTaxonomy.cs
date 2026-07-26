@@ -19,6 +19,13 @@ internal static class ScanTaxonomy
     public const string Doors = "doors";
     public const string Exits = "exits";
     public const string SearchPoints = "searchpoints";
+    // Ways between floors. RT does NOT model these as stairs: the Kiava Gamma manufactorum contains zero
+    // InteractionStairsPart and zero WarhammerNodeLink — every ladder, hole and jump-down there is an ATHLETICS
+    // skill-check interactable with no designer name, so they all used to browse as anonymous "Search point"s
+    // scattered through a category of twenty. They are the one thing a lost player in a multi-level area needs, so
+    // they get their own node (and ride the V exit cycle). InteractionStairsPart is included for the areas that do
+    // use it.
+    public const string LevelChanges = "levelchanges";
     public const string Traps = "traps";
     public const string Mechanisms = "mechanisms";
     public const string Scenery = "scenery";

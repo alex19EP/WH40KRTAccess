@@ -106,7 +106,11 @@ internal static class AimRead
                 return aoe ? Loc.T("aim.no_targets") : null;
 
             var sb = new StringBuilder();
-            if (!aoe)
+            // Both headline branches require an enemy. The shown set can be ALLY-ONLY — a single-target shot whose
+            // line holds a companion and whose enemy failed AimParity.Shown — and the guard above only returns when
+            // BOTH lists are empty, so the single-target branch used to index enemies[0] on an empty list and throw.
+            // The readout then died exactly when it mattered most: aiming through a companion with no warning.
+            if (!aoe && enemies.Count > 0)
             {
                 // Single-target: the aimed unit leads; the rest are overpenetration-pierced behind it.
                 var cursorUnit = CursorTarget.Inside()?.TargetUnit;
@@ -116,7 +120,7 @@ internal static class AimRead
                 var rest = enemies.Where((_, i) => i != primary).ToList();
                 if (rest.Count > 0) AppendPierces(sb, rest);
             }
-            else if (enemies.Count > 0)
+            else if (aoe && enemies.Count > 0)
             {
                 sb.Append(enemies.Count == 1 ? Loc.T("aim.catches_enemy_one") : Loc.T("aim.catches_enemies", new { count = enemies.Count }));
                 if (verbose) foreach (var e in enemies) AppendOdds(sb, e);

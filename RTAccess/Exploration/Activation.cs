@@ -54,15 +54,26 @@ internal static class Activation
         try
         {
             var item = new ProxyMapObject(o);
-            SpeakOutcome(item.Interact(), item.Name);
+            SpeakOutcome(item.Interact(), item.Name, item.Reach);
         }
         catch (Exception e) { Main.Log?.Error("Activation.ActivateObject failed: " + e); }
     }
 
-    /// <summary>The shared interaction-outcome line — "Interacting with X." / "Can't interact with X." — spoken by
-    /// both interact keys and the chooser, so activation reads identically however the object was reached.</summary>
-    public static void SpeakOutcome(bool ok, string name)
-        => Speaker.Speak(Loc.T(ok ? "scan.interacting" : "scan.cant_interact", new { name }), interrupt: true);
+    /// <summary>
+    /// The shared interaction-outcome line — "Interacting with X." / "Can't interact with X." — spoken by both
+    /// interact keys and the chooser, so activation reads identically however the object was reached.
+    ///
+    /// A successful dispatch onto something on ANOTHER walkable island gets a second sentence. The command really
+    /// was issued (we always drive the game's own click path, and a teleporting console or a scripted approach can
+    /// still fire), but the party has no walking route, so most of the time nothing visible happens — which in the
+    /// play logs reads as the player pressing the key again, and again. Saying so turns silence into information.
+    /// </summary>
+    public static void SpeakOutcome(bool ok, string name, ReachClass reach = ReachClass.Walkable)
+    {
+        var line = Loc.T(ok ? "scan.interacting" : "scan.cant_interact", new { name });
+        if (ok && reach == ReachClass.Elsewhere) line += ". " + Loc.T("scan.no_walk_route");
+        Speaker.Speak(line, interrupt: true);
+    }
 
     // A terse chooser label: name + verb/state + bearing from the cursor, so two same-named containers stay
     // distinguishable by where they sit. Reuses the same name/detail/compass the scanner speaks elsewhere.

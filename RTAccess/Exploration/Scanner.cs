@@ -64,6 +64,9 @@ internal static class Scanner
         ("taxonomy.doors",          Source.Registry, it => it.HasNode(ScanTaxonomy.Doors)),
         ("taxonomy.exits",          Source.Registry, it => it.HasNode(ScanTaxonomy.Exits)),
         ("taxonomy.poi",            Source.Markers,  null),   // area-wide local-map landmark pins (travel-to; see MarkerList)
+        // Ways between floors (ladders, holes, drops, stairs) — placed next to exits because that is what they are
+        // in a multi-level area: the way out of the level you are stuck on.
+        ("taxonomy.levelchanges",   Source.Registry, it => it.HasNode(ScanTaxonomy.LevelChanges)),
         ("taxonomy.searchpoints",   Source.Registry, it => it.HasNode(ScanTaxonomy.SearchPoints)),
         ("taxonomy.traps",          Source.Registry, it => it.HasNode(ScanTaxonomy.Traps)),
         ("taxonomy.mechanisms",     Source.Registry, it => it.HasNode(ScanTaxonomy.Mechanisms)),
@@ -216,7 +219,7 @@ internal static class Scanner
         //    tile cursor's Enter never had this guard, which is exactly why it interacted those objects fine.
         if (sel != null && sel.CanInteract)
         {
-            if (sel.Interact()) { Activation.SpeakOutcome(true, sel.Name); return; }
+            if (sel.Interact()) { Activation.SpeakOutcome(true, sel.Name, sel.Reach); return; }
             // The selection reported actionable but its OWN interaction didn't fire — a co-located decorative /
             // proxy object, a restriction, or the wrong actor picked up. Don't dead-end on "can't interact":
             // fall through to the proximity resolve at its TILE — exactly the "plant the cursor on it, then
@@ -253,7 +256,7 @@ internal static class Scanner
         {
             // No same-area pre-guard (see Interact): the game's Interact handles approach/reachability, and the
             // Geo.SameArea navmesh-component test wrongly refused same-area objects on a disconnected island.
-            Activation.SpeakOutcome(sel.Interact(), sel.Name);
+            Activation.SpeakOutcome(sel.Interact(), sel.Name, sel.Reach);
             return true;
         }
         if (sel is ProxyMarker) { TravelTo(sel); return true; }
@@ -385,7 +388,11 @@ internal static class Scanner
         foreach (var it in WorldModel.Items)
         {
             if (it == null || !it.IsVisible) continue;
-            if (!it.HasNode(ScanTaxonomy.Doors) && !it.HasNode(ScanTaxonomy.Exits)) continue;
+            // Level changers count as exits from this room: in a stacked area the ladder out of the gallery IS the
+            // way on, and the room graph cannot see it (the floors are separate walkable components, joined by an
+            // interaction rather than by a connection the segmenter can walk).
+            if (!it.HasNode(ScanTaxonomy.Doors) && !it.HasNode(ScanTaxonomy.Exits)
+                && !it.HasNode(ScanTaxonomy.LevelChanges)) continue;
             if (InOrAdjacentTo(it.Position, room)) things.Add(it);
         }
 
@@ -572,8 +579,27 @@ internal static class Scanner
             // unaffected (a map object is never dead). Corpses also stay under the tile cursor, labelled dead.
             if (it.IsVisible && (!it.IsDead || it.LootableCorpse) && cat.Pred(it)) list.Add(it);
         }
-        list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
+        SortByReachThenDistance(list, refPos);
         return list;
+    }
+
+    // Walkable things first, then unplaceable ones, then things on another level — and only then by distance. In a
+    // multi-level area a flat distance sort buries the one reachable object behind a dozen nearer ones a floor away
+    // (measured in the Kiava Gamma manufactorum: 20 of 21 search points were on a different walkable island). The
+    // reach class is computed ONCE per item up front rather than inside the comparer, which would re-classify
+    // O(n log n) times. Selection survives the reorder — the scanner re-finds it by Key identity, not by index.
+    private static readonly Dictionary<ScanItem, int> _reachRank = new Dictionary<ScanItem, int>();
+
+    private static void SortByReachThenDistance(List<ScanItem> list, Vector3 refPos)
+    {
+        _reachRank.Clear();
+        for (int i = 0; i < list.Count; i++) _reachRank[list[i]] = Reachability.Rank(list[i].Reach);
+        list.Sort((a, b) =>
+        {
+            int byReach = _reachRank[a].CompareTo(_reachRank[b]);
+            return byReach != 0 ? byReach : a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos));
+        });
+        _reachRank.Clear();
     }
 
     private static List<ScanItem> GroupList(Group group, Vector3 refPos)
@@ -590,7 +616,7 @@ internal static class Scanner
             // never dead.
             if (it.DetectableFrom(refPos) && (!it.IsDead || it.LootableCorpse) && InGroup(it, group)) list.Add(it);
         }
-        list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
+        SortByReachThenDistance(list, refPos);
         return list;
     }
 
@@ -668,6 +694,7 @@ internal static class Scanner
                 // object with no interaction) is still excluded — there is nothing to activate.
                 return it.HasNode(ScanTaxonomy.Containers) || it.HasNode(ScanTaxonomy.Doors)
                     || it.HasNode(ScanTaxonomy.Exits) || it.HasNode(ScanTaxonomy.SearchPoints)
+                    || it.HasNode(ScanTaxonomy.LevelChanges)  // ladders/climbs left SearchPoints; keep them in M
                     || it.HasNode(ScanTaxonomy.Mechanisms) || it.HasNode(ScanTaxonomy.Traps)
                     || it.HasNode(ScanTaxonomy.Corpses);   // lootable bodies loot like containers via I
         }

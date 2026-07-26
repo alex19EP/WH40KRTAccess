@@ -160,13 +160,15 @@ internal sealed class ProxyMapObject : ScanItem
                         case DisableTrapInteractionPart trap when part.Enabled && trap.Owner?.TrapActive == true:
                             bits.Add(Loc.T("object.trapped"));
                             var trapInfo = InteractableDescriber.CheckInfo(part);
-                            if (trapInfo != null) bits.Add(trapInfo);
+                            if (!string.IsNullOrWhiteSpace(trapInfo)) bits.Add(trapInfo);
                             break;
                         // The skill-check card line (short description + "[Skill: NN%]" chance, or the after-use
                         // passed/failed description) — what a sighted hover shows under the name.
+                        // Blank-guarded, not null-guarded: a spent one-shot check with no after-use description
+                        // yields "", and an empty bit joins into a hollow ", ," in the spoken line.
                         case InteractionSkillCheckPart when part.Enabled:
                             var checkInfo = InteractableDescriber.CheckInfo(part);
-                            if (checkInfo != null) bits.Add(checkInfo);
+                            if (!string.IsNullOrWhiteSpace(checkInfo)) bits.Add(checkInfo);
                             break;
                     }
                 }
@@ -238,6 +240,9 @@ internal sealed class ProxyMapObject : ScanItem
             if (nodes.Contains(ScanTaxonomy.Containers)) return ScanTaxonomy.Containers;
             if (nodes.Contains(ScanTaxonomy.Doors)) return ScanTaxonomy.Doors;
             if (nodes.Contains(ScanTaxonomy.Traps)) return ScanTaxonomy.Traps;
+            // Above search points: a climb that also happens to be searchable is, to someone trying to get off
+            // this floor, a way up first and a curiosity second.
+            if (nodes.Contains(ScanTaxonomy.LevelChanges)) return ScanTaxonomy.LevelChanges;
             if (nodes.Contains(ScanTaxonomy.SearchPoints)) return ScanTaxonomy.SearchPoints;
             if (nodes.Contains(ScanTaxonomy.Mechanisms)) return ScanTaxonomy.Mechanisms;
             return ScanTaxonomy.Scenery;
@@ -264,7 +269,19 @@ internal sealed class ProxyMapObject : ScanItem
             }
             if (!part.Enabled) continue;
             if (part is InteractionLootPart) nodes.Add(ScanTaxonomy.Containers);
-            else if (part is InteractionSkillCheckPart) nodes.Add(ScanTaxonomy.SearchPoints);
+            // Level changers before the generic skill-check bucket: a climb/jump/vault check is how RT moves you
+            // between floors (see ScanTaxonomy.LevelChanges), so it must not be lost among the search points.
+            else if (part is InteractionStairsPart) nodes.Add(ScanTaxonomy.LevelChanges);
+            else if (part is InteractionSkillCheckPart check)
+                nodes.Add(InteractableDescriber.IsLevelChange(check)
+                    ? ScanTaxonomy.LevelChanges
+                    : ScanTaxonomy.SearchPoints);
+            // A lever/button whose actions teleport the party (a lift call button, a hatch) is a way between
+            // floors too — everything else in this family stays a mechanism.
+            else if (part is InteractionActionPart actionPart)
+                nodes.Add(InteractableDescriber.IsLevelChange(actionPart)
+                    ? ScanTaxonomy.LevelChanges
+                    : ScanTaxonomy.Mechanisms);
             // Only an ARMED trap is a live "trap" node. A disarmed/triggered trap keeps its part Enabled but flips
             // TrapActive=false, so it contributes NO node — dropping out of the Traps category and Sonar exactly like a
             // looted container leaves the Containers category (mirrors the TrapActive gate in Detail). Any other

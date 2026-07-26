@@ -29,6 +29,28 @@ internal static class Geo
         return Mathf.Sqrt(dx * dx + dz * dz);
     }
 
+    /// <summary>
+    /// How far a cell is above/below the graph's climbable step — the vertical term every spatial readout was
+    /// missing. Null when the height difference is within <see cref="LevelThreshold"/> (a ramp, a kerb, or the
+    /// usual sub-cell wobble of an object's origin): only a genuine floor change is worth a word.
+    ///
+    /// The threshold is deliberately ABOVE the graph's own <c>maxClimb</c> (1.0 m in RT's baked areas, measured
+    /// in ForgeWorld), so anything we call "up"/"down" is ground the party cannot simply walk onto — which is
+    /// exactly when a blind player needs to be told. Multi-level areas (the Kiava Gamma manufactorum) stack
+    /// walkable floors ~2.5-3 m apart, so real floors always clear it.
+    /// </summary>
+    public static string Vertical(Vector3 from, Vector3 to)
+    {
+        float dy = to.y - from.y;
+        if (Mathf.Abs(dy) < LevelThreshold) return null;
+        int metres = Mathf.Max(1, Mathf.RoundToInt(Mathf.Abs(dy)));
+        return Loc.T(dy > 0f ? "geo.up_m" : "geo.down_m", new { count = metres });
+    }
+
+    /// <summary>|Δy| beyond which two points count as being on different levels rather than on a slope. Shared by
+    /// the vertical readout and the reachability classifier so "up 3 metres" and "other level" never disagree.</summary>
+    public const float LevelThreshold = 1.5f;
+
     /// <summary>Map-relative 8-sector compass index (0 = north, 1 = north-east … 7 = north-west) from an
     /// east(+X) / north(+Z) delta. Returns false with <paramref name="sector"/> = 0 when the delta is shorter
     /// than <paramref name="minDist"/> (too close to carry a meaningful bearing); callers pass their own

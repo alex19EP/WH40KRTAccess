@@ -2,7 +2,10 @@ using System.Linq;
 using System.Text;
 using Kingmaker;
 using Kingmaker.Controllers.Clicks.Handlers; // ClickMapObjectHandler.HasAvailableInteractions (the game's own gate)
+using Kingmaker.Blueprints.Area;                 // IAreaEnterPointReference (the game's enter-point mover marker)
 using Kingmaker.Controllers.Optimization;
+using Kingmaker.Designers.EventConditionActionSystem.Actions; // Conditional (nested action branches)
+using Kingmaker.ElementsSystem;                  // ActionList
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.LocalMap.Utils;
 using Kingmaker.EntitySystem.Entities;
 using Kingmaker.UI.Common;                       // UIUtility.GetOvertipSkillCheckText / GetTrapSkillCheckText
@@ -172,9 +175,12 @@ internal static class InteractableDescriber
         //    forced cover resolves as on-screen; ByTarget only when nothing is selected (pre-deploy), to avoid
         //    dereferencing a null selection.
         var turn = Game.Instance?.TurnController;
-        bool deployment = turn != null && turn.IsPreparationTurn && turn.IsDeploymentAllowed;
+        // TurnBasedModeActive FIRST: IsPreparationTurn walks TurnOrder → Data → Player.GetOrCreate<TurnDataPart>(),
+        // which throws on a null Player between area loads (see DeploymentMode.Active).
+        bool tbActive = turn != null && Game.Instance?.Player != null && turn.TurnBasedModeActive;
+        bool deployment = tbActive && turn.IsPreparationTurn && turn.IsDeploymentAllowed;
         bool abilityArmed = Game.Instance?.CursorController?.SelectedAbility != null;   // mesh hides cover while aiming
-        bool coverShown = seen && node.Walkable && turn != null && turn.TurnBasedModeActive
+        bool coverShown = seen && node.Walkable && tbActive
             && (deployment || (turn.IsPlayerTurn && !abilityArmed));
         if (coverShown)
         {
@@ -198,7 +204,7 @@ internal static class InteractableDescriber
         //     game's StarshipPathController). Same additive cue, same word, plus the inertia-specific
         //     "pass-through only" for cells the move fan crosses but cannot stop on. Suppressed while aiming,
         //     like the cover overlay (the aim readout owns the cursor then).
-        if (seen && !abilityArmed && turn != null && turn.TurnBasedModeActive && turn.IsPlayerTurn
+        if (seen && !abilityArmed && tbActive && turn.IsPlayerTurn
             && turn.CurrentUnit is Kingmaker.EntitySystem.Entities.StarshipEntity actingShip)
             Append(sb, RTAccess.Exploration.ShipPathInfo.TileReachabilityWord(actingShip, node));
 
@@ -381,7 +387,10 @@ internal static class InteractableDescriber
         switch (type)
         {
             case LocalMapMarkType.Exit: return Loc.T("marker.exit");
-            case LocalMapMarkType.DestinationMark: return Loc.T("marker.objective");
+            // NOT a quest objective: LocalMapVM creates one DestinationMark per party member as that unit's own
+            // pending move-destination pin (LocalMapDestinationMarkerVM, IsVisible=false, position = the unit's
+            // position). Calling it "objective" invented a quest marker the game does not have.
+            case LocalMapMarkType.DestinationMark: return Loc.T("marker.destination");
             case LocalMapMarkType.VeryImportantThing: return Loc.T("marker.important");
             case LocalMapMarkType.Loot: return Loc.T("marker.loot");
             case LocalMapMarkType.Poi: return Loc.T("marker.poi");
@@ -390,11 +399,143 @@ internal static class InteractableDescriber
         }
     }
 
+    /// <summary>Is this skill check a way between floors rather than a thing to search? Shared with
+    /// <c>ProxyMapObject.NodeSet</c> so the spoken name and the browse category can never disagree about what an
+    /// object is.</summary>
+    public static bool IsLevelChange(InteractionSkillCheckPart check)
+    {
+        var settings = check?.Settings;
+        if (settings == null) return false;
+        // The authored, dev-string-free signal: the check carries an enter point it teleports the party (and its
+        // followers) to — InteractionSkillCheckPart.OnInteract calls Game.Instance.Teleport(...) with it. The game's
+        // own area autoplayer uses exactly this test to recognise a transit interactable
+        // (Kingmaker.QA.Clockwork.AreaTaskSelector: "Settings.TeleportOnSuccess ? 8 : 18").
+        if (settings.TeleportOnSuccess != null || settings.TeleportOnFail != null) return true;
+        // Fallback for the climbs that move the unit by animation rather than a teleport: RT expresses those as
+        // ATHLETICS checks — verified in the Kiava Gamma manufactorum, which contains no InteractionStairsPart and
+        // no pathfinding node link at all, yet whose ladders, holes and drops are all athletics checks.
+        return settings.Skill == Kingmaker.EntitySystem.Stats.Base.StatType.SkillAthletics;
+    }
+
+    /// <summary>Is this level changer a climb (an athletics haul up a ladder / down a hole) rather than a passage
+    /// that simply moves you (a teleporting console, a hatch)? Only splits the spoken NAME — both browse under
+    /// <see cref="RTAccess.Exploration.ScanTaxonomy.LevelChanges"/>.</summary>
+    private static bool IsClimb(InteractionSkillCheckPart check)
+        => check?.Settings != null
+            && check.Settings.Skill == Kingmaker.EntitySystem.Stats.Base.StatType.SkillAthletics;
+
+    /// <summary>Does this lever/button interaction move the party to an area enter point — a lift call button, a
+    /// hatch — rather than merely flipping something? Same authored signal as the skill-check case, read from the
+    /// action list instead of a settings field: the game marks every enter-point mover with
+    /// <c>IAreaEnterPointReference</c> (<c>TeleportParty</c> is the one that appears in an interaction's actions).
+    /// Descends through Conditional branches, since a lift button is usually gated on which floor you are on.</summary>
+    public static bool IsLevelChange(InteractionActionPart action)
+    {
+        try { return MovesParty(action?.Settings?.Actions?.Get()?.Actions, 0); }
+        catch (Exception e) { Main.Log?.Error("IsLevelChange(action) failed: " + e); return false; }
+    }
+
+    private const int ActionScanDepth = 3;
+
+    private static bool MovesParty(ActionList list, int depth)
+    {
+        if (list?.Actions == null || depth > ActionScanDepth) return false;
+        foreach (var a in list.Actions)
+        {
+            if (a == null) continue;
+            if (a is IAreaEnterPointReference) return true;
+            if (a is Conditional c && (MovesParty(c.IfTrue, depth + 1) || MovesParty(c.IfFalse, depth + 1))) return true;
+        }
+        return false;
+    }
+
     /// <summary>The name only (used for terse contexts); mirrors the type mapping in Describe. Public so the
     /// exploration scanner can reuse the same name + interaction resolution for its map-object proxies.</summary>
     public static string ResolveName(EntityViewBase entity, out InteractionPart interaction)
     {
-        interaction = entity.Data != null ? entity.InteractionComponent : null;
+        var name = ResolveNameCore(entity, out interaction);
+        var dev = DevName(entity, name);
+        return string.IsNullOrEmpty(dev) ? name : name + " " + dev;
+    }
+
+    /// <summary>
+    /// The designer-facing identity of an object, appended to its spoken name when the
+    /// <c>exploration.dev_names</c> setting is on (default OFF).
+    ///
+    /// Rogue Trader gives map objects no blueprint display name at all — <c>BlueprintMapObject</c> carries only a
+    /// prefab — so when a designer leaves <c>DisplayName</c> empty there is genuinely no name to read, for anyone.
+    /// What survives is the scene object's own name, and in practice it is highly descriptive: the Kiava Gamma
+    /// manufactorum names them <c>LadderUp</c>, <c>Button9_ToDataVault</c>, <c>ChaosAltar</c>. It is untranslated
+    /// developer English, which is exactly why it is opt-in rather than the default label — but as a toggle it
+    /// tells a player which of twenty identical "search points" is the way up.
+    ///
+    /// The blueprint is included only when it is not the generic shared asset (every skill-check object in that
+    /// area is <c>DefaultMapObject</c>, which distinguishes nothing), and a part that merely repeats
+    /// <paramref name="name"/> is dropped — otherwise an object we already name after its scene object read as
+    /// "BloodTrace_01 [BloodTrace_01]" (101 such lines in one play session).
+    /// </summary>
+    private static string DevName(EntityViewBase entity, string name)
+    {
+        if (entity == null || !DevNamesEnabled) return null;
+        try
+        {
+            var go = Clean(entity.GameObjectName)?.Replace("(Clone)", "").Trim();
+            var bp = (entity.Data as MapObjectEntity)?.Blueprint?.name;
+            if (string.Equals(bp, "DefaultMapObject", StringComparison.OrdinalIgnoreCase)) bp = null;
+            if (Repeats(go, name)) go = null;
+            if (Repeats(bp, name) || Repeats(bp, go)) bp = null;
+            if (string.IsNullOrWhiteSpace(go) && string.IsNullOrWhiteSpace(bp)) return null;
+            if (string.IsNullOrWhiteSpace(bp)) return "[" + go + "]";
+            if (string.IsNullOrWhiteSpace(go)) return "[" + bp + "]";
+            return "[" + go + " / " + bp + "]";
+        }
+        catch (Exception e) { Main.Log?.Error("DevName failed: " + e); return null; }
+    }
+
+    /// <summary>Would speaking <paramref name="part"/> just repeat <paramref name="spoken"/>?</summary>
+    private static bool Repeats(string part, string spoken)
+        => string.IsNullOrWhiteSpace(part)
+            || string.Equals(part.Trim(), spoken?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool DevNamesEnabled
+        => RTAccess.Settings.ModSettings
+            .GetSetting<RTAccess.Settings.BoolSetting>("exploration.dev_names")?.Get() ?? false;
+
+    /// <summary>
+    /// The interaction part an object should be NAMED and described from: its first ENABLED one, falling back to
+    /// the engine's own pick when none is live.
+    ///
+    /// <c>EntityViewBase.InteractionComponent</c> is <c>GetAll&lt;InteractionPart&gt;().FirstOrDefault()</c> — the
+    /// first part regardless of <c>Enabled</c> — while the browse category (<c>ProxyMapObject.NodeSet</c>) and the
+    /// detail line both iterate ALL parts and skip disabled ones. An object carrying a spent skill check ahead of a
+    /// live loot part therefore browsed under "Containers" while being announced as a "Search point": the name and
+    /// the category described different halves of the same object. Preferring the enabled part makes the two agree.
+    /// A door is the deliberate exception the caller already handles (a disabled-but-open door is still a door).
+    /// </summary>
+    private static InteractionPart PrimaryInteraction(EntityViewBase entity)
+    {
+        if (entity?.Data == null) return null;
+        try
+        {
+            if (entity.Data is MapObjectEntity mapObject)
+            {
+                InteractionPart fallback = null;
+                foreach (var part in mapObject.Interactions)
+                {
+                    if (part == null) continue;
+                    if (part.Enabled) return part;
+                    fallback ??= part;
+                }
+                if (fallback != null) return fallback;
+            }
+        }
+        catch (Exception e) { Main.Log?.Error("PrimaryInteraction failed: " + e); }
+        return entity.InteractionComponent;
+    }
+
+    private static string ResolveNameCore(EntityViewBase entity, out InteractionPart interaction)
+    {
+        interaction = PrimaryInteraction(entity);
 
         // Units (NPCs / enemies / crowd): CharacterName covers both BaseUnitEntity and LightweightUnitEntity
         // (both derive AbstractUnitEntity). The v1 BaseUnitEntity-only cast missed lightweight crowd and fell
@@ -414,7 +555,9 @@ internal static class InteractableDescriber
                 return tips?.Ladder?.Text ?? Loc.T("scan.singular.stairs");
             case InteractionActionPart action:
                 var actionName = action.Settings?.DisplayName?.String?.Text;
-                return string.IsNullOrWhiteSpace(actionName) ? Loc.T("scan.singular.action") : actionName;
+                if (!string.IsNullOrWhiteSpace(actionName)) return actionName;
+                // Unnamed: say which of the two it is, matching the browse category (see IsLevelChange).
+                return Loc.T(IsLevelChange(action) ? "scan.singular.passage" : "scan.singular.action");
             // Mirror the overtip (OvertipMapObjectVM): the designer's DisplayName while live, and the
             // DisplayNameAfterUse swap once a check-once interaction is spent — the game's own "already
             // examined" cue. No designer name → the localized category singular (the raw GameObject name
@@ -422,7 +565,23 @@ internal static class InteractableDescriber
             case InteractionSkillCheckPart check:
                 var used = check.AlreadyUsed && check.Settings?.OnlyCheckOnce == true;
                 var checkName = Clean((used ? check.Settings?.DisplayNameAfterUse : check.Settings?.DisplayName)?.String?.Text);
-                return string.IsNullOrWhiteSpace(checkName) ? Loc.T("scan.singular.search_point") : checkName;
+                if (!string.IsNullOrWhiteSpace(checkName)) return checkName;
+                // No designer name. A check that MOVES you — a climb/jump/vault, or one carrying a teleport enter
+                // point — is a way between floors, and calling that "Search point" is what made the Kiava Gamma
+                // manufactorum unnavigable: every ladder, hole and drop there is an unnamed athletics check. The
+                // skill is on the card the sighted player reads ("[Athletics: 40%]"), so naming it after the skill
+                // claims nothing extra.
+                if (IsLevelChange(check))
+                    return Loc.T(IsClimb(check) ? "scan.singular.climb_point" : "scan.singular.passage");
+                return Loc.T("scan.singular.search_point");
+
+            // A bark/examine volume. The game itself leaves these NAMELESS: OvertipMapObjectVM.UpdateObjectData
+            // has no case for InteractionBarkPart, so Name.Value stays string.Empty and a sighted player sees a
+            // bare interaction icon. The old GameObject-name fallback below therefore spoke raw untranslated
+            // dev strings ("CorruptedCogitatorBark", "BloodTrace_01") as if they were content. Name it by what it
+            // is; the scene object's own name stays available behind the dev-names setting.
+            case InteractionBarkPart:
+                return Loc.T("scan.singular.examine_point");
         }
 
         // Trap parts (several subtypes) — match by name so we don't bind every concrete type.
@@ -441,10 +600,11 @@ internal static class InteractableDescriber
             return string.IsNullOrWhiteSpace(title) ? Loc.T("scan.singular.exit") : title;
         }
 
-        // Last resort: the GameObject name (minus the Unity "(Clone)" suffix). Never return empty — an
-        // unnamed interactable should still announce something rather than just "N tiles, <dir>".
-        var fallback = Clean(entity.GameObjectName)?.Replace("(Clone)", "").Trim();
-        return string.IsNullOrWhiteSpace(fallback) ? Loc.T("scan.singular.object") : fallback;
+        // Last resort: the localized generic word. NOT the GameObject name — that is untranslated developer
+        // English ("BloodTrace_01", "BigPipes") and the game shows nothing at all for the parts that land here,
+        // so speaking it both leaked dev strings into the default readout and duplicated the dev-names suffix.
+        // The scene object's own name is still reachable, deliberately, through <c>exploration.dev_names</c>.
+        return Loc.T("scan.singular.object");
     }
 
     /// <summary>The skill-check line the object's overtip card shows on hover — the short description plus the
@@ -465,7 +625,13 @@ internal static class InteractableDescriber
                     var settings = check.Settings;
                     if (settings == null) return null;
                     if (check.AlreadyUsed && settings.OnlyCheckOnce)
-                        return Clean((check.CheckPassed ? settings.ShortDescriptionPassed : settings.ShortDescriptionFailed)?.String?.Text);
+                    {
+                        // Clean() returns "" (not null) for a blank asset, and most spent one-shot examine points
+                        // leave the after-use description empty — returning that emptiness produced a hollow
+                        // segment in the spoken line ("Search point, examine, , 56 tiles"), 57 times in one session.
+                        var after = Clean((check.CheckPassed ? settings.ShortDescriptionPassed : settings.ShortDescriptionFailed)?.String?.Text);
+                        return string.IsNullOrWhiteSpace(after) ? null : after;
+                    }
                     var desc = Clean(settings.ShortDescription?.String?.Text);
                     var units = Game.Instance?.SelectionCharacter?.SelectedUnits?.ToList();
                     var chance = units != null && units.Count > 0
@@ -504,7 +670,11 @@ internal static class InteractableDescriber
 
     /// <summary>Distance + map-relative compass between two world points, e.g. "6 tiles, north-east". Distance is
     /// reported in grid tiles (the game's own unit), not metres, so it matches the combat cell readouts and the tile
-    /// explorer's offsets. Public so the exploration scanner speaks the same compass as the other navigators.</summary>
+    /// explorer's offsets. Public so the exploration scanner speaks the same compass as the other navigators.
+    ///
+    /// A vertical term ("down 6 metres") follows the bearing whenever the two points are on different levels — the
+    /// tiles+compass pair is a plan projection, so without it a catwalk 6 m overhead and the floor beneath it read
+    /// identically. Every navigator that speaks a bearing goes through here, so they all gain it at once.</summary>
     public static string DirectionAndDistance(Vector3 from, Vector3 to)
     {
         float dx = to.x - from.x; // east(+) / west(-)
@@ -515,6 +685,8 @@ internal static class InteractableDescriber
         sb.Append(tiles == 1 ? Loc.T("aim.tile_one") : Loc.T("aim.tiles", new { count = tiles }));
         if (dist > 0.5f && RTAccess.Exploration.Geo.CompassSector(dx, dz, out int sector))
             sb.Append(", ").Append(Loc.T(Compass8[sector]));
+        var vertical = RTAccess.Exploration.Geo.Vertical(from, to);
+        if (!string.IsNullOrEmpty(vertical)) sb.Append(", ").Append(vertical);
         return sb.ToString();
     }
 

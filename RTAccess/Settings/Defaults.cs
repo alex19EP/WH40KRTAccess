@@ -62,6 +62,13 @@ namespace RTAccess.Settings
             // Room-change announcement (Exploration/RoomMap.cs) — speak "Room 12, large hall" as the party (or the
             // planted cursor) crosses into a differently-classified room. ON by default: a discrete event, dwell-gated
             // so a boundary graze doesn't flap. The label rides the pre-staged overlay.cursor.announce_rooms key.
+            // Internal object names (Accessibility/InteractableDescriber.DevName) — append the scene object's own
+            // name, and its blueprint when that is not the generic shared asset, to every interactable's spoken
+            // label: "Search point [LadderUp]". OFF by default: it is untranslated developer English. On, it is the
+            // only way to tell apart the anonymous interactables RT ships when a designer leaves DisplayName empty
+            // (the game shows a sighted player no name for those either).
+            if (explCat.GetByKey("dev_names") == null)
+                explCat.Add(new BoolSetting("dev_names", "Show internal object names", false, "exploration.dev_names"));
             if (explCat.GetByKey("announce_rooms") == null)
                 explCat.Add(new BoolSetting("announce_rooms", "Announce room changes", true, "overlay.cursor.announce_rooms"));
             // Directional wall tones (Exploration/WallTones.cs) — the continuous "shape of the room" bed: four

@@ -1,6 +1,7 @@
 using Kingmaker;                                 // Game
 using Kingmaker.Controllers.Clicks.Handlers;     // ClickUnitHandler (loot a corpse)
 using Kingmaker.EntitySystem.Entities;           // BaseUnitEntity
+using Kingmaker.Pathfinding;                      // GraphParamsMechanicsCache.GridCellSize
 using Kingmaker.UI.Common;                        // UIUtilityUnit.GetSurfaceEnemyDifficulty (enemy threat tier)
 using Kingmaker.UI.Pointer;                       // ClickPointerManager.UnitMarksLocalMap (pending move destination)
 using Kingmaker.UnitLogic;                        // HasMechanicFeature (ext)
@@ -167,10 +168,13 @@ internal sealed class ProxyUnit : ScanItem
                     // both purely visual, so without this a blind player can't tell a moving companion's
                     // destination from a stationary one. Measured from the UNIT (not the scan origin, which
                     // Detail can't see), so it reads "heading to 8 tiles, north" — where THEY are going.
+                    // The pin is NOT cleared when the character arrives, so a whole idle party read "heading to
+                    // 0 tiles" (22 such lines in one session). Suppress once the destination is within a cell —
+                    // at that point the sighted marker is under the character's feet and says nothing either.
                     if (_unit.IsPlayerFaction)
                     {
                         var dest = MoveDestination();
-                        if (dest.HasValue)
+                        if (dest.HasValue && Geo.Distance(_unit.Position, dest.Value) > GraphParamsMechanicsCache.GridCellSize)
                             bits.Add(Loc.T("scan.heading_to", new
                             {
                                 where = InteractableDescriber.DirectionAndDistance(_unit.Position, dest.Value),

@@ -245,6 +245,11 @@ namespace RTAccess.Input
                 Ex.Scanner.CursorToSelection).AddBinding(KeyCode.Home).AddBinding(KeyCode.Slash).Grouped("scanner");
             InputManager.Register("scan.where_am_i", "Scanner: where am I", InputCategory.Exploration,
                 Ex.Scanner.WhereAmINow).AddBinding(KeyCode.X).Grouped("scanner");
+            // Shift+X pairs with X: "where am I" answers the place, this answers the errand. The game has no
+            // world-space quest markers, so the journal's authored destination line is the only "where next"
+            // guidance that exists — this saves opening the journal to read it.
+            InputManager.Register("quest.tracked", "Read the tracked quest objective", InputCategory.Exploration,
+                Ax.QuestEvents.SpeakTracked).AddBinding(KeyCode.X, shift: true).Grouped("scanner");
             InputManager.Register("scan.party", "Scanner: read the party", InputCategory.Exploration,
                 Ex.Scanner.ReadParty).AddBinding(KeyCode.P).Grouped("scanner");
             // O — re-announce the current scanner selection (any group) from the live cursor origin, without

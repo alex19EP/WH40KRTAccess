@@ -141,6 +141,11 @@ internal abstract class ScanItem
     /// <summary>Distance from <paramref name="from"/> to the nearest part of the thing (its edge, not its centre).</summary>
     public float DistanceTo(Vector3 from) => Geo.Distance(from, NearestPoint(from));
 
+    /// <summary>Whether the party can walk to this thing without changing level (see <see cref="Reachability"/>).
+    /// Classified from <see cref="Position"/> — the thing's own footing — not from a bearing-projected edge point,
+    /// which can hang over a neighbouring island. Read live so a lift ride reclassifies everything at once.</summary>
+    public virtual ReachClass Reach => Reachability.Classify(Position);
+
     /// <summary>"&lt;name&gt;[, &lt;detail&gt;], &lt;distance&gt;, &lt;bearing&gt;[, &lt;combat suffix&gt;]" relative to a reference point.</summary>
     public string Describe(Vector3 from)
     {
@@ -149,6 +154,12 @@ internal abstract class ScanItem
         var detail = Detail;
         if (!string.IsNullOrWhiteSpace(detail)) sb.Append(", ").Append(detail);
         sb.Append(", ").Append(InteractableDescriber.DirectionAndDistance(from, NearestPoint(from)));
+
+        // "other level" — the thing is on the graph but on a walkable island the party cannot reach without a
+        // ladder/hole/lift. Without it a chest one floor down reads exactly like one across the room. Only the
+        // genuinely-unwalkable case speaks (see Reachability.Word).
+        var reach = Reachability.Word(Reach);
+        if (!string.IsNullOrEmpty(reach)) sb.Append(", ").Append(reach);
 
         // In combat, append the tactical tail (cover-vs-me / LOS / in-range / threat) — but not while an ability is
         // armed, since the aiming-time HitPredictor line (appended by Scanner) already carries the richer, ability-

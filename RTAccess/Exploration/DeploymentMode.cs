@@ -26,8 +26,23 @@ namespace RTAccess.Exploration;
 /// </summary>
 internal static class DeploymentMode
 {
-    /// <summary>True while the game is in the pre-combat preparation (deployment) turn.</summary>
-    public static bool Active => Game.Instance?.TurnController?.IsPreparationTurn == true;
+    /// <summary>True while the game is in the pre-combat preparation (deployment) turn.
+    ///
+    /// The null-conditional on TurnController is not enough: <c>IsPreparationTurn</c> walks
+    /// <c>TurnOrder → Data → Game.Instance.Player.GetOrCreate&lt;TurnDataPart&gt;()</c>, which throws on a null
+    /// Player between area loads — this ticks every frame, so it threw on entering an area and the whole
+    /// deployment tick stayed dead until the next reload. Gate on the player state, then on combat actually
+    /// running, before asking about the preparation turn.</summary>
+    public static bool Active
+    {
+        get
+        {
+            var game = Game.Instance;
+            if (game?.Player == null) return false;
+            var turn = game.TurnController;
+            return turn != null && turn.TurnBasedModeActive && turn.IsPreparationTurn;
+        }
+    }
 
     /// <summary>True while repositioning is actually allowed — false on an all-surprised ambush, where the prep
     /// window opens but only "start battle" is available.</summary>

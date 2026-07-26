@@ -186,6 +186,12 @@ namespace RTAccess.Screens
 
             b.PushContext(Loc.T("journal.quest"), role: null, positions: false);
             b.AddItem(ControlId.Structural(dk + "title"), Heading(() => q.Title));
+            // The quest's authored location, rendered on the sighted card and previously dropped. RT has no
+            // world-space quest markers at all — no per-entity "this is an objective" flag exists — so this line
+            // and the per-objective Destination below are the ONLY "where do I go" guidance the game offers.
+            if (!string.IsNullOrWhiteSpace(q.Place))
+                b.AddItem(ControlId.Structural(dk + "place"),
+                    GraphNodes.Text(() => Loc.T("journal.place", new { place = q.Place })));
             if (!string.IsNullOrWhiteSpace(q.Description))
                 b.AddItem(ControlId.Structural(dk + "desc"), GraphNodes.Text(() => q.Description));
             if (q.IsCompleted && !string.IsNullOrWhiteSpace(q.CompletionText))
@@ -202,7 +208,8 @@ namespace RTAccess.Screens
                     var ob = o; // capture
                     b.AddItem(ControlId.Structural(dk + "obj:" + oi), GraphNodes.Text(
                         () => (string.IsNullOrWhiteSpace(ob.Description) ? ob.Title : ob.Description)
-                            + " (" + StateWord(ob.IsCompleted, ob.IsFailed) + ")"));
+                            + " (" + StateWord(ob.IsCompleted, ob.IsFailed) + ")"
+                            + Counter(ob) + Destination(ob)));
                     if (ob.Addendums != null)
                     {
                         int ai = 0;
@@ -235,5 +242,26 @@ namespace RTAccess.Screens
 
         private static string StateWord(bool completed, bool failed)
             => Loc.T(completed ? "journal.completed" : failed ? "journal.failed" : "journal.active");
+
+        /// <summary>The objective's authored destination ("Secret chambers, Kiava Gamma, Kranach system") — the
+        /// game's own answer to "where do I go next", shown on the sighted card and previously unread. Empty when
+        /// the designer left it blank, which is common for objectives that resolve where you already are.</summary>
+        internal static string Destination(JournalQuestObjectiveVM objective)
+            => string.IsNullOrWhiteSpace(objective?.Destination)
+                ? string.Empty
+                : ". " + Loc.T("journal.destination", new { place = objective.Destination });
+
+        /// <summary>Progress counter for objectives that track a tally ("2 of 5"), rendered on the sighted card by
+        /// the etude-counter widget. <c>MinEtudeCounter</c> is the TARGET (the VM sets it from the condition's
+        /// <c>MinValue</c>, and clamps Current to it), so it reads as the total.
+        ///
+        /// The <c>MinEtudeCounter &gt; 0</c> guard is load-bearing: the VM sets <c>HasEtudeCounter</c> from merely
+        /// having a condition, but only fills the two numbers when that condition is a <c>FlagInRange</c>. Any
+        /// other condition type leaves both at zero, which would otherwise announce a bogus "0 of 0".</summary>
+        internal static string Counter(JournalQuestObjectiveVM objective)
+            => objective == null || !objective.HasEtudeCounter || objective.MinEtudeCounter <= 0
+                ? string.Empty
+                : ". " + Loc.T("journal.counter",
+                    new { current = objective.CurrentEtudeCounter, total = objective.MinEtudeCounter });
     }
 }

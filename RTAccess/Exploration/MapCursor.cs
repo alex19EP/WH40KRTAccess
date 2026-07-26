@@ -53,6 +53,10 @@ internal static class MapCursor
 
     public static void Clear() => _node = null;
 
-    private static MechanicEntity Anchor()
+    /// <summary>The unit every cursor-relative readout measures from: the selected (in combat, current-turn) unit,
+    /// else the main character; null mid-transition. Internal so <see cref="Reachability"/> can classify against the
+    /// SAME unit the distances in a spoken line are measured from — anchoring the two on different characters made
+    /// a door the selected companion was standing in read "0 tiles, other level".</summary>
+    internal static MechanicEntity Anchor()
         => Game.Instance?.SelectionCharacter?.SelectedUnit?.Value ?? Game.Instance?.Player?.MainCharacterEntity;
 }

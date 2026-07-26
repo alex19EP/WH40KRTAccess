@@ -322,8 +322,12 @@ namespace RTAccess.Screens
                 try { if (overtip.CheckRumours() && !string.IsNullOrWhiteSpace(overtip.RumourObjectiveName.Value)) lines.Add(overtip.RumourObjectiveName.Value); } catch { }
             }
             if (Game.Instance?.ColonizationController?.GetColony(view) != null) lines.Add(Loc.T("systemmap.has_colony"));
-            lines.AddRange(ExploredLinks(view));
-            return string.Join("\n", lines);
+            var links = ExploredLinks(view);
+            if (links != null) lines.Add(links);
+            // Sentences, not newlines. A newline-separated description renders as a LIST in the tooltip body, and
+            // the marker glyphs come back through the tooltip scraper as stray ordinals glued to the ends of our
+            // own lines ("no route from here 1."). One flowing string reads correctly and cannot be re-chunked.
+            return string.Join(". ", lines);
         }
 
         // The explored warp links radiating from THIS system — the exact set of lines a sighted player sees drawn
@@ -333,25 +337,23 @@ namespace RTAccess.Screens
         // here too — no topology the sighted player can't already see ([[rt-visual-parity]]). Closes the mod's
         // narrower-than-sighted gap: the browse label only carries the current→system route, but a sighted player
         // reads the whole explored graph, including links between two non-current systems.
-        private static List<string> ExploredLinks(SectorMapObject view)
+        private static string ExploredLinks(SectorMapObject view)
         {
-            var result = new List<string>();
             var mine = view?.Data;
-            if (mine == null) return result;
+            if (mine == null) return null;
             try
             {
                 var links = new List<string>();
                 foreach (var n in ExploredNeighbors(mine))
                     links.Add(Loc.T("sectormap.link", new { name = n.system.View.Name, difficulty = DifficultyWord(n.passage.CurrentDifficulty) }));
-                if (links.Count > 0)
-                {
-                    links.Sort(StringComparer.CurrentCultureIgnoreCase);
-                    result.Add(Loc.T("sectormap.links_header"));
-                    result.AddRange(links);
-                }
+                if (links.Count == 0) return null;
+                links.Sort(StringComparer.CurrentCultureIgnoreCase);
+                // Header and rows as ONE line: the caller joins its lines with ". ", which would otherwise leave
+                // the trailing colon dangling ("Explored links:. Furibundus").
+                return Loc.T("sectormap.links_header") + " " + string.Join("; ", links);
             }
             catch (Exception e) { Main.Log?.Log("sector links enum failed: " + e.Message); }
-            return result;
+            return null;
         }
 
         // The explored warp links radiating from a system, as (neighbour, passage) pairs — the ONE parity-correct

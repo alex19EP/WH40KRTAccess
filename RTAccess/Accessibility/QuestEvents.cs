@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
 using HarmonyLib;
+using Kingmaker;                                      // QuestObjectiveState
+using Kingmaker.AreaLogic.QuestSystem;                // QuestState
+using Kingmaker.UI.Common;                            // JournalHelper.CurrentQuest (the tracked quest)
 using Kingmaker.Blueprints.Root.Strings;              // UIStrings.QuestNotificationTexts (localized state words)
+using RTAccess.Speech;                                // Speaker (keypress-caused readout -> interrupt)
 using Kingmaker.Code.UI.MVVM.View.QuestNotification; // QuestNotificatorBaseView (the banner)
 using Kingmaker.Code.UI.MVVM.VM.QuestNotification;   // QuestNotificationQuestVM / QuestNotificationEntityVM
 
@@ -21,6 +25,59 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal static class QuestEvents
 {
+    /// <summary>
+    /// Speak the tracked quest and its live objectives, including each objective's authored DESTINATION — the
+    /// "where do I go next" key.
+    ///
+    /// This is the whole of what Rogue Trader offers on that question. The engine has no world-space quest
+    /// markers: no per-entity "this is a current objective" flag exists on map objects, units, interaction parts
+    /// or the overtip VMs, and nothing converts an objective into a world position. What a sighted player gets is
+    /// the journal card, and its destination line is authored prose ("Secret chambers, Kiava Gamma, Kranach
+    /// system"). Reading it aloud on a keypress puts a blind player level with that, without inventing guidance
+    /// the game does not have.
+    ///
+    /// Hidden and clue objectives are skipped — the same gates the sighted card applies.
+    /// </summary>
+    public static void SpeakTracked()
+    {
+        try
+        {
+            var quest = JournalHelper.CurrentQuest;
+            if (quest == null || quest.State != QuestState.Started)
+            {
+                Speaker.Speak(Loc.T("quest.none_tracked"), true);
+                return;
+            }
+
+            var parts = new List<string> { TextUtil.StripRichText(quest.Blueprint.Title?.Text) };
+            var place = quest.Blueprint.Place?.Text;
+            if (!string.IsNullOrWhiteSpace(place))
+                parts.Add(Loc.T("journal.place", new { place = TextUtil.StripRichText(place) }));
+
+            bool anyObjective = false;
+            foreach (var objective in quest.Objectives)
+            {
+                if (objective == null || objective.State != QuestObjectiveState.Started) continue;
+                if (!objective.IsVisible || objective.IsClue) continue;
+                anyObjective = true;
+                var title = TextUtil.StripRichText(objective.Blueprint.Title?.Text);
+                if (!string.IsNullOrWhiteSpace(title)) parts.Add(title);
+                var destination = objective.Blueprint.Destination?.Text;
+                if (!string.IsNullOrWhiteSpace(destination))
+                    parts.Add(Loc.T("journal.destination",
+                        new { place = TextUtil.StripRichText(destination) }));
+            }
+            if (!anyObjective) parts.Add(Loc.T("quest.no_active_objective"));
+
+            Speaker.Speak(string.Join(". ", parts), true);
+        }
+        catch (Exception e)
+        {
+            Main.Log?.Error("QuestEvents.SpeakTracked failed: " + e);
+            Speaker.Speak(Loc.T("quest.none_tracked"), true);
+        }
+    }
+
     // "New Quest: <title>. <description>" / "Quest Completed: <title>" — the state words are the game's own
     // localized banner strings (UIQuestNotificationTexts, including the Quest/Rumour/Order noun); the
     // description is spoken only for a NEW quest, exactly as QuestNotificationQuestView binds it.

@@ -217,6 +217,10 @@ internal static class Sonar
             case ScanTaxonomy.Corpses:       return "loot-corpse";
             case ScanTaxonomy.Doors:         return "door";
             case ScanTaxonomy.Exits:         return "transition";
+            // A way between floors is an exit from this level, so it shares the transition timbre. Without a case
+            // here the ladders and climbs that just moved out of SearchPoints would fall to the default and stop
+            // pinging altogether — silently losing the one thing worth hearing in a stacked area.
+            case ScanTaxonomy.LevelChanges:  return "transition";
             case ScanTaxonomy.SearchPoints:  return "unknown";
             case ScanTaxonomy.Traps:         return "trap";
             case ScanTaxonomy.Mechanisms:    return "mechanism";

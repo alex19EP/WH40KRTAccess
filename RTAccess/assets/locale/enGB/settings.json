@@ -208,6 +208,7 @@
   "proxyann.height": "Height difference",
   "proxyann.coordinates": "Coordinates (debug)",
   "exploration.fog_cue": "Fog boundary cue",
+  "exploration.dev_names": "Show internal object names",
   "category.sonar": "Sonar",
   "category.log": "Log",
   "audio.volumes": "System volumes",
