@@ -13,8 +13,10 @@ namespace RTAccess.Exploration;
 /// these marker pins.)
 ///
 /// Landmarks are not reach-interactables — the game's own map pin isn't clickable (verified: no marker view handles
-/// a click), so the only thing a landmark supports is travelling to it. <see cref="ScanItem.Interact"/> stays the
-/// base no-op; the scanner's I key walks the party toward the marker instead (see <c>Scanner.TravelTo</c>). The
+/// a click), so <see cref="ScanItem.Interact"/> stays the base no-op. The scanner's I key instead resolves the real
+/// interactable the pin SITS ON (<c>Activation.TryCursorObject</c> at the pin's position — a loot pin marks a corpse
+/// or a container) and acts on that; only a pin with nothing actionable under it falls back to walking the party
+/// toward it (see <c>Scanner.TravelTo</c>). The
 /// spoken line is composed by the base <see cref="ScanItem.Describe"/> from <see cref="Name"/> + <see cref="Detail"/>,
 /// which reproduces <see cref="InteractableDescriber.DescribeMarker"/> verbatim
 /// ("&lt;description&gt;, &lt;type&gt;, &lt;distance&gt;, &lt;bearing&gt;").

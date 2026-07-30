@@ -31,13 +31,14 @@ namespace RTAccess.Exploration;
 /// (activatable) world objects in the Exits category, and the marker-only pins (objective / point of interest /
 /// important / loot) live in the "Points of interest" category — both browsed like every other category, with no
 /// dedicated cycle keys. A landmark isn't a reach-interactable (the game's map pin isn't clickable — verified), so
-/// I on one WALKS the party toward it (the only thing a landmark supports).
+/// I on one acts on the real interactable the pin SITS ON (a loot pin marks the corpse or container it points at)
+/// and falls back to WALKING the party toward it only when nothing actionable is under the pin.
 ///
 /// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Comma/Period/N/M = cycle
 /// nearest party/enemy/neutral/object of interest (Shift reverses). Live area effects (hazards + buff zones) have no
 /// dedicated cycle key — they browse as the Hazards / Buff zones categories in the Ctrl+PageUp/Down list, and the
-/// tile explorer names the hazard on the cursor tile. I = interact with selection (an object; a landmark → walk to
-/// it; otherwise the object at the cursor); O = re-announce the current
+/// tile explorer names the hazard on the cursor tile. I = interact with selection (an object; a landmark → the
+/// object under its pin, else walk to it; otherwise the object at the cursor); O = re-announce the current
 /// selection; Home/Slash = plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y
 /// inspect the cursor / the selection (see <see cref="Inspect"/>). V / Shift+V = cycle the current room's ways
 /// out — doors, area transitions, and uncovered geometric openings, merged into one distance-sorted review that
@@ -210,8 +211,17 @@ internal static class Scanner
     {
         var sel = ResolveSelected();
 
-        // A landmark (local-map pin) isn't a reach-interactable — the only thing it supports is walking to it.
-        if (sel is ProxyMarker) { TravelTo(sel); return; }
+        // A landmark (local-map pin) isn't itself clickable, but a loot / objective pin SITS ON the real
+        // interactable it marks — so resolve that object at the pin's position and act on it, exactly as the
+        // tile cursor would. Only a pin with nothing actionable under it falls back to travelling. Without
+        // this the pin dead-ends on arrival and the player has to re-find the same body in the Corpses
+        // category to loot it (reported independently by two testers — docs/feedback/2026-07-discord-triage.md).
+        if (sel is ProxyMarker)
+        {
+            if (Activation.TryCursorObject(sel.Position)) return;
+            TravelTo(sel);
+            return;
+        }
 
         // 1) The review selection itself, when it's an actionable object. NO same-area/navmesh pre-guard: the
         //    game's own Interact (ApproachAndInteract) walks a unit to the object and handles reachability itself,
@@ -248,7 +258,8 @@ internal static class Scanner
     /// own click path — distance-agnostic (you can act on a cycled object across the room); reachability is left to
     /// the game's own approach-and-interact rather than a pre-guard, so a same-area object on a disconnected navmesh
     /// island (a pedestal, an elevated prop) is no longer wrongly refused. A landmark
-    /// → walk the party toward it (the local-map pin isn't clickable; that is all it supports). Returns true when it
+    /// → activate the real interactable the local-map pin marks, falling back to walking the party toward it when
+    /// nothing actionable sits under the pin. Returns true when it
     /// handled the press, false when there is no selection to act on (null / a unit / a non-actionable object) so the
     /// caller falls back to the tile cursor's object.
     /// </summary>
@@ -262,7 +273,14 @@ internal static class Scanner
             Activation.SpeakOutcome(sel.Interact(), sel.Name, sel.Reach);
             return true;
         }
-        if (sel is ProxyMarker) { TravelTo(sel); return true; }
+        // Same landmark rule as Interact: act on whatever real interactable the pin marks, travel only when the
+        // pin has nothing actionable under it.
+        if (sel is ProxyMarker)
+        {
+            if (Activation.TryCursorObject(sel.Position)) return true;
+            TravelTo(sel);
+            return true;
+        }
         return false;
     }
 
