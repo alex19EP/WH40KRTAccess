@@ -408,3 +408,7 @@ FodyWeavers.xsd
 
 # Local secrets for `just publish` (GH_PACKAGES_TOKEN). Never commit; see .env.example.
 /.env
+
+# Exported community feedback (Discord transcripts and the triage written from them).
+# Third parties' usernames and messages — keep it local, never commit personal data.
+/docs/feedback/
