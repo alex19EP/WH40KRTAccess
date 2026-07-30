@@ -42,8 +42,20 @@ namespace RTAccess.Screens
         /// routes the body-less entries-only case to <see cref="DrillMenuScreen"/> instead.</summary>
         internal static void Open(string title, string body, List<(string label, string body)> entries)
         {
-            if (!string.IsNullOrWhiteSpace(body))
-                ScreenManager.Current?.PushChild(new TooltipScreen(title, body, entries));
+            if (string.IsNullOrWhiteSpace(body)) return;
+            // A reader with nothing to read must never take the keyboard. IsNullOrWhiteSpace is not a strong
+            // enough gate: SplitLines trims and drops empty fragments, so a body that is markup-only (or strips
+            // to nothing) passes it and builds a screen with ZERO focusable nodes. That screen is unclosable —
+            // ui.back YieldsWhenUnfocused, so with no focus Escape goes to the game instead of the Back action,
+            // and arrows/Tab have nothing to move between. Fall back to the same "no tooltip" answer the
+            // chooser gives for a control with no tooltip at all.
+            var lines = new List<string>(SplitLines(body));
+            if (lines.Count == 0 && (entries == null || entries.Count == 0))
+            {
+                Tts.Speak(Loc.T("nav.no_tooltip"), interrupt: true);
+                return;
+            }
+            ScreenManager.Current?.PushChild(new TooltipScreen(title, body, entries));
         }
 
         public override string Key => "overlay.tooltip";

@@ -51,6 +51,21 @@ namespace RTAccess.Screens
         protected virtual bool NextEnabled() => true;
         protected virtual bool BackEnabled() => true;
 
+        /// <summary>Escape mirrors the footer's Back button. Without this the wizards advertise NO Back
+        /// handler at all (<see cref="Screen.GetActions"/> defaults to nothing), so <c>ui.back</c> finds
+        /// nothing to invoke and Escape is a DEAD KEY on a focused wizard — the action only yields Escape
+        /// to the game while nothing is focused. Tab cannot rescue it either: the shell sets
+        /// <see cref="Screen.Wrap"/>, so Tab cycles the wizard's own stops forever. That combination is the
+        /// "pressed Enter in chargen and then could not get back with Escape or Tab" trap, reproducible from
+        /// the main menu as New Game → Escape (docs/feedback/2026-07-discord-triage.md, B1). Advertised only
+        /// while Back is enabled, so Escape does exactly what the button does and nothing it doesn't.</summary>
+        public override IEnumerable<ElementAction> GetActions()
+        {
+            if (BackEnabled())
+                yield return new ElementAction(ActionIds.Back, Message.Localized("ui", "wizard.back"),
+                    _ => OnBack());
+        }
+
         /// <summary>Called each update while the wizard is active and the phase is unchanged — for
         /// per-frame behaviour that follows focus/selection (e.g. driving the game's description
         /// panel). Must not disturb the focus path.</summary>
