@@ -57,6 +57,9 @@ internal static class Scanner
     private static readonly (string Key, Source Src, Func<ScanItem, bool> Pred)[] Categories =
     {
         ("taxonomy.units.party",    Source.Registry, it => it.Primary == ScanTaxonomy.UnitsParty),
+        // Friendly units that are NOT mine to command (capital-area companion NPCs, summons, scripted allies).
+        // Their own category so "Party" can mean the party and nothing else; the comma cycle still reaches them.
+        ("taxonomy.units.allies",   Source.Registry, it => it.Primary == ScanTaxonomy.UnitsAllies),
         ("taxonomy.units.enemies",  Source.Registry, it => it.Primary == ScanTaxonomy.UnitsEnemies),
         ("taxonomy.units.neutrals", Source.Registry, it => it.Primary == ScanTaxonomy.UnitsNeutrals),
         ("taxonomy.containers",     Source.Registry, it => it.HasNode(ScanTaxonomy.Containers)),
@@ -492,8 +495,11 @@ internal static class Scanner
     private static void PartyReadout()
     {
         var player = Game.Instance?.Player;
-        var members = player?.PartyAndPets;
-        if (members == null || members.Count == 0) { Speak(Loc.T("scan.no_party")); return; }
+        // The game's OWN controllable group, not Player.PartyAndPets — in a capital-mode hub area the roster
+        // collapses to the main character and the companions become ambient NPCs, and only this list tracks
+        // that (it is what the game's party HUD and ours both bind to). See UnitFaction.
+        var members = UnitFaction.Group();
+        if (player == null || members == null || members.Count == 0) { Speak(Loc.T("scan.no_party")); return; }
 
         var reference = player.MainCharacterEntity;
         var refPos = reference != null ? reference.Position : members[0].Position;
@@ -505,8 +511,8 @@ internal static class Scanner
             // Tag a downed/dead companion so the roster doesn't read them as a healthy member — the Party review cycle
             // (comma) now skips the dead entirely, but this roster still lists everyone, so it must say who is down.
             var line = member.CharacterName;
-            if (member.LifeState.IsDead) line += ", dead";
-            else if (!member.LifeState.IsConscious) line += ", unconscious";
+            if (member.LifeState.IsDead) line += ", " + Loc.T("unit.dead");
+            else if (!member.LifeState.IsConscious) line += ", " + Loc.T("unit.unconscious");
             parts.Add(line + ", " + InteractableDescriber.DirectionAndDistance(refPos, member.Position));
         }
         Speak(Loc.T("scan.party", new { list = string.Join("; ", parts) }));
@@ -530,7 +536,9 @@ internal static class Scanner
             var u = it.TargetUnit;
             if (u == null || u.LifeState.IsDead) continue;
 
-            if (it.Primary == ScanTaxonomy.UnitsParty) { allies++; continue; }
+            // "Allies" in the battlefield summary means everyone fighting on my side — my party AND any
+            // non-commandable friendly (summon, scripted ally), so both friendly nodes count here.
+            if (it.Primary == ScanTaxonomy.UnitsParty || it.Primary == ScanTaxonomy.UnitsAllies) { allies++; continue; }
             if (it.Primary != ScanTaxonomy.UnitsEnemies || !it.CurrentlySeen) continue;
 
             enemies++;
@@ -683,7 +691,11 @@ internal static class Scanner
     {
         switch (group)
         {
-            case Group.Party: return it.Primary == ScanTaxonomy.UnitsParty;
+            // The comma cycle is the coarse "friendly units" ring, like Objects below is the coarse
+            // interactable ring: party members AND non-commandable allies, so no friendly unit becomes
+            // unreachable by a single key. Each one names itself ("party member" / "ally") when selected,
+            // and the Ctrl+PageUp/Down browse splits them into their own two categories.
+            case Group.Party: return it.Primary == ScanTaxonomy.UnitsParty || it.Primary == ScanTaxonomy.UnitsAllies;
             case Group.Enemies: return it.Primary == ScanTaxonomy.UnitsEnemies;
             case Group.Neutrals: return it.Primary == ScanTaxonomy.UnitsNeutrals;
             default:
@@ -858,7 +870,7 @@ internal static class Scanner
     {
         switch (group)
         {
-            case Group.Party: return Loc.T("taxonomy.units.party");
+            case Group.Party: return Loc.T("taxonomy.units.friendly");   // party + non-commandable allies
             case Group.Enemies: return Loc.T("taxonomy.units.enemies");
             case Group.Neutrals: return Loc.T("taxonomy.units.neutrals");
             default: return Loc.T("review.others");

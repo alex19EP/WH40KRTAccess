@@ -112,7 +112,10 @@ internal static class InteractableDescriber
         if (unit != null)
         {
             sb.Append(unit.CharacterName);
-            Append(sb, Loc.T(unit.Faction != null && unit.Faction.IsPlayerEnemy ? "scan.faction.enemy" : "scan.faction.party"));
+            // Same four-way classifier the scanner uses, so the tile cursor and the review cycles call a unit
+            // the same thing — this used to say "ally" for every non-enemy, including plain neutral NPCs and
+            // the capital-area companion NPCs the player cannot command.
+            Append(sb, RTAccess.Exploration.UnitFaction.Word(unit));
             // The tile cursor sits ON the tile, so a corpse must be READ (not hidden) — but tagged so it doesn't read
             // as a live enemy. GetUnit() returns corpses (they stay in the grid's awake set until destroyed), and the
             // scanner cycles now skip the dead, so the tile cursor is the one place a corpse is still announced.

@@ -300,15 +300,11 @@ internal sealed class ProxyUnit : ScanItem
         return null;
     }
 
-    private string FactionNode()
-        => _unit.IsPlayerFaction ? ScanTaxonomy.UnitsParty
-         : _unit.IsPlayerEnemy ? ScanTaxonomy.UnitsEnemies
-         : ScanTaxonomy.UnitsNeutrals;
+    // Party vs ally vs enemy vs neutral — one shared classifier so the scanner, the tile cursor and the HUD
+    // can't disagree. NOT a bare IsPlayerFaction test: see UnitFaction for why (capital-mode hub areas).
+    private string FactionNode() => UnitFaction.Node(_unit);
 
-    private string FactionWord()
-        => Loc.T(_unit.IsPlayerFaction ? "scan.faction.party"
-              : _unit.IsPlayerEnemy ? "scan.faction.enemy"
-              : "scan.faction.neutral");
+    private string FactionWord() => UnitFaction.Word(_unit);
 
     /// <summary>This character's pending move destination, or null when they aren't going anywhere. Read from the
     /// same dictionary the local map's destination pins use (<c>ClickPointerManager.UnitMarksLocalMap</c>), which

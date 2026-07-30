@@ -2,10 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Kingmaker;
 using Kingmaker.EntitySystem.Entities;
-using Kingmaker.UI.Common;
 using Kingmaker.UI.Selection;      // SelectionManagerBase (SelectAll / Hold / Stop)
 using RTAccess.Speech;
-using UnityEngine;
 
 namespace RTAccess.Accessibility;
 
@@ -57,13 +55,9 @@ internal static class PartyHotkeys
         else if (ViewedCharacter.WindowActive) ViewedCharacter.SwitchTo(index);
     }
 
-    /// <summary>The directly-controllable party members, in party order — the selectable set.</summary>
-    private static List<BaseUnitEntity> Controllable()
-    {
-        var party = Game.Instance?.Player?.Party;
-        if (party == null) return null;
-        return party.Where(u => u != null && u.IsDirectlyControllable()).ToList();
-    }
+    /// <summary>The directly-controllable party members, in party order — the selectable set. Sourced from the
+    /// game's own controllable group, NOT <c>Player.Party</c> — see <see cref="RTAccess.Exploration.UnitFaction"/>.</summary>
+    private static List<BaseUnitEntity> Controllable() => RTAccess.Exploration.UnitFaction.Roster();
 
     private static BaseUnitEntity Current()
     {

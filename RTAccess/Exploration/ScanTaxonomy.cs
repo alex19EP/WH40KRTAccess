@@ -8,7 +8,11 @@ namespace RTAccess.Exploration;
 /// </summary>
 internal static class ScanTaxonomy
 {
+    // The units the player actually COMMANDS (the game's own controllable group) — see UnitFaction.
     public const string UnitsParty = "units.party";
+    // Friendly but not mine to command: ambient companion NPCs in a capital/hub area, summons, scripted
+    // temporary allies. Player faction, so they were previously indistinguishable from the party.
+    public const string UnitsAllies = "units.allies";
     public const string UnitsEnemies = "units.enemies";
     public const string UnitsNeutrals = "units.neutrals";
     public const string Containers = "containers";

@@ -210,7 +210,9 @@ internal static class Sonar
         {
             case ScanTaxonomy.UnitsEnemies:  return "units-enemy";
             case ScanTaxonomy.UnitsNeutrals: return "units-neutral";
+            // Party members and non-commandable allies share the friendly timbre (WA ships one ally stem).
             case ScanTaxonomy.UnitsParty:    return "units-ally";
+            case ScanTaxonomy.UnitsAllies:   return "units-ally";
             case ScanTaxonomy.Hazards:       return "hazard-zone";
             case ScanTaxonomy.BuffZones:     return "buff-zone";
             case ScanTaxonomy.Containers:    return "loot-generic";

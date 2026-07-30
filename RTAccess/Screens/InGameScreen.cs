@@ -372,16 +372,9 @@ namespace RTAccess.Screens
         }
 
         /// <summary>The directly-controllable party members, in party order — the roster + selectable set
-        /// (mirrors <see cref="RTAccess.Accessibility.PartyHotkeys"/>).</summary>
-        private static List<BaseUnitEntity> Controllable()
-        {
-            var list = new List<BaseUnitEntity>();
-            var party = Game.Instance?.Player?.Party;
-            if (party == null) return list;
-            foreach (var u in party)
-                if (u != null && u.IsDirectlyControllable()) list.Add(u);
-            return list;
-        }
+        /// (mirrors <see cref="RTAccess.Accessibility.PartyHotkeys"/>). Sourced from the game's own
+        /// controllable group, NOT <c>Player.Party</c> — see <see cref="RTAccess.Exploration.UnitFaction"/>.</summary>
+        private static List<BaseUnitEntity> Controllable() => RTAccess.Exploration.UnitFaction.Roster();
 
         private static string PartyLabel(BaseUnitEntity unit)
         {
