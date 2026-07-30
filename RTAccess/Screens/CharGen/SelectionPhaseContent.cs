@@ -16,7 +16,8 @@ namespace RTAccess.Screens.CharGen
     /// generic <c>CharGenBackgroundBasePhaseVM&lt;T&gt;</c>, whose items share
     /// <see cref="CharGenBackgroundBaseItemVM"/> (a DisplayName + a Feature). We pull the items off the
     /// generic <c>SelectionGroup</c> by reflection (the base type is open-generic, so there's no shared
-    /// non-generic accessor) and render: a radio list of the choices + a live description line of the
+    /// non-generic accessor) and render: a radio list of the choices, then — in its OWN Tab stop, so the
+    /// arrows stay in the list and Tab reaches the panel — a live description line of the
     /// SELECTED one (the committed selection, never a hover-fed reactive). Space on an item opens the
     /// game's own chargen-background tooltip for THAT feature; Space on the description line reads the
     /// phase's info panel (the InfoVM fallback — the old console "details" source, rewired).
@@ -60,6 +61,14 @@ namespace RTAccess.Screens.CharGen
             // the CharGenAnnounce description fallback, rewired from the retired console details key.
             var phase = Phase;
             if (!string.IsNullOrEmpty(SelectedDescription(items)))
+            {
+                // The description is its own Tab STOP, not a tail of the choice list. A stop is an arrow
+                // boundary, so the arrows stay inside the choices and Tab moves to the panel — the
+                // one-stop-per-zone convention, and the case the wizard shell explicitly anticipates
+                // ("content may open further stops of its own — a description panel"). Emitted as part of
+                // the list it was reachable only by arrowing off the end of the choices, where it reads as
+                // one more option.
+                b.BeginStop("desc").PushContext(Loc.T("chargen.details"));
                 b.AddItem(ControlId.Structural(k + "desc"), new NodeVtable
                 {
                     ControlType = ControlTypes.Text,
@@ -71,6 +80,8 @@ namespace RTAccess.Screens.CharGen
                         RTAccess.Accessibility.CharGenAnnounce.GetActivePhaseDescription(),
                         sections: null, links: null),
                 });
+                b.PopContext();
+            }
         }
 
         private static string SelectedDescription(IEnumerable<CharGenBackgroundBaseItemVM> items)
