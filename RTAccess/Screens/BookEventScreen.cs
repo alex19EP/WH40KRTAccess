@@ -4,6 +4,7 @@ using Kingmaker.Code.UI.MVVM.VM.Dialog;          // DialogContextVM
 using Kingmaker.Code.UI.MVVM.VM.Dialog.BookEvent; // BookEventVM
 using Kingmaker.Code.UI.MVVM.VM.Dialog.Epilog;    // EpilogVM (a BookEventVM subclass)
 using Kingmaker.DialogSystem.Blueprints;          // BlueprintBookPage
+using RTAccess.Accessibility;                     // VoiceOver (paragraphs the game narrates itself)
 using RTAccess.UI;
 using RTAccess.UI.Graph;
 
@@ -47,10 +48,12 @@ namespace RTAccess.Screens
             => ControlId.Structural(PageKey(vm, page) + "row:0");
 
         // Read the whole passage once per page, QUEUED (never interrupting — the transcript rule). Re-reading
-        // individual paragraphs is done by arrowing the rows.
+        // individual paragraphs is done by arrowing the rows. Paragraphs the game narrates itself are dropped
+        // from the READING only (BookEventVM queues one voice-over per cue and plays them in sequence, so a
+        // page can be part-voiced) — every paragraph stays a browsable row below.
         protected override void SpeakLine(BookEventVM vm, BlueprintBookPage page)
         {
-            var lines = PassageLines(vm);
+            var lines = PassageLines(vm, skipVoiced: true);
             if (lines.Count > 0) Tts.Speak(string.Join("\n", lines.ToArray()), interrupt: false);
         }
 
@@ -94,14 +97,17 @@ namespace RTAccess.Screens
             => "book:" + vm.GetHashCode() + ":page:" + page.GetHashCode() + ":";
 
         // The page as transcript lines: the epilogue title first (if any), then one line per cue paragraph
-        // (RawText = BlueprintCue.DisplayText, split on newlines, rich-text stripped).
-        private static List<string> PassageLines(BookEventVM vm)
+        // (RawText = BlueprintCue.DisplayText, split on newlines, rich-text stripped). With skipVoiced the
+        // paragraphs the game reads aloud itself are left out — for the spoken pass only, never for Build.
+        // The title is never voiced, so it always reads.
+        private static List<string> PassageLines(BookEventVM vm, bool skipVoiced = false)
         {
             var lines = new List<string>();
             if (vm is EpilogVM ep && !string.IsNullOrWhiteSpace(ep.Title.Value))
                 lines.Add(TextUtil.StripRichText(ep.Title.Value));
             foreach (var cue in vm.Cues)
             {
+                if (skipVoiced && VoiceOver.Covers(cue?.BlueprintCue?.Text)) continue;
                 var t = cue != null ? cue.RawText : null;
                 if (string.IsNullOrWhiteSpace(t)) continue;
                 foreach (var part in t.Split('\n'))

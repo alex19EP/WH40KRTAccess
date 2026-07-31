@@ -11,6 +11,18 @@ namespace RTAccess.Settings
     {
         public static void Register()
         {
+            // speech.voiced_lines — let the game's own voice-over stand in for the mod's reading on the lines it
+            // actually recorded (dialogue cues, book-event paragraphs, companion banter, cutscene subtitles).
+            // ON by default: reading a voiced line in TTS plays every voiced conversation twice at once, which
+            // testers reported as the loudest source of noise in the mod. It suppresses SPEECH ONLY — every line
+            // keeps its full text in the graph and reads when you arrow onto it — and the never-recorded parts
+            // (the skill-check result) stay spoken. Self-disables where the voice is no substitute for the text:
+            // a non-English text locale (the voice-over ships in English only) or a muted voice slider.
+            // See RTAccess/Accessibility/VoiceOver.cs.
+            var speechCat = ModSettingsRegistry.EnsureCategory("speech", "Speech", "category.speech");
+            if (speechCat.GetByKey("voiced_lines") == null)
+                speechCat.Add(new BoolSetting("voiced_lines", "Let voice-over replace speech", true, "speech.voiced_lines"));
+
             // exploration.camera_follow (Off/On, default On) gates the tile-cursor follow-cam (TileExplorer.ScrollTo).
             var explCat = ModSettingsRegistry.EnsureCategory("exploration", "Exploration");
             if (explCat.GetByKey("camera_follow") == null)

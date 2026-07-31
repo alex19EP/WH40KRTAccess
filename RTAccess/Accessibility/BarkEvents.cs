@@ -61,6 +61,12 @@ internal sealed class BarkEvents : IBarkHandler, ISubtitleBarkHandler
         try
         {
             if (string.IsNullOrWhiteSpace(text)) return;
+            // Left to its actor when the game is already speaking it (see VoiceOver). Barks are the game's
+            // LARGEST block of recorded lines — companion banter alone is ~2,000 of the ~5,000 voiced strings
+            // it ships, and subtitle barks exist precisely because a take is playing — so reading them in TTS
+            // meant talking over the voice for most of the walking chatter in the game. The text is still in
+            // the game's own log, so the log review screen (L) keeps it browsable.
+            if (VoiceOver.CoveredThisFrame) return;
             var clean = TextUtil.StripRichTextSpaced(text);
             if (string.IsNullOrEmpty(clean)) return;
 

@@ -104,8 +104,22 @@ namespace RTAccess.Screens
         // reads as one voice speaking, so re-announcing "Abelard. Abelard. Abelard." on every line is noise the
         // sighted player never gets (their cue view shows the name, but they're not re-reading it aloud). We
         // compare the delivered cue's speaker against the last one we named and drop it when unchanged.
+        //
+        // A VOICED cue is left to its actor (see <see cref="VoiceOver"/>): reading it in TTS on top of the take
+        // played every conversation twice at once. Only the MECHANIC overlay is still spoken — the skill-check
+        // result, which nobody recorded and which the sighted player reads beside the portrait while the take
+        // runs. The cue row keeps the full line as its label either way, so arrowing back onto it re-reads the
+        // text. _lastSpeaker is deliberately NOT advanced here: the next line we actually speak then names its
+        // speaker, which is the first line where TTS is the player's only source.
         protected override void SpeakLine(DialogVM vm, CueVM cue)
         {
+            if (VoiceOver.Covers(cue?.BlueprintCue?.Text))
+            {
+                var mechanic = DialogText.BuildMechanicLine(cue);
+                if (!string.IsNullOrEmpty(mechanic)) Tts.Speak(mechanic, interrupt: false);
+                return;
+            }
+
             var speaker = DialogText.CurrentSpeaker() ?? string.Empty;
             bool changed = !string.Equals(speaker, _lastSpeaker, StringComparison.Ordinal);
             var line = DialogText.BuildCueLine(cue, includeSpeaker: changed);

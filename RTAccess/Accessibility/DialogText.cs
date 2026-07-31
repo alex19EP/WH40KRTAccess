@@ -48,6 +48,15 @@ internal static class DialogText
     public static string CurrentSpeaker() => Game.Instance?.DialogController?.CurrentSpeakerName;
 
     /// <summary>
+    /// The cue's MECHANIC overlay on its own — everything <see cref="BuildCueLine"/> speaks that the actors
+    /// never recorded, which today is the skill-check result. Spoken alone when the game's own voice-over is
+    /// reading the narrative (see <see cref="VoiceOver"/>): a sighted player takes the result off the screen
+    /// while the take plays, so the blind player must hear it even though the line itself is left to the actor.
+    /// Null when the cue rolled no check.
+    /// </summary>
+    public static string BuildMechanicLine(CueVM cue) => BuildSkillCheckPrefix(cue);
+
+    /// <summary>
     /// The rich-text-stripped skill-check result the game prepends to a cue after a roll (e.g. "Failed a
     /// Persuasion check"), or null when the cue rolled no check. Honors the game's own
     /// <c>ShowSkillcheckResult</c> toggle internally (returns "" when off — matching the answer side, which

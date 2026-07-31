@@ -158,6 +158,7 @@
   "source.enemy": "Enemy",
   "source.neutral": "Neutral",
   "source.unitless": "Other (no unit)",
+  "speech.voiced_lines": "Let voice-over replace speech",
   "speech.handler": "Speech handler",
   "speech.auto": "Auto",
   "speech.prism": "Prism",
