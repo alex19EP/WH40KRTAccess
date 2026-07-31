@@ -59,10 +59,13 @@ namespace RTAccess.UI
         /// <paramref name="onActivate"/> — e.g. replaying a voice sample when already chosen);
         /// selecting re-announces "selected" synchronously; Space opens the drill-in
         /// <paramref name="tooltip"/> (resolved live). Pass <paramref name="type"/>
-        /// <see cref="ControlTypes.Tab"/> for tab-shaped groups (appearance pages).</summary>
+        /// <see cref="ControlTypes.Tab"/> for tab-shaped groups (appearance pages). Pass
+        /// <paramref name="announceOnActivate"/> false where the activation's OWN effect is the answer
+        /// (a voice sample): the spoken "selected" would talk over it, and the live Selected part still
+        /// carries a real state change.</summary>
         public static NodeVtable SelectionItem(SelectionGroupEntityVM vm, Func<string> label,
             Func<TooltipBaseTemplate> tooltip = null, Func<bool> available = null,
-            Action onActivate = null, ControlType type = null)
+            Action onActivate = null, ControlType type = null, bool announceOnActivate = true)
         {
             Func<bool> isAvailable = available ?? (() => vm != null && vm.IsAvailable.Value);
             Func<bool> selected = () => vm != null && vm.IsSelected.Value;
@@ -79,7 +82,8 @@ namespace RTAccess.UI
                 SearchText = label,
                 // Selecting flips the item in place — re-announce the new state synchronously (the
                 // ReannounceOnActivate convention). Async commits settle via the live Selected part.
-                StateText = avail ? (Func<string>)(() => selected() ? Loc.T("state.selected") : null) : null,
+                StateText = avail && announceOnActivate
+                    ? (Func<string>)(() => selected() ? Loc.T("state.selected") : null) : null,
                 OnActivate = !avail ? (Action)null
                     : onActivate ?? (Action)(() => vm?.SetSelectedFromView(true)),
                 OnTooltip = tooltip == null ? (Action)null
@@ -129,15 +133,7 @@ namespace RTAccess.UI
         /// a second voice here would double-speak. Space opens the stat's own tooltip template.</summary>
         public static NodeVtable StatRow(CharGenAttributesItemVM vm)
         {
-            Func<string> value = () =>
-            {
-                if (vm == null) return "";
-                var s = vm.StatValue.Value.ToString();
-                int ranks = vm.StatRanks.Value;
-                if (ranks > 0) s += ", " + Loc.T("chargen.stat_ranks", new { ranks });
-                if (vm.IsRecommended.Value) s += ", " + Loc.T("chargen.recommended");
-                return s;
-            };
+            Func<string> value = () => StatValueText(vm);
             return new NodeVtable
             {
                 ControlType = ControlTypes.Slider,
@@ -154,6 +150,23 @@ namespace RTAccess.UI
                 },
                 OnTooltip = () => TooltipChooser.OpenTemplate(vm?.DisplayName, vm?.Tooltip?.Value),
             };
+        }
+
+        /// <summary>The spoken VALUE of one attribute row: the number, then the RANK it now stands at
+        /// (each attribute takes two), then whether the background recommends it. Shared with the
+        /// per-adjust readout (<see cref="RTAccess.Accessibility.CharGenAnnounce.OnStatAdvanced"/>) so
+        /// spending a point speaks the same thing arrowing onto the row does — the rank is the unit the
+        /// points are actually bought in, and it was missing from the adjust readout.
+        /// <paramref name="includeRecommended"/> is dropped there: it never changes as you spend, so
+        /// repeating it on every keypress is noise.</summary>
+        public static string StatValueText(CharGenAttributesItemVM vm, bool includeRecommended = true)
+        {
+            if (vm == null) return "";
+            var s = vm.StatValue.Value.ToString();
+            int ranks = vm.StatRanks.Value;
+            if (ranks > 0) s += ", " + Loc.T("chargen.stat_ranks", new { ranks });
+            if (includeRecommended && vm.IsRecommended.Value) s += ", " + Loc.T("chargen.recommended");
+            return s;
         }
 
         // ---- sequential (cycle) selectors ----
@@ -209,6 +222,26 @@ namespace RTAccess.UI
         }
 
         // ---- game-localized chargen vocabulary ----
+
+        /// <summary>
+        /// The gender the GENDER CYCLER currently stands on, as the game's localized word — read from the
+        /// selector's own <c>CurrentIndex</c>, which moves synchronously inside OnLeft/OnRight.
+        ///
+        /// Not from the doll: <c>CharGenContext.RequestSetGender</c> posts to
+        /// <c>Game.Instance.GameCommandQueue</c>, so <c>DollState.Gender</c> only settles a frame or more
+        /// later. Reading the doll made the step's synchronous feedback speak the value you just left and
+        /// the live watch then speak the one you arrived at — "female, male" on a single press.
+        /// The index IS the selection (the doll is the render of it): the game builds the list by walking
+        /// <see cref="Gender"/> in order and hands the same ordinal back as the command's index.
+        /// Falls back to the doll if the index is not readable yet.
+        /// </summary>
+        public static string SelectedGenderName(object selectorVm, Func<Gender> dollGender)
+        {
+            if (RpValue(Prop(selectorVm, "CurrentIndex")) is int i && i >= 0
+                && Enum.IsDefined(typeof(Gender), i))
+                return GenderName((Gender)i);
+            return dollGender != null ? GenderName(dollGender()) : "";
+        }
 
         /// <summary>The doll's gender as the game's own localized word
         /// (<c>UIStrings.CharacterSheet.Male/Female</c>) — the gender cycler shows only body

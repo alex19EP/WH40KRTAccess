@@ -26,7 +26,7 @@ namespace RTAccess.Accessibility;
 ///    value changes in place WITHOUT re-firing focus, so it was spoken nowhere; we re-speak the new value and
 ///    the remaining points (postfix on <c>CharGenAttributesPhaseVM.HandleTryAdvanceStat</c>, which runs once
 ///    per adjust after the VM's own state update).
-/// 3. <b>Phase description source</b> — <see cref="GetActivePhaseDescription"/> exposes the active phase's
+/// 3. <b>Phase description source</b> — <see cref="GetActivePhaseTooltip"/> exposes the active phase's
 ///    InfoVM tooltip (the description of options like Homeworld/Occupation whose selector items carry no
 ///    tooltip of their own). Consumed by the graph-native phase contents (Selection/Career) as the Space
 ///    fallback on the selected-description line.
@@ -72,9 +72,13 @@ internal static class CharGenAnnounce
             if (item == null) return;
             var name = string.IsNullOrWhiteSpace(item.DisplayName) ? statType.ToString() : item.DisplayName;
             int points = vm.AvailablePointsLeft.Value;
+            // The value goes through the ROW's own composition, so spending a point reads the same as
+            // arrowing onto the row — including the RANK, which is the unit points are bought in and which
+            // this readout used to drop (you heard the number move but never which of the two ranks you
+            // had reached). "Recommended" is left out: it never changes as you spend.
+            var value = RTAccess.UI.CharGenNodes.StatValueText(item, includeRecommended: false);
             // Button-driven: each advance/retreat cuts the previous readout so holding the key stays responsive.
-            Speaker.Speak(Loc.T("chargen.stat_readout",
-                new { name, value = item.StatValue.Value, points }), interrupt: true);
+            Speaker.Speak(Loc.T("chargen.stat_readout", new { name, value, points }), interrupt: true);
         }
         catch (Exception e)
         {
@@ -82,14 +86,17 @@ internal static class CharGenAnnounce
         }
     }
 
-    /// <summary>P2: the description of the currently selected option, pulled from the active phase's info panel
-    /// (which the keyboard can't otherwise reach — it lives behind the gamepad-only "Information" button).</summary>
-    public static string GetActivePhaseDescription()
+    /// <summary>P2: the active phase's info panel — the description of the currently selected option, which
+    /// the keyboard can't otherwise reach (it lives behind the gamepad-only "Information" button). Handed
+    /// over as the TEMPLATE, not as flattened text: the panel's rows hang the granted talents' own tooltips
+    /// off themselves (see <see cref="NestedTooltips"/>), and those are lost the moment it becomes a string.
+    /// Whichever of the two info VMs actually renders something wins, as it always has.</summary>
+    public static TooltipBaseTemplate GetActivePhaseTooltip()
     {
         var phase = _phase;
         if (phase == null) return null;
-        var s = ReadTip(phase.InfoVM?.CurrentTooltip);
-        return !string.IsNullOrWhiteSpace(s) ? s : ReadTip(phase.SecondaryInfoVM?.CurrentTooltip);
+        var primary = phase.InfoVM?.CurrentTooltip;
+        return !string.IsNullOrWhiteSpace(ReadTip(primary)) ? primary : phase.SecondaryInfoVM?.CurrentTooltip;
     }
 
     private static string ReadTip(TooltipBaseTemplate t) => t != null ? TooltipReader.GetFull(t) : null;

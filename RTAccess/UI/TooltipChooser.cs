@@ -51,12 +51,18 @@ namespace RTAccess.UI
         /// <summary>The factory (template) path: render <paramref name="tpl"/> for the body AND mine the
         /// same render (markup-intact) for inline glossary links, then open the chooser — so a factory
         /// tooltip with link terms drills exactly like the adapter path. A null template / empty render
-        /// stays the "No tooltip" case.</summary>
+        /// stays the "No tooltip" case.
+        ///
+        /// The template's own rows can drill further too — a homeworld lists its granted talents as
+        /// hover-for-detail icons, which flatten to bare names in text — so <see cref="NestedTooltips"/>
+        /// harvests those as sections. They land after the body as References entries, exactly where the
+        /// glossary terms do.</summary>
         internal static void OpenTemplate(string title, TooltipBaseTemplate tpl)
         {
             var body = tpl != null ? TooltipReader.GetFull(tpl) : null;
             var links = GlossaryLinks.Gather(tpl);
-            Open(title, body, sections: null, links: links);
+            var sections = NestedTooltips.Gather(tpl);
+            Open(title, body, sections: sections, links: links);
         }
     }
 }

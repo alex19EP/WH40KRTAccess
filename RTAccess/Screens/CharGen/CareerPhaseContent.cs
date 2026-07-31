@@ -67,9 +67,10 @@ namespace RTAccess.Screens.CharGen
                     {
                         GraphNodes.LabelPart(() => SelectedDescription(Archetypes())),
                     },
-                    OnTooltip = () => TooltipChooser.Open(phase?.PhaseName?.Value,
-                        RTAccess.Accessibility.CharGenAnnounce.GetActivePhaseDescription(),
-                        sections: null, links: null),
+                    // Template path, like the background phases: the panel's rows carry the archetype's
+                    // own talents' tooltips, which a flattened string throws away.
+                    OnTooltip = () => TooltipChooser.OpenTemplate(phase?.PhaseName?.Value,
+                        RTAccess.Accessibility.CharGenAnnounce.GetActivePhaseTooltip()),
                 });
         }
 

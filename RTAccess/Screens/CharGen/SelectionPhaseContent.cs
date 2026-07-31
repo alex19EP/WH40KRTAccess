@@ -76,9 +76,11 @@ namespace RTAccess.Screens.CharGen
                     {
                         GraphNodes.LabelPart(() => SelectedDescription(Items(phase))),
                     },
-                    OnTooltip = () => TooltipChooser.Open(phase?.PhaseName?.Value,
-                        RTAccess.Accessibility.CharGenAnnounce.GetActivePhaseDescription(),
-                        sections: null, links: null),
+                    // Through the TEMPLATE path, not the flattened string: the info panel lists the
+                    // background's granted talents as hover-for-detail rows, so going via OpenTemplate is
+                    // what makes "what does Luck do" answerable from here as well as from the choice itself.
+                    OnTooltip = () => TooltipChooser.OpenTemplate(phase?.PhaseName?.Value,
+                        RTAccess.Accessibility.CharGenAnnounce.GetActivePhaseTooltip()),
                 });
                 b.PopContext();
             }

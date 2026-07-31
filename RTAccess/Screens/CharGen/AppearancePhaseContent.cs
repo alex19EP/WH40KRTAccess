@@ -66,13 +66,19 @@ namespace RTAccess.Screens.CharGen
                         b.AddItem(ControlId.Referenced(item, pk + "voice:" + vi++),
                             CharGenNodes.SelectionItem(item, () => item.DisplayName,
                                 // Selecting plays the sample via the game's change-voice command; Enter on
-                                // the already-chosen voice replays it (the sample IS the information here).
+                                // the already-chosen voice replays it (the sample IS the information here) —
+                                // the game's own CharGenVoiceItemView.OnClick, branch for branch.
                                 // The default click stays — the game plays the sample on top of it.
                                 onActivate: () =>
                                 {
                                     if (item.IsSelected.Value) item.Barks?.PlayPreview();
                                     else item.SetSelectedFromView(true);
-                                }));
+                                },
+                                // No spoken "selected" on activation: on the already-chosen voice it was the
+                                // ONLY response — the replayed sample arrived under it — so the key read as
+                                // a no-op. The sample answers the press; a real change still announces
+                                // through the live Selected part.
+                                announceOnActivate: false));
                     }
                     b.PopContext();
                 }
@@ -82,7 +88,8 @@ namespace RTAccess.Screens.CharGen
                     if (!CharGenNodes.SequentialAvailable(comp)) { ci++; continue; }
                     bool isGender = comp.Type == CharGenAppearancePageComponent.Gender;
                     System.Func<string> valueText = isGender
-                        ? (System.Func<string>)(() => vm.DollState == null ? "" : CharGenNodes.GenderName(vm.DollState.Gender))
+                        ? (System.Func<string>)(() => CharGenNodes.SelectedGenderName(comp,
+                            () => vm.DollState != null ? vm.DollState.Gender : default))
                         : null;
                     b.AddItem(ControlId.Referenced(comp, pk + "comp:" + ci),
                         CharGenNodes.SequentialSelector(comp, valueText, () => CharGenNodes.ComponentTitle(comp.Type)));
