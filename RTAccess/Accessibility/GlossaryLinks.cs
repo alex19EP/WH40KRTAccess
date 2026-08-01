@@ -1,82 +1,125 @@
-using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates; // TooltipTemplateGlossary
 using Kingmaker.Code.UI.MVVM.VM.Tooltip.Utils;     // TooltipHelper
+using Kingmaker.UI.Common;                          // UIUtility.GetKeysFromLink
 using Owlcat.Runtime.UI.Tooltips;                   // TooltipBaseTemplate
 
 namespace RTAccess.Accessibility
 {
     /// <summary>
-    /// Extracts the inline glossary/encyclopedia <c>&lt;link&gt;</c> terms embedded in a game string
-    /// and resolves each to its definition, so the tooltip key (Space) can offer them as drill-in entries —
-    /// the blind-player equivalent of hovering a highlighted term in the sighted UI.
+    /// Extracts the inline <c>&lt;link&gt;</c> terms embedded in a game string and resolves each to the page
+    /// it points at, so the tooltip key (Space) can offer them as drill-in entries — the blind-player
+    /// equivalent of hovering a highlighted term, or right-clicking it for a full page, in the sighted UI.
     ///
     /// The source is raw, markup-intact game text — a node's own string (a log line, a dialogue cue), or,
     /// for a factory tooltip that carries only a template, the template's own markup-intact view render
-    /// (see the <see cref="TooltipBaseTemplate"/> overload). Dialogue cue/answer text
-    /// arrives here already <c>&lt;link&gt;</c>-expanded because <c>LocalizedString</c> runs the text-tool
-    /// engine on read (glossary text-tools → real TMP link tags). Resolution reuses the game's own
-    /// <c>TooltipHelper.GetLinkTooltipTemplate</c>, kept ONLY when it yields a <see cref="TooltipTemplateGlossary"/>
-    /// (a real definition) so skill-check / condition / exchange links — surfaced via the control's own tooltip —
-    /// don't leak in. Bodies render via <see cref="TooltipReader"/>.
+    /// (see the <see cref="TooltipBaseTemplate"/> overload). Dialogue cue/answer text arrives here already
+    /// <c>&lt;link&gt;</c>-expanded because <c>LocalizedString</c> runs the text-tool engine on read
+    /// (glossary text-tools → real TMP link tags).
+    ///
+    /// Resolution is the game's OWN dispatcher, <c>TooltipHelper.GetLinkTooltipTemplate</c>, and we keep
+    /// WHATEVER IT RETURNS. That dispatcher picks the right template per link type — ability, activatable
+    /// ability, feature, buff, item, item/cargo blueprint, unit inspect, stat, soul-mark shift, colony
+    /// resource, dialogue exchange/conditions, UI property — and only falls back to a bare glossary entry
+    /// for true UI/encyclopedia links. This used to filter to <c>TooltipTemplateGlossary</c> alone, which
+    /// meant every one of those richer kinds was silently dropped: a homeworld whose write-up links the
+    /// talents it grants offered no way to read what those talents DO, because a talent link is a
+    /// <c>TooltipTemplateFeature</c>, not a glossary entry. The one thing still dropped is a link that
+    /// resolves to nothing at all (see <see cref="HasContent"/>).
+    ///
+    /// Links whose template needs context the raw string cannot supply — a dialogue skill-check result or
+    /// DC, which the game resolves from the cue's / answer's own roll lists — resolve through the caller's
+    /// <c>resolve</c> hook instead, exactly as the game's views pass those lists to <c>SetLinkTooltip</c>.
     /// </summary>
     internal static class GlossaryLinks
     {
-        // <link="KEY">label</link> — KEY is the raw link id, label may itself carry nested color/bold markup.
+        // TMP link tag: <link="KEY">label</link> or the unquoted <link=KEY>label</link> the text-tool engine
+        // also emits. KEY is the raw link id, label may itself carry nested colour/bold markup.
         private static readonly Regex LinkTag =
-            new Regex("<link=\"([^\"]+)\"[^>]*>(.*?)</link>", RegexOptions.Compiled | RegexOptions.Singleline);
+            new Regex("<link=\"?(?<id>[^\">]+)\"?[^>]*>(?<txt>.*?)</link>",
+                RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
-        internal readonly struct Entry
-        {
-            public readonly string Label;
-            public readonly string Body;
-            public Entry(string label, string body) { Label = label; Body = body; }
-        }
-
-        /// <summary>The resolvable glossary terms in a tooltip TEMPLATE's rendered text — the source for
-        /// factory tooltips, which carry a template but no backing text of their own. The raw text is
-        /// the game's own view render scraped MARKUP-INTACT (<see cref="TooltipViewScraper.ReadRaw"/> —
-        /// the clean read strips the very tags we match).</summary>
-        public static List<Entry> Gather(TooltipBaseTemplate tpl)
+        /// <summary>The followable terms in a tooltip TEMPLATE's rendered text — the source for factory
+        /// tooltips, which carry a template but no backing text of their own. The raw text is the game's own
+        /// view render scraped MARKUP-INTACT (<see cref="TooltipViewScraper.ReadRaw"/> — the clean read
+        /// strips the very tags we match).</summary>
+        public static List<TooltipRef> Gather(TooltipBaseTemplate tpl)
             => Gather(tpl == null ? null : TooltipViewScraper.ReadRaw(tpl, TooltipTemplateType.Info));
 
-        /// <summary>The resolvable glossary terms in a RAW (markup-intact) game string as (label,
-        /// definition) pairs, in first-appearance order, deduped by link id — the source for a node
-        /// that carries its game text directly (a log line, a dialogue cue).</summary>
-        public static List<Entry> Gather(string raw)
+        /// <summary>The followable terms in a RAW (markup-intact) game string, in first-appearance order,
+        /// deduped by link id — the source for a node that carries its game text directly (a log line, a
+        /// dialogue cue). <paramref name="resolve"/> (optional) gets first refusal on each link, receiving
+        /// the raw id and the game's own key split; return null to fall through to the standard
+        /// dispatcher.</summary>
+        public static List<TooltipRef> Gather(string raw, Func<string, string[], TooltipBaseTemplate> resolve = null)
         {
-            var outList = new List<Entry>();
-            if (string.IsNullOrEmpty(raw) || raw.IndexOf("<link=", System.StringComparison.Ordinal) < 0)
+            var outList = new List<TooltipRef>();
+            if (string.IsNullOrEmpty(raw) || raw.IndexOf("<link", StringComparison.OrdinalIgnoreCase) < 0)
                 return outList;
 
             HashSet<string> seen = null;
             foreach (Match m in LinkTag.Matches(raw))
             {
-                var id = m.Groups[1].Value;
+                var id = m.Groups["id"].Value;
                 if (string.IsNullOrEmpty(id)) continue;
-                seen ??= new HashSet<string>();
+                seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (!seen.Add(id)) continue; // a term repeated in the line drills once
 
-                var tpl = ResolveGlossary(id);
-                if (tpl == null) continue; // not a definitional link (skill-check / condition / etc.)
-                var body = TooltipReader.GetFull(tpl);
-                if (string.IsNullOrWhiteSpace(body)) continue;
+                // Probe once to decide whether the link is worth offering, then discard the probe: the
+                // entry re-resolves on follow so the page reads live state, never this instant's snapshot.
+                Func<TooltipBaseTemplate> open = null;
+                TooltipBaseTemplate probe = null;
+                if (resolve != null)
+                {
+                    var keys = Keys(id);
+                    probe = Safe(() => resolve(id, keys));
+                    if (probe != null) open = () => Safe(() => resolve(id, keys));
+                }
+                if (open == null)
+                {
+                    probe = Resolve(id);
+                    if (!HasContent(probe)) continue;
+                    open = () => Resolve(id);
+                }
 
-                var label = CleanLabel(m.Groups[2].Value);
-                outList.Add(new Entry(string.IsNullOrEmpty(label) ? id : label, body));
+                // Label = the anchor's own words. Some anchors are an ICON, not a word — a dialogue answer's
+                // conditions and exchange links wrap a bare <sprite>, which strips to nothing — so fall back
+                // to the target page's own title (the game's header string for that template) before the last
+                // resort of speaking the raw link id, which reads as machine noise.
+                var label = CleanLabel(m.Groups["txt"].Value)
+                            ?? CleanLabel(Safe(() => TooltipReader.GetTitle(probe)))
+                            ?? id;
+                outList.Add(new TooltipRef(label, open));
             }
             return outList;
         }
 
-        // The game's standard glossary/encyclopedia resolution — kept only when it is a glossary definition.
-        private static TooltipBaseTemplate ResolveGlossary(string id)
+        // The game's standard link → template dispatch, whatever kind it yields.
+        private static TooltipBaseTemplate Resolve(string id) => Safe(() => TooltipHelper.GetLinkTooltipTemplate(id));
+
+        /// <summary>A link is followable when it resolves to real content. Any non-glossary template
+        /// (feature, ability, item, stat, unit, …) is content by construction. A glossary template counts
+        /// only when it actually found an entry — the dispatcher returns an EMPTY glossary as its fallback
+        /// for an unknown link type and for a skill-check link with no roll list, and offering those would
+        /// put dead "no tooltip information" entries in the list.</summary>
+        private static bool HasContent(TooltipBaseTemplate t)
         {
-            try
-            {
-                var tpl = TooltipHelper.GetLinkTooltipTemplate(id);
-                return tpl is TooltipTemplateGlossary ? tpl : null;
-            }
-            catch { return null; }
+            if (t == null) return false;
+            if (t is TooltipTemplateGlossary g) return g.GlossaryEntry != null;
+            return true;
+        }
+
+        // The game's own id → keys split (the "ui:"-style prefix and multi-key packing), for the caller's
+        // resolver; falls back to the raw id.
+        private static string[] Keys(string id)
+        {
+            var k = Safe(() => UIUtility.GetKeysFromLink(id));
+            return k != null && k.Length > 0 ? k : new[] { id };
+        }
+
+        private static T Safe<T>(Func<T> f) where T : class
+        {
+            try { return f(); } catch { return null; }
         }
 
         private static string CleanLabel(string s)

@@ -104,6 +104,19 @@ namespace RTAccess.Screens
 
         protected override bool NextEnabled() => Vm()?.CurrentPhaseIsCompleted.Value ?? false;
 
+        // The phase's own "what's still missing" hint, which the game shows on this button
+        // (CharGenPCView: phase.PhaseNextHint → m_NextButton.SetHint). Deliberately NOT
+        // NotCompletedReasonTooltip — that is a single generic "this stage is not completed" string shown
+        // only on the console path. Only a couple of phases author a hint, so this is usually null and Next
+        // simply reads as disabled, exactly as the sighted button behaves.
+        protected override Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate NextTooltip()
+        {
+            var hint = CurrentPhaseVm()?.PhaseNextHint?.Value;
+            return string.IsNullOrWhiteSpace(hint)
+                ? null
+                : new Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates.TooltipTemplateSimple(NextLabel(), hint);
+        }
+
         private static bool IsLastPhase(CharGenVM vm) =>
             vm != null && ReferenceEquals(vm.CurrentPhaseVM.Value, vm.PhasesCollection.LastOrDefault());
 

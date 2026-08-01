@@ -52,6 +52,26 @@ namespace RTAccess.UI
             Announcements = new List<NodeAnnouncement> { LabelPart(text) },
         };
 
+        /// <summary>A read-only text line that CARRIES a Space drill-in: the <see cref="Text"/> readout plus
+        /// the game's own tooltip template, resolved live on each press (the tooltips-live-not-cached rule)
+        /// and opened through the shared <see cref="TooltipChooser"/>.
+        ///
+        /// Reach for this — not bare <see cref="Text"/> — wherever the game's counterpart view calls
+        /// <c>SetTooltip</c> / <c>SetGlossaryTooltip</c> on the same control. A plain Text vtable has no
+        /// <c>OnTooltip</c> at all, so Space answers "No tooltip" and the content has no second route; that
+        /// single shape was the dominant finding of the 2026-08 tooltip audit (see docs/tooltip-audit.md).
+        /// A null template is tolerated (the chooser says so) — pass the factory anyway when the game binds
+        /// one, so the omission can never be silent.</summary>
+        public static NodeVtable TextWithTooltip(Func<string> text,
+            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> template)
+        {
+            var vt = Text(text);
+            vt.SearchText = text;
+            if (template != null)
+                vt.OnTooltip = () => TooltipChooser.OpenTemplate(text(), template());
+            return vt;
+        }
+
         /// <summary>One option of a single-select group ("label, radio button[, selected][, n of m]") —
         /// a dropdown option, a tab row entry. Activation selects it; the navigator plays the generic
         /// button click. Positions come from the

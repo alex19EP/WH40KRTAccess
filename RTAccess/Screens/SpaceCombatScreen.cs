@@ -152,7 +152,12 @@ namespace RTAccess.Screens
                     var pvm = posts.Posts[p];
                     if (pvm == null) continue;
                     var captured = pvm; // loop-local for the closure
-                    b.AddLabel(ControlId.Structural("posts:head:" + p), () => PostLine(captured));
+                    // Space = the post's own card (ShipPostPCView binds exactly this pair on the post button).
+                    // The header line carries only name/officer/skill/blocked state, so mid-battle nothing
+                    // said what the post DOES — readable out of combat in the ship window, but not here,
+                    // which is when it matters.
+                    b.AddItem(ControlId.Structural("posts:head:" + p), GraphNodes.TextWithTooltip(
+                        () => PostLine(captured), () => PostCard(captured.Index)));
                     var slots = pvm.AbilitiesGroup?.Slots;
                     if (slots == null) continue;
                     for (int i = 0; i < slots.Count; i++)
@@ -269,6 +274,18 @@ namespace RTAccess.Screens
         // position-keyed in the game's own strings (UIStrings.SpaceCombatTexts.PostStrings[index], the
         // ShipCustomizationScreen recipe); everything else reads the live Post part (the VM's m_Post,
         // reachable thanks to the publicized reference assemblies).
+        // The post's title + description straight off the game's own SpaceCombatTexts, the same pair
+        // ShipPostPCView wraps in a TooltipTemplateSimple.
+        private static Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate PostCard(int index)
+        {
+            try
+            {
+                var s = Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.SpaceCombatTexts.GetPostStrings(index);
+                return new Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates.TooltipTemplateSimple(s.Title, s.Description);
+            }
+            catch { return null; }
+        }
+
         private static string PostLine(ShipPostVM pvm)
         {
             try

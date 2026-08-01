@@ -81,5 +81,79 @@ namespace RTAccess.Tests
             Assert.Equal("Attack", TextUtil.StripRichText("Attack<sub><size=125%> 1 </size></sub>"));
             Assert.Equal("Attack", TextUtil.StripRichTextSpaced("Attack<sub><size=125%> 1 </size></sub>"));
         }
+
+        // --- StripRichTextLines: paragraph structure survives, everything else still collapses ---
+        // The tooltip reader splits its body on '\n' alone, so what this preserves IS the navigation model:
+        // one line per paragraph. The whole point is that prose is NOT re-split at sentence punctuation —
+        // that is what tore the noble homeworld's "You. Serve me." into two separate lines.
+
+        [Fact]
+        public void Lines_KeepsSentencesOfOneParagraphTogether()
+        {
+            Assert.Equal("You. Serve me.", TextUtil.StripRichTextLines("You. Serve me."));
+        }
+
+        [Fact]
+        public void Lines_BreakTagBecomesNewline()
+        {
+            Assert.Equal("first\nsecond", TextUtil.StripRichTextLines("first<br>second"));
+            Assert.Equal("first\nsecond", TextUtil.StripRichTextLines("first</p><p>second"));
+        }
+
+        [Fact]
+        public void Lines_LiteralNewlineSurvives()
+        {
+            Assert.Equal("first\nsecond", TextUtil.StripRichTextLines("first\nsecond"));
+        }
+
+        [Fact]
+        public void Lines_BlankLinesAndSurroundingSpaceCollapseToOneBreak()
+        {
+            // A paragraph gap is one boundary, not an empty navigable line.
+            Assert.Equal("first\nsecond", TextUtil.StripRichTextLines("first  \n \n\n  second"));
+            Assert.Equal("first\nsecond", TextUtil.StripRichTextLines("first<br><br>second"));
+        }
+
+        [Fact]
+        public void Lines_HorizontalWhitespaceStillCollapses()
+        {
+            Assert.Equal("a b", TextUtil.StripRichTextLines("a \t  b"));
+        }
+
+        [Fact]
+        public void Lines_LeadingAndTrailingBreaksTrim()
+        {
+            Assert.Equal("body", TextUtil.StripRichTextLines("<br>\n body \n<br>"));
+        }
+
+        [Fact]
+        public void Lines_KeepsTheDigitGlueRule()
+        {
+            // The per-character stat-value composition must still read as one number...
+            Assert.Equal("30", TextUtil.StripRichTextLines("<color=#AABBCC>3</color><size=110%>0</size>"));
+            // ...but an explicit break between digits separates them onto their own lines.
+            Assert.Equal("5\n3", TextUtil.StripRichTextLines("5<br>3"));
+        }
+
+        [Fact]
+        public void Lines_KeepsSpaceBetweenTagWeldedLetterSegments()
+        {
+            Assert.Equal("damage Critical hit!",
+                TextUtil.StripRichTextLines("damage<color=red>Critical hit!</color>"));
+        }
+
+        [Fact]
+        public void Lines_DropsSubSuperscriptContentToo()
+        {
+            Assert.Equal("Attack", TextUtil.StripRichTextLines("Attack<sub><size=125%> 1 </size></sub>"));
+        }
+
+        [Fact]
+        public void Spaced_StillFlattensBreaksToSpaces()
+        {
+            // The one-spoken-line variant is unchanged — a combat-log entry must not gain line breaks.
+            Assert.Equal("first second", TextUtil.StripRichTextSpaced("first<br>second"));
+            Assert.Equal("first second", TextUtil.StripRichTextSpaced("first\nsecond"));
+        }
     }
 }

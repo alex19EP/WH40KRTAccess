@@ -24,6 +24,10 @@ namespace RTAccess
         private static readonly Regex BreakTag =
             new Regex(@"<\s*/?\s*(br|p)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
+        // Break-preserving collapse: horizontal runs fold to one space, then a run of newlines (with any
+        // spaces around it) folds to a single '\n' — so blank lines vanish and one paragraph is one line.
+        private static readonly Regex HorizontalWhitespace = new Regex(@"[^\S\n]+", RegexOptions.Compiled);
+        private static readonly Regex NewlineRun = new Regex(@" ?\n[ \n]*", RegexOptions.Compiled);
 
         public static string StripRichText(string s)
         {
@@ -47,20 +51,35 @@ namespace RTAccess
         /// combat-log, bark and scraped-tooltip text; prefer <see cref="StripRichText"/> for UI labels, where
         /// tight stripping keeps "N&lt;size&gt;ew Game" whole. Extra spaces around punctuation are audibly
         /// harmless — screen readers normalise them.</summary>
-        public static string StripRichTextSpaced(string s)
+        public static string StripRichTextSpaced(string s) => StripSpaced(s, keepBreaks: false);
+
+        /// <summary>Like <see cref="StripRichTextSpaced"/> but LINE BREAKS SURVIVE: a <c>&lt;br&gt;</c>/
+        /// <c>&lt;p&gt;</c> tag run and any literal newline become a single <c>'\n'</c>, while every other
+        /// whitespace run still collapses to one space. This is what carries a description's real PARAGRAPH
+        /// structure into the tooltip reader, which splits its body on <c>'\n'</c> alone — sentence-splitting
+        /// a paragraph is what tore the noble homeworld's "You. Serve me." into two separate lines. Use for
+        /// any text that will be read as a document (tooltip bodies, the licence); the spaced form remains
+        /// right for text that must end up on ONE spoken line (a combat-log entry, a browse label).</summary>
+        public static string StripRichTextLines(string s) => StripSpaced(s, keepBreaks: true);
+
+        private static string StripSpaced(string s, bool keepBreaks)
         {
             if (string.IsNullOrEmpty(s)) return s;
             s = SubSup.Replace(s, "");
             var src = s; // the evaluator indexes the string the Replace is running over
             s = RichTextTagRun.Replace(src, m =>
             {
+                bool isBreak = BreakTag.IsMatch(m.Value);
+                if (isBreak && keepBreaks) return "\n";
                 int i = m.Index - 1, j = m.Index + m.Length;
                 bool glue = i >= 0 && j < src.Length
                     && char.IsDigit(src[i]) && char.IsDigit(src[j])
-                    && !BreakTag.IsMatch(m.Value);
+                    && !isBreak;
                 return glue ? "" : " ";
             });
-            s = Whitespace.Replace(s, " ");
+            if (!keepBreaks) return Whitespace.Replace(s, " ").Trim();
+            s = HorizontalWhitespace.Replace(s, " ");
+            s = NewlineRun.Replace(s, "\n");
             return s.Trim();
         }
 

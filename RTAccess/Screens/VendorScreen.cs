@@ -235,8 +235,19 @@ namespace RTAccess.Screens
 
                     var lv = tier.ReputationLevelVM;
                     int level = lv?.ReputationLevel ?? 0;
+                    // THIS tier's own unlock threshold, read straight off the helper. NextLevelReputationPoints
+                    // only holds it when the tier happens to be the immediate next level: for any deeper tier
+                    // the VM's ctor puts the tier's own threshold in ReputationPoints and the FOLLOWING tier's
+                    // in NextLevelReputationPoints — and several locked tiers coexist (VendorTradePartVM builds
+                    // one band per level), so the announced requirement was simply the wrong number on a line
+                    // players use to plan purchases.
                     string title = lv != null && lv.Locked
-                        ? Loc.T("vendor.tier_locked", new { level, points = lv.NextLevelReputationPoints })
+                        ? Loc.T("vendor.tier_locked", new
+                        {
+                            level,
+                            points = ReputationHelper.GetReputationPointsByLevel(
+                                Logic()?.VendorFactionType ?? default, level),
+                        })
                         : Loc.T("vendor.tier", new { level });
                     b.AddItem(ControlId.Structural(k + "wares:tier:" + level),
                         GraphNodes.Text(() => title));

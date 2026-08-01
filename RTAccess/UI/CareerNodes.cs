@@ -33,6 +33,14 @@ namespace RTAccess.UI
             {
                 new NodeAnnouncement(() => SelectionState(sel), live: true, kind: AnnouncementKinds.Value),
             };
+            // Space = the CHOSEN feature's card, which is what RankEntrySelectionItemCommonView puts on this
+            // control whenever a feature is selected (sel.Tooltip resolves to SelectedFeature's template,
+            // falling back to the group's own). Without it, reading what was taken on a committed or
+            // already-decided rank meant expanding the group and hunting for the option announced "selected".
+            // Deliberately NOT sel.HintTooltip — the PC panel never renders it (see OpenFeatureTooltip).
+            // sel.Tooltip can be null: RankEntrySelectionFeatureVM.OverrideTooltip nulls it for the
+            // PetKeystone group, which is why the chooser tolerates a null template.
+            vt.OnTooltip = () => TooltipChooser.OpenTemplate(sel.GetHintText(), sel.Tooltip);
             return vt;
         }
 
@@ -139,22 +147,25 @@ namespace RTAccess.UI
             var body = tpl != null ? TooltipReader.GetFull(tpl) : null;
             var links = GlossaryLinks.Gather(tpl);
 
-            List<(string, string)> sections = null;
-            string category = CategorySection(f);
-            if (category != null)
-                sections = new List<(string, string)> { (CategoryLabel(f), category) };
+            var sections = new List<TooltipRef>();
+            var category = CategorySection(f);
+            if (category != null) sections.Add(TooltipRef.To(CategoryLabel(f), category));
+            // The feature card's own rows drill too (the abilities the feature grants).
+            sections.AddRange(NestedTooltips.Gather(tpl));
 
             TooltipChooser.Open(title, body, sections, links);
         }
 
-        // The category panel's body, or null when the game ships it blank (nothing to drill into).
-        private static string CategorySection(BaseRankEntryFeatureVM f)
+        // The category panel's template, or null when the game ships it blank (nothing to drill into). The
+        // blank check has to render it — a TooltipTemplateSimple with an empty Description is structurally
+        // indistinguishable from a filled one — but that is one render on a keypress, not one per entry.
+        private static TooltipBaseTemplate CategorySection(BaseRankEntryFeatureVM f)
         {
             try
             {
                 var hint = f.HintTooltip;
                 var body = hint != null ? TooltipReader.GetFull(hint) : null;
-                return string.IsNullOrWhiteSpace(body) ? null : body;
+                return string.IsNullOrWhiteSpace(body) ? null : hint;
             }
             catch (Exception e) { Main.Log?.Log("rank feature category read failed: " + e.Message); return null; }
         }

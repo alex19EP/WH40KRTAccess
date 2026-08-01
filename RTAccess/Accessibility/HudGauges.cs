@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.Surface;   // SurfaceStaticPartVM
+using Kingmaker.Code.UI.MVVM.VM.SurfaceCombat.MomentumAndVeil; // MomentumEntityVM / VeilThicknessVM (they own their tooltips)
+using Kingmaker.Code.UI.MVVM.VM.NecronTimer;                   // NecronTimerVM
 using RTAccess.Speech;
 using UnityEngine;                          // Mathf
 
@@ -49,14 +51,30 @@ namespace RTAccess.Accessibility
         // the public CurrentPercent × MaximalMomentum (RT momentum is a 0..200 pool).
         private static void AppendMomentum(List<string> parts)
         {
-            var me = StaticPart()?.SurfaceHUDVM?.ActionBarVM?.SurfaceMomentumVM?.MomentumEntityVM?.Value;
-            if (me == null) return;
+            var s = MomentumLine();
+            if (s != null) parts.Add(s);
+        }
+
+        /// <summary>The momentum gauge as one line, or null out of turn-based combat. Shared with the HUD
+        /// tree's momentum row (<see cref="RTAccess.Screens.InGameScreen"/>) so the K readout and the
+        /// browsable node never drift apart.</summary>
+        internal static string MomentumLine()
+        {
+            var me = MomentumVm();
+            if (me == null) return null;
             int max = Game.Instance.BlueprintRoot.WarhammerRoot.MomentumRoot.MaximalMomentum;
             int value = Mathf.RoundToInt(me.CurrentPercent.Value * max);
-            parts.Add(Loc.T("gauge.momentum", new { value, max }));
-            if (me.HeroicActActive.Value) parts.Add(Loc.T("gauge.heroic_act"));
-            if (me.DesperateMeasureActive.Value) parts.Add(Loc.T("gauge.desperate_measure"));
+            var s = Loc.T("gauge.momentum", new { value, max });
+            if (me.HeroicActActive.Value) s += ", " + Loc.T("gauge.heroic_act");
+            if (me.DesperateMeasureActive.Value) s += ", " + Loc.T("gauge.desperate_measure");
+            return s;
         }
+
+        /// <summary>The live momentum entity VM (non-null only in turn-based combat) — it OWNS the
+        /// TooltipTemplateMomentum the sighted HUD hover shows, so the node hands this VM's own reactive to
+        /// the chooser rather than re-deriving thresholds from MomentumRoot.</summary>
+        internal static MomentumEntityVM MomentumVm()
+            => StaticPart()?.SurfaceHUDVM?.ActionBarVM?.SurfaceMomentumVM?.MomentumEntityVM?.Value;
 
         // Reachable-movement extent for the current turn — the size of the game's blue move-area highlight
         // plus the movement-point budget (PathInfo.MoveAreaSummary reads UnitMovableAreaController's own set).
@@ -72,14 +90,29 @@ namespace RTAccess.Accessibility
         // fight is on — not only while the action bar shows it.
         private static void AppendVeil(List<string> parts)
         {
-            var veil = StaticPart()?.SurfaceHUDVM?.ActionBarVM?.VeilThickness;
-            if (veil == null) return;
-            int value = veil.Value.Value;
-            if (value <= 0 && !(Game.Instance?.TurnController?.TurnBasedModeActive ?? false)) return;
-            var root = Game.Instance.BlueprintRoot.WarhammerRoot.PsychicPhenomenaRoot;
-            parts.Add(Loc.T("gauge.veil", new { value, max = root.MaximumVeilOnAllLocation }));
-            if (value >= root.CriticalVeilOnAllLocation) parts.Add(Loc.T("gauge.veil_critical"));
+            var s = VeilLine();
+            if (s != null) parts.Add(s);
         }
+
+        /// <summary>The veil-thickness gauge as one line, or null while it does not apply. Shared with the
+        /// HUD tree's veil row.</summary>
+        internal static string VeilLine()
+        {
+            var veil = VeilVm();
+            if (veil == null) return null;
+            int value = veil.Value.Value;
+            if (value <= 0 && !(Game.Instance?.TurnController?.TurnBasedModeActive ?? false)) return null;
+            var root = Game.Instance.BlueprintRoot.WarhammerRoot.PsychicPhenomenaRoot;
+            var s = Loc.T("gauge.veil", new { value, max = root.MaximumVeilOnAllLocation });
+            if (value >= root.CriticalVeilOnAllLocation) s += ", " + Loc.T("gauge.veil_critical");
+            return s;
+        }
+
+        /// <summary>The live veil VM. Its <c>Tooltip</c> is a LONG-LIVED TooltipTemplateVail kept fresh by a
+        /// subscription on Value — hand that field straight to the chooser; a freshly constructed one would
+        /// carry no value at all.</summary>
+        internal static VeilThicknessVM VeilVm()
+            => StaticPart()?.SurfaceHUDVM?.ActionBarVM?.VeilThickness;
 
         // The strategic resource — always available; the HUD only shows it transiently as a notification.
         private static void AppendProfitFactor(List<string> parts)
@@ -105,10 +138,21 @@ namespace RTAccess.Accessibility
 
         private static void AppendNecronTimer(List<string> parts)
         {
-            var n = StaticPart()?.NecronTimerVM;
-            if (n == null || !n.IsUnlockedAndVisible.Value) return;
-            parts.Add(Loc.T("gauge.necron_timer", new { value = n.CurrentTimerValue.Value }));
+            var s = NecronLine();
+            if (s != null) parts.Add(s);
         }
+
+        /// <summary>The Necron countdown as one line, or null while it is locked / hidden. The label leads
+        /// with the game's OWN header string (NecronTimerView titles its tooltip with it), falling back to
+        /// the mod table.</summary>
+        internal static string NecronLine()
+        {
+            var n = NecronVm();
+            if (n == null || !n.IsUnlockedAndVisible.Value) return null;
+            return Loc.T("gauge.necron_timer", new { value = n.CurrentTimerValue.Value });
+        }
+
+        internal static NecronTimerVM NecronVm() => StaticPart()?.NecronTimerVM;
 
         private static void AppendObjective(List<string> parts)
         {

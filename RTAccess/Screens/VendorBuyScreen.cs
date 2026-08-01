@@ -69,8 +69,7 @@ namespace RTAccess.Screens
                 if (w.MaxValue > 1)
                     b.AddItem(ControlId.Structural(k + "qty"), QuantityNode(w));
                 else
-                    b.AddItem(ControlId.Structural(k + "item"), GraphNodes.Text(() =>
-                        ItemNodes.ItemLabel(w.Slot) + ", " + ItemNodes.VendorCostLabel(w.Slot)));
+                    b.AddItem(ControlId.Structural(k + "item"), ItemLine(w.Slot));
             }
             else if (w.Slots != null)
             {
@@ -83,9 +82,7 @@ namespace RTAccess.Screens
                         if (slot == null || !slot.HasItem) continue;
                         var ent = slot.Item?.Value;
                         if (ent == null) continue;
-                        var s = slot;
-                        b.AddItem(ControlId.Referenced(ent, k + "row:" + ent.UniqueId), GraphNodes.Text(() =>
-                            ItemNodes.ItemLabel(s) + ", " + ItemNodes.VendorCostLabel(s)));
+                        b.AddItem(ControlId.Referenced(ent, k + "row:" + ent.UniqueId), ItemLine(slot));
                     }
                 b.PopContext();
             }
@@ -96,6 +93,20 @@ namespace RTAccess.Screens
             b.AddItem(ControlId.Structural(k + "cancel"), GraphNodes.Button(
                 () => GameText.Action("cancel"),
                 () => Wvm()?.Close()));
+        }
+
+        /// <summary>One line of the purchase confirmation: what the card shows (name, badges, cost) plus the
+        /// item's full read on Space. This dialog is the last back-out point before the deal, and every row
+        /// in it used to be mute — while the vendor's own slot views bind the whole tooltip chain (their
+        /// context menu even keeps the Information verb). Loot-side titling: vendor cards overlay no
+        /// favourite star.</summary>
+        private static NodeVtable ItemLine(Kingmaker.Code.UI.MVVM.VM.Slots.ItemSlotVM slot)
+        {
+            Func<string> label = () => ItemNodes.ItemLabel(slot) + ", " + ItemNodes.VendorCostLabel(slot);
+            var vt = GraphNodes.Text(label);
+            vt.SearchText = label;
+            vt.OnTooltip = () => ItemNodes.OpenItemTooltip(slot, withFavorite: false);
+            return vt;
         }
 
         // The quantity slider: Left/Right ±1 (coarse ±10), announcing "N of M, total X Profit Factor"
@@ -123,6 +134,7 @@ namespace RTAccess.Screens
                     new NodeAnnouncement(line, live: true, kind: AnnouncementKinds.Value),
                 },
                 SearchText = () => ItemNodes.ItemLabel(w.Slot),
+                OnTooltip = () => ItemNodes.OpenItemTooltip(w.Slot, withFavorite: false),
                 OnAdjust = (sign, large) =>
                 {
                     int step = large ? 10 : 1;

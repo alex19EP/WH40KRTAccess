@@ -10,9 +10,13 @@ using Kingmaker.Controllers;                                                    
 using Kingmaker.Enums;                                                                // FactionType
 using Kingmaker.Items;                                                                // PartUnitBody (augments)
 using Kingmaker.UI.Common;                                                            // UIUtilityUnit, UIUtility
+using Kingmaker.UI.Models.Tooltip;                                                    // StatTooltipData (the stat card's data)
 using Kingmaker.UI.MVVM.VM.Tooltip.Templates;                                         // TooltipTemplateSoulMarkHeader, SoulMarkTooltipExtensions
 using Kingmaker.UnitLogic.Alignments;                                                 // SoulMark*
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;                                       // ServiceWindowsVM, ServiceWindowsType
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo;                          // CharacterInfoVM, CharInfoComponentType
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.FactionsReputation; // CharInfoFactionsReputationVM (the profit-factor VM)
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.LevelClassScores; // CharInfoLevelClassScoresVM (the XP block)
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.LevelClassScores.AbilityScores; // CharInfoAbilityScoresBlockVM.AbilitiesOrdered
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.SkillsAndWeapons.Skills;        // CharInfoSkillsBlockVM.SkillsOrdered
 using Kingmaker.EntitySystem.Entities;                                                // BaseUnitEntity
@@ -72,6 +76,36 @@ namespace RTAccess.Screens
         // frame on the focused screen.
         public override void OnPush() => ViewedCharacter.Reset();
         public override void OnUpdate() => ViewedCharacter.Tick(SheetUnit());
+
+        public override void OnPop()
+        {
+            _profitFactor?.Dispose();
+            _profitFactor = null;
+        }
+
+        // The profit-factor card's VM. The game builds one inside CharInfoFactionsReputationVM — but
+        // CharacterInfoVM.CreateVMs disposes every component that isn't on the CURRENT page, so that one
+        // exists only while the game's own window is showing the Factions page, whereas this sheet declares
+        // every section at once. Own one for the window's lifetime instead: the ctor EventBus-subscribes (the
+        // reason the rest of this screen avoids the game's item VMs), which is exactly what keeps the
+        // modifier list current, and OnPop disposes it. One instance, never per render.
+        private Kingmaker.Code.UI.MVVM.VM.Vendor.ProfitFactorVM _profitFactor;
+
+        private Kingmaker.Code.UI.MVVM.VM.Vendor.ProfitFactorVM ProfitFactorVm()
+        {
+            if (Game.Instance?.Player?.ProfitFactor == null) return null;
+            return _profitFactor ?? (_profitFactor = new Kingmaker.Code.UI.MVVM.VM.Vendor.ProfitFactorVM());
+        }
+
+        // A live CharacterInfo component VM, or null when the game's window isn't on the page that owns it
+        // (CreateVMs keeps only the current page's components alive). Used for the blocks whose tooltip
+        // template the game builds inside such a component.
+        private static T Component<T>(CharInfoComponentType type) where T : class
+        {
+            var ci = ServiceWindows()?.CharacterInfoVM?.Value;
+            if (ci == null) return null;
+            return ci.ComponentVMs.TryGetValue(type, out var rp) ? rp?.Value as T : null;
+        }
 
         public override bool IsActive()
         {
@@ -145,8 +179,18 @@ namespace RTAccess.Screens
             b.BeginStop("header").PushContext(Loc.T("charinfo.character"), Loc.T("role.list"));
             if (!string.IsNullOrEmpty(unit.CharacterName))
                 b.AddItem(ControlId.Structural(k + "name"), GraphNodes.Text(() => unit.CharacterName));
-            b.AddItem(ControlId.Structural(k + "level"), GraphNodes.Text(
-                () => Loc.T("charinfo.level", new { level = unit.Progression.CharacterLevel })));
+            // Space = the game's own level card (current / next-level / till-next experience + the
+            // CharacterLevel glossary write-up). The template needs the live CharInfoExperienceVM, which the
+            // game keeps only while its window is on the Summary page — which is also the only page where a
+            // sighted player is shown this block, so resolving it live is the faithful mapping.
+            b.AddItem(ControlId.Structural(k + "level"), GraphNodes.TextWithTooltip(
+                () => Loc.T("charinfo.level", new { level = unit.Progression.CharacterLevel }),
+                () =>
+                {
+                    var exp = Component<CharInfoLevelClassScoresVM>(CharInfoComponentType.LevelClassScores)
+                        ?.Experience;
+                    return exp != null ? new TooltipTemplateLevelExp(exp) : null;
+                }));
             int ci = 0;
             foreach (var career in unit.Progression.AllCareerPaths) // (BlueprintCareerPath, Rank) tuples
             {
@@ -158,6 +202,20 @@ namespace RTAccess.Screens
             if (unit.Progression.CanLevelUp)
                 b.AddItem(ControlId.Structural(k + "levelup"), GraphNodes.Button(
                     () => Loc.T("levelup.button"),
+                    () => EventBus.RaiseEvent<INewServiceWindowUIHandler>(
+                        h => h.HandleOpenCharacterInfoPage(CharInfoPageType.LevelProgression, unit))));
+            // The Progression PAGE — the same window tab a sighted player can always click (CharInfoPagesPC
+            // lists LevelProgression for every non-pet unit, and CharInfoPagesMenuEntityVM gates availability
+            // only on PsykerPowers). Without it the career write-ups — prerequisites, description, the stats
+            // and skills a path raises, its keystone and ultimate abilities — were reachable in this mod ONLY
+            // through the "Level Up" button above, i.e. only while a rank was actually pending. The rows above
+            // name the careers; this is where they explain themselves (LevelUpScreen mirrors the page and hangs
+            // CareerTooltip on each card). Same handler as Level Up — it opens the page either way; what
+            // differs is only whether the game has a pending rank to spend there.
+            if (!unit.IsPet)
+                b.AddItem(ControlId.Structural(k + "progression"), GraphNodes.Button(
+                    () => GameText.Or(() => UIStrings.Instance.CharacterSheet.LevelProgression,
+                        "charinfo.progression"),
                     () => EventBus.RaiseEvent<INewServiceWindowUIHandler>(
                         h => h.HandleOpenCharacterInfoPage(CharInfoPageType.LevelProgression, unit))));
             // Prev/next member switch (the sheet's portrait arrows — also on Shift+A/D via PartyHotkeys).
@@ -255,7 +313,7 @@ namespace RTAccess.Screens
         // faction description. Read ReputationHelper / Player directly — the game's item VMs
         // EventBus-subscribe in their ctor and would leak if instantiated per render. ----
 
-        private static void BuildFactions(GraphBuilder b)
+        private void BuildFactions(GraphBuilder b)
         {
             var player = Game.Instance?.Player;
             if (player == null) return;
@@ -281,10 +339,26 @@ namespace RTAccess.Screens
                         title = UIStrings.Instance.ProfitFactorTexts.Title.Text,
                         value = pf.Total.ToString()
                     }),
-                    () => new TooltipTemplateSimple(
-                        UIStrings.Instance.ProfitFactorTexts.Title.Text,
-                        UIStrings.Instance.ProfitFactorTexts.Description.Text)));
+                    // The game's OWN profit-factor card, not a hand-built Simple template: it lists the total
+                    // and then EVERY income and loss modifier by name (colony projects, events, orders,
+                    // chronicles, resource shortages, dialogue answers), which the sighted Factions page prints
+                    // on the panel itself — one brick per modifier, so this is a label-mirror gap as much as a
+                    // template one. The Description blurb the old template carried is still there: the game's
+                    // GetBody ends with it. VendorScreen already reached this template correctly; the sheet was
+                    // the inconsistency.
+                    ProfitFactorCard));
             b.PopContext();
+        }
+
+        // Prefer the game's own live VM when its window happens to be on the Factions page; otherwise the
+        // screen-owned one. Either way the same template, so the reading never depends on which page the
+        // game's chrome is showing.
+        private Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate ProfitFactorCard()
+        {
+            var vm = Component<CharInfoFactionsReputationVM>(CharInfoComponentType.FactionsReputation)
+                         ?.ScreenItems?.LastOrDefault() as Kingmaker.Code.UI.MVVM.VM.Vendor.ProfitFactorVM
+                     ?? ProfitFactorVm();
+            return vm != null ? new TooltipTemplateProfitFactor(vm) : null;
         }
 
         // Label mirroring the faction card: name + level + "cur / next" points (or the Max string).
@@ -321,15 +395,34 @@ namespace RTAccess.Screens
                 if (bp == null) continue;
                 var d = dir; // capture for the label/tooltip factories
                 b.AddItem(ControlId.Structural(kp + "sm:" + d), TextWithTooltip(
-                    () =>
-                    {
-                        SoulMarkTooltipExtensions.GetSoulMarkInfo(bp, unit, out _, out _, out _, out var tier);
-                        var name = UIUtility.GetSoulMarkDirectionText(d).Text;
-                        var rankText = UIUtility.GetSoulMarkRankText(tier).Text;
-                        var rank = string.IsNullOrEmpty(rankText) ? Loc.T("charinfo.soulmark_none") : rankText;
-                        return Loc.T("charinfo.soulmark_standing", new { name, rank });
-                    },
+                    () => SoulMarkRow(bp, unit, d),
                     () => new TooltipTemplateSoulMarkHeader(unit, d)));
+            }
+
+            // The conviction bar the Biography page draws above the soul-mark sectors: a cursor sliding
+            // between Puritan (left) and Radical (right). Its POSITION is the headline a sighted player takes
+            // at a glance, and it appeared nowhere in the mod — ConvictionEvents only voices individual shift
+            // deltas. Computed exactly as ConvictionBarVM.RefreshData does rather than read off that VM: the
+            // game disposes the Alignment component whenever its window leaves the Biography page, while this
+            // sheet declares every section at once, and the formula is three GetSoulMarkInfo calls this
+            // section already makes.
+            //
+            // The two write-ups hang off it as drill-ins. ConvictionBarPCView pairs its BUTTONS correctly
+            // (m_RightButtonRadical→Radical, m_LeftButtonPuritan→Puritan) but cross-wires its LABELS
+            // (m_RightLabel, which reads "Radical", gets the Puritan tooltip and vice versa) — a game-side
+            // slip; mirror the buttons. CurrentTooltip is deliberately not surfaced: no view binds it.
+            {
+                var al = UIStrings.Instance.Alignment;
+                var vt = GraphNodes.Text(() => ConvictionRow(unit));
+                vt.SearchText = () => ConvictionRow(unit);
+                vt.OnTooltip = () => TooltipChooser.Open(ConvictionRow(unit), null, sections: new List<TooltipRef>
+                {
+                    TooltipRef.To(al.PuritanTitle.Text,
+                        new TooltipTemplateSimple(al.PuritanTitle, al.PuritanDescription)),
+                    TooltipRef.To(al.RadicalTitle.Text,
+                        new TooltipTemplateSimple(al.RadicalTitle, al.RadicalDescription)),
+                });
+                b.AddItem(ControlId.Structural(kp + "conviction"), vt);
             }
 
             if (unit.IsMainCharacter)
@@ -366,7 +459,7 @@ namespace RTAccess.Screens
                 {
                     var st0 = stories[0];
                     b.AddItem(ControlId.Structural(kp + "story:0"),
-                        GraphNodes.Text(() => st0.Description.Text)); // mirrors the card (shows story 0)
+                        StoryBody(() => st0.Title?.Text, () => st0.Description.Text)); // mirrors the card
                 }
                 else
                 {
@@ -378,7 +471,7 @@ namespace RTAccess.Screens
                         b.BeginGroup(ControlId.Structural(skey),
                             GraphNodes.Group(() => story.Title.Text));
                         b.AddItem(ControlId.Structural(skey + ":body"),
-                            GraphNodes.Text(() => story.Description.Text));
+                            StoryBody(() => story.Title?.Text, () => story.Description.Text));
                         b.EndGroup();
                     }
                 }
@@ -387,16 +480,76 @@ namespace RTAccess.Screens
             b.PopContext();
         }
 
-        // A read-only row that carries a Space drill-in (the game's own tooltip template, opened through
-        // the shared chooser — the Button factory's OnTooltip wiring, on a plain text node).
-        private static NodeVtable TextWithTooltip(Func<string> label,
-            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> template)
+        // A companion-story body. CharInfoStoriesView calls SetLinkTooltip on the biography text
+        // unconditionally with the glossary config, so any inline term in an authored story is followable for
+        // a sighted player — mine the RAW LocalizedString (the spoken label has already been stripped of the
+        // very tags we match) and offer them on Space. Glossary-only, matching the view's (null, null) call:
+        // no skill-check resolver, so those links stay dead here exactly as they are in the game. A story with
+        // no anchors simply answers "No tooltip", so the wiring costs nothing where there is nothing to follow.
+        private static NodeVtable StoryBody(Func<string> title, Func<string> raw)
         {
-            var vt = GraphNodes.Text(label);
-            vt.SearchText = label;
-            vt.OnTooltip = () => TooltipChooser.OpenTemplate(label(), template());
+            var vt = GraphNodes.Text(() => TextUtil.StripRichTextLines(raw()));
+            vt.SearchText = () => TextUtil.StripRichTextLines(raw());
+            vt.OnTooltip = () => TooltipChooser.Open(title(), TextUtil.StripRichTextLines(raw()),
+                links: GlossaryLinks.Gather(raw()));
             return vt;
         }
+
+        // The conviction cursor as a spoken lean. ConvictionBarVM: (Corruption + Hope − Faith) / 700, clamped
+        // to [−1, 1] — negative is Puritan (left), positive Radical (right), zero the middle. Spoken as a
+        // percentage of the way to that end, which is what the cursor's offset actually encodes.
+        private static string ConvictionRow(BaseUnitEntity unit)
+        {
+            float v = ConvictionValue(unit);
+            int pct = (int)System.Math.Round(System.Math.Abs(v) * 100f);
+            string lean = pct == 0
+                ? Loc.T("charinfo.conviction_balanced")
+                : Loc.T(v < 0 ? "charinfo.conviction_puritan" : "charinfo.conviction_radical",
+                    new { percent = pct });
+            return Loc.T("charinfo.conviction", new { lean });
+        }
+
+        private static float ConvictionValue(BaseUnitEntity unit)
+        {
+            float v = (Points(SoulMarkDirection.Corruption) + Points(SoulMarkDirection.Hope)
+                       - Points(SoulMarkDirection.Faith)) / 700f;
+            return v < -1f ? -1f : (v > 1f ? 1f : v);
+
+            int Points(SoulMarkDirection dir)
+            {
+                var bp = SoulMarkShiftExtension.GetBaseSoulMarkFor(dir);
+                if (bp == null) return 0;
+                SoulMarkTooltipExtensions.GetSoulMarkInfo(bp, unit, out _, out _, out var current, out _);
+                return current;
+            }
+        }
+
+        // One soul-mark axis, mirroring what CharInfoSoulMarkSectorView paints on the sector: the direction
+        // name, the rank tier, and the POINTS — "current / next threshold" (or the Max string at the top
+        // tier), exactly the m_Value readout. The points are why this line reads them at all: Space is no
+        // fallback, because TooltipReader renders in Info mode and TooltipTemplateSoulMarkHeader.GetBodyInfo
+        // emits each tier's THRESHOLD but never the character's own value (the "Current value" brick is
+        // GetBodyTooltip-only), and ConvictionEvents voices shifts as deltas without ever stating the total.
+        // Same cur/next shape as FactionRow above — the two standings now read alike.
+        private static string SoulMarkRow(Kingmaker.UnitLogic.BlueprintSoulMark bp, BaseUnitEntity unit,
+            SoulMarkDirection d)
+        {
+            SoulMarkTooltipExtensions.GetSoulMarkInfo(bp, unit,
+                out var thresholds, out var maxValue, out var currentValue, out var tier);
+            var name = UIUtility.GetSoulMarkDirectionText(d).Text;
+            var rankText = UIUtility.GetSoulMarkRankText(tier).Text;
+            var rank = string.IsNullOrEmpty(rankText) ? Loc.T("charinfo.soulmark_none") : rankText;
+            // The view's own next-threshold pick: the tier above, or the axis maximum at the top.
+            int next = thresholds != null && tier + 1 < thresholds.Count ? thresholds[tier + 1] : maxValue;
+            return Loc.T("charinfo.soulmark_standing",
+                new { name, rank, progress = currentValue + " / " + next });
+        }
+
+        // A read-only row that carries a Space drill-in — the shared factory, aliased for this file's many
+        // call sites.
+        private static NodeVtable TextWithTooltip(Func<string> label,
+            Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> template)
+            => GraphNodes.TextWithTooltip(label, template);
 
         // Disambiguate repeated blueprints (a fact granted twice) — MakeNode throws on duplicate keys,
         // and the first occurrence keeps the unsuffixed key so focus stays position-stable.
@@ -426,7 +579,7 @@ namespace RTAccess.Screens
             b.BeginStop(stop).PushContext(label);
             if (wounds != null)
                 b.AddItem(ControlId.Structural(kp + "wounds"),
-                    GraphNodes.Text(() => WoundsLine(unit) ?? ""));
+                    GraphNodes.TextWithTooltip(() => WoundsLine(unit) ?? "", () => HitPointsCard(unit)));
             foreach (var stat in stats) StatEntry(b, kp, unit, stat);
             b.PopContext();
         }
@@ -449,11 +602,18 @@ namespace RTAccess.Screens
             var mods = new List<ModifiableValue.Modifier>();
             foreach (var mod in mv.GetDisplayModifiers()) mods.Add(mod);
 
+            // Space reads the stat's own card — what the stat DOES (its glossary write-up) plus the game's
+            // own breakdown — exactly the template CharInfoStatVM/CharInfoHitPointsVM bind for the hover.
+            // The expandable children below give the per-source modifiers; they are not a substitute for
+            // the description, and a sighted player gets both.
+            Action tooltip = () => TooltipChooser.OpenTemplate(label(), StatCard(mv));
+
             if (mods.Count == 0)
             {
                 var vt = GraphNodes.Text(label);
                 vt.SearchText = label;
                 vt.HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound;
+                vt.OnTooltip = tooltip;
                 b.AddItem(ControlId.Structural(skey), vt);
                 return;
             }
@@ -461,6 +621,7 @@ namespace RTAccess.Screens
             var gvt = GraphNodes.Group(label);
             gvt.HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound;
             gvt.ClickSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound;
+            gvt.OnTooltip = tooltip;
             b.BeginGroup(ControlId.Structural(skey), gvt);
             int mi = 0;
             foreach (var mod in mods)
@@ -470,6 +631,39 @@ namespace RTAccess.Screens
                     GraphNodes.Text(() => ModifierLine(m)));
             }
             b.EndGroup();
+        }
+
+        /// <summary>The maximum-wounds card: the per-source breakdown of max HP plus the HitPoints glossary
+        /// write-up — what CharInfoHitPointsVM.UpdateTooltip builds and CharInfoHitPointsPCView hangs on the
+        /// wounds bar. StatType.HitPoints is in none of the three ordered stat lists this screen walks, so
+        /// StatEntry never reaches it and the derivation existed nowhere in the mod; the headline numbers are
+        /// already spoken everywhere. Internal — the inventory window and the HUD party roster bind the same
+        /// VM (UnitHealthPartVM derives from CharInfoHitPointsVM) and share this one construction.</summary>
+        internal static Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate HitPointsCard(BaseUnitEntity unit)
+        {
+            var mv = unit?.Stats?.GetStatOptional(StatType.HitPoints);
+            return mv != null ? StatCard(mv) : null;
+        }
+
+        // The stat's own card, dispatched on the stat's RUNTIME kind exactly as CharInfoStatVM.OnStatUpdated
+        // does. This switch is load-bearing, not ceremony: C# picks an overload STATICALLY, and
+        // StatsContainer.GetStatOptional is declared to return the base ModifiableValue, so a plain
+        // `new StatTooltipData(mv)` silently binds the base constructor for every stat and builds a degraded
+        // card — an attribute loses its Bonus (the characteristic modifier, which the card face never prints
+        // either, so it would exist nowhere), a skill lands in StatGroup.Common and gains the Base-value row
+        // the game deliberately suppresses for skills, and a saving throw loses its BaseStat.Bonus row. Each
+        // also reads the generic "Total value" label instead of its own.
+        // (An if/else chain, not a switch, for the same reason the game uses one: ModifiableValue defines an
+        // implicit conversion to int, so `switch (mv)` takes int as its governing type and refuses the
+        // type patterns outright.)
+        private static Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate StatCard(ModifiableValue mv)
+        {
+            StatTooltipData data;
+            if (mv is ModifiableValueAttributeStat attribute) data = new StatTooltipData(attribute);
+            else if (mv is ModifiableValueSkill skill) data = new StatTooltipData(skill);
+            else if (mv is ModifiableValueSavingThrow save) data = new StatTooltipData(save);
+            else data = new StatTooltipData(mv);
+            return new TooltipTemplateStat(data);
         }
 
         // "{source}: {+N}" — source is the fact/item that granted it, falling back to the modifier bucket.

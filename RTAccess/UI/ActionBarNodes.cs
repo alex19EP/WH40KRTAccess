@@ -168,6 +168,14 @@ namespace RTAccess.UI
             {
                 if (vm == null) return null;
                 if (vm.IsSelected.Value) return Loc.T("value.targeting");
+                // The attack-group cooldown alert. Arming a weapon attack makes every OTHER slot in the
+                // WeaponAttackAbilityGroup blink for a sighted player (ActionBarBaseSlotView subscribes
+                // IsAlerted → PlayAttackAbilityGroupCooldownAlertAnimation), warning that firing this one
+                // will put the group on cooldown. Those slots stay IsPossibleActive, so the leading
+                // "unavailable" marker is silent and nothing else reported it. It rides the
+                // TARGET-SELECTION path — which is exactly what OnMainClick drives here — so it is real
+                // selection state, not a hover-fed reactive.
+                if (vm.IsAlerted.Value) return Loc.T("slot.group_cooldown_alert");
                 var m = vm.MechanicActionBarSlot;
                 return m != null && m.IsActive() ? Loc.T("combat.active_marker") : null;
             }

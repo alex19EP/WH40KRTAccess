@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Kingmaker.Blueprints.Base;                 // Gender
 using Kingmaker.Blueprints.Root.Strings;         // UIStrings (the game's localized chargen vocabulary)
+using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.LevelClassScores.AbilityScores; // CharInfoStatVM
 using Kingmaker.UI.MVVM.VM.CharGen.Phases;       // CharGenPhaseBaseVM
 using Kingmaker.UI.MVVM.VM.CharGen.Phases.Appearance.Pages; // CharGenAppearancePageComponent
 using Kingmaker.UI.MVVM.VM.CharGen.Phases.Stats; // CharGenAttributesItemVM
@@ -148,8 +149,76 @@ namespace RTAccess.UI
                     if (vm == null) return;
                     if (sign < 0) vm.RetreatStat(); else vm.AdvanceStat();
                 },
-                OnTooltip = () => TooltipChooser.OpenTemplate(vm?.DisplayName, vm?.Tooltip?.Value),
+                // The stat's own card, LED BY the per-rank increment. That number is hover-only detail the
+                // game keeps outside the template (CharGenAttributesPhaseSelectorItemView formats
+                // CharGen.SkillPointsContainerHint into the rank button's hint), and TooltipTemplateStat
+                // carries nothing of the kind — so without it nothing said what a rank is WORTH and the
+                // player could not price a spend before making it. Detail, not label: the card shows filled
+                // rank pips, so the browse line stays value + rank + recommended.
+                OnTooltip = () => TooltipChooser.OpenTemplate(vm?.DisplayName, vm?.Tooltip?.Value,
+                    RanksHint(vm)),
             };
+        }
+
+        /// <summary>"Add N points to characteristic: [r / max]" — the game's own hint string, filled exactly
+        /// as the selector item's view fills it (ValuePerRank, then ranks-spent over the phase's cap). Null
+        /// when the string or the VM isn't there, which drops it silently.</summary>
+        private static string RanksHint(CharGenAttributesItemVM vm)
+        {
+            if (vm == null) return null;
+            try
+            {
+                var fmt = UIStrings.Instance?.CharGen?.SkillPointsContainerHint?.Text;
+                if (string.IsNullOrEmpty(fmt)) return null;
+                return string.Format(fmt, vm.ValuePerRank.ToString(),
+                    vm.StatRanks.Value + " / " + CharGenAttributesPhaseVM.MaxRanksPerStat);
+            }
+            catch (Exception e) { Main.Log?.Error("CharGenNodes.RanksHint: " + e); return null; }
+        }
+
+        /// <summary>One row of a <c>CharInfoBaseAbilityScoresBlockVM</c> — the read-only stat blocks the game
+        /// binds BESIDE a chargen phase (the live skills panel on the attributes page, the skills and ability
+        /// scores on the summary page). "name value[, recommended]", with the stat's own card on Space.
+        ///
+        /// Read-only by design: these blocks are consequences, not controls — the attributes page raises
+        /// skills as a side effect of a characteristic spend, and the summary page is a review. The value is
+        /// <c>PreviewStatValue</c>, which is what CharGenCharInfoSkillView paints (the preview unit's number,
+        /// i.e. what the character WILL have), and it is LIVE so a skill moving under focus while points are
+        /// spent elsewhere announces itself.</summary>
+        public static NodeVtable StatBlockRow(CharInfoStatVM vm)
+        {
+            Func<string> label = () => vm?.Name?.Value ?? "";
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Text,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    GraphNodes.LabelPart(label),
+                    new NodeAnnouncement(() => (vm?.PreviewStatValue?.Value ?? 0).ToString(),
+                        live: true, kind: AnnouncementKinds.Value),
+                    new NodeAnnouncement(() => vm != null && vm.IsRecommended.Value
+                        ? Loc.T("chargen.recommended") : null, live: true, kind: AnnouncementKinds.Value),
+                },
+                SearchText = label,
+                OnTooltip = () => TooltipChooser.OpenTemplate(label(), vm?.Tooltip?.Value),
+            };
+        }
+
+        /// <summary>A whole such block as its own Tab-stop (the one-stop-per-zone convention), skipped when
+        /// the block is empty or absent. Shared by the attributes and summary phases so both read alike —
+        /// the game binds the very same <c>CharInfoSkillsBlockVM</c> class on both.</summary>
+        public static void StatBlock(GraphBuilder b, object stop, string k, string label,
+            IEnumerable<CharInfoStatVM> stats)
+        {
+            if (stats == null) return;
+            var rows = new List<CharInfoStatVM>();
+            foreach (var s in stats) if (s != null) rows.Add(s);
+            if (rows.Count == 0) return;
+
+            b.BeginStop(stop).PushContext(label, Loc.T("role.list"));
+            for (int i = 0; i < rows.Count; i++)
+                b.AddItem(ControlId.Referenced(rows[i], k + i), StatBlockRow(rows[i]));
+            b.PopContext();
         }
 
         /// <summary>The spoken VALUE of one attribute row: the number, then the RANK it now stands at

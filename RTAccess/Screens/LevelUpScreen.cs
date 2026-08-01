@@ -6,7 +6,10 @@ using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;                                 
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo;                          // CharacterInfoVM, CharInfoComponentType
 using Kingmaker.Code.UI.MVVM.View.ServiceWindows.CharacterInfo;                        // CharInfoPageType
 using Kingmaker.EntitySystem.Entities;                                                 // BaseUnitEntity
-using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers;              // UnitProgressionVM, UnitProgressionWindowState
+using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers;              // UnitProgressionVM, UnitProgressionWindowState, UnitBackgroundBlockVM
+using Kingmaker.UnitLogic.Progression.Features;                                        // BlueprintFeature (the origin picks)
+using Owlcat.Runtime.UI.Tooltips;                                                      // TooltipBaseTemplate
+using UniRx;                                                                           // ReactiveProperty
 using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.CareerPath;   // CareerPathVM
 using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.RankEntry;    // CareerPathRankEntryVM, RankEntrySelectionVM, RankEntryState, RankFeatureState
 using Kingmaker.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Careers.RankEntry.Feature; // BaseRankEntryFeatureVM, RankEntrySelectionStatVM
@@ -172,6 +175,8 @@ namespace RTAccess.Screens
             b.BeginStop("head").AddItem(ControlId.Structural(k + "head"),
                 GraphNodes.Text(() => anyUp ? Loc.T("levelup.pick_career") : Loc.T("levelup.none")));
 
+            BuildBackground(b, k, vm);
+
             b.BeginStop("list");
             ControlId start = null;
             foreach (var tier in paths.Select(c => c.CareerPath.Tier).Distinct().OrderBy(t => (int)t))
@@ -198,6 +203,38 @@ namespace RTAccess.Screens
             // Land on the actionable archetype, not the header — nothing on this page reads as selected,
             // so a full re-key (or first open) falls through the differ to exactly this node.
             if (start != null) b.SetStart(start);
+        }
+
+        /// <summary>The unit's ORIGIN picks — homeworld, occupation and (main character only) moment of
+        /// triumph and darkest hour — as their own Tab-stop beside the career list, each row opening the same
+        /// TooltipTemplateChargenBackground the block's view binds. The block sits on the career-list page in
+        /// the game (CareerPathsListsCommonView binds UnitBackgroundBlockVM there), and the mod surfaced that
+        /// template only INSIDE chargen, so after creation the write-up of what each origin granted was
+        /// unreachable — on the very page where advancement is chosen. Nulls are skipped exactly as the view
+        /// skips them (a companion has no triumph/darkest-hour pick), so the stop vanishes when there is
+        /// nothing to show.</summary>
+        private static void BuildBackground(GraphBuilder b, string k, UnitProgressionVM vm)
+        {
+            var bg = vm.UnitBackgroundBlockVM;
+            if (bg == null) return;
+            var rows = new (ReactiveProperty<BlueprintFeature> Feature, ReactiveProperty<TooltipBaseTemplate> Tip)[]
+            {
+                (bg.Homeworld, bg.HomeworldTooltip),
+                (bg.Occupation, bg.OccupationTooltip),
+                (bg.MomentOfTriumph, bg.MomentOfTriumphTooltip),
+                (bg.DarkestHour, bg.DarkestHourTooltip),
+            };
+            bool any = false;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var f = rows[i].Feature?.Value;
+                if (f == null) continue;
+                if (!any) { b.BeginStop("background").PushContext(Loc.T("levelup.background"), Loc.T("role.list")); any = true; }
+                var tip = rows[i].Tip;
+                b.AddItem(ControlId.Structural(k + "bg:" + i),
+                    GraphNodes.TextWithTooltip(() => f.Name, () => tip?.Value));
+            }
+            if (any) b.PopContext();
         }
 
         private static bool Upgradeable(BaseUnitEntity unit, CareerPathVM cp)
@@ -227,8 +264,12 @@ namespace RTAccess.Screens
         {
             RefreshStaleSelections(cp);
 
+            // Space on the header = this path's own card (prerequisites, description, the stats and skills it
+            // raises, its keystone and ultimate abilities) — the same CareerTooltip the archetype button in
+            // state 1 carries, which is otherwise an Escape away and, with picks pending, behind the game's
+            // discard-confirm.
             b.BeginStop("head").AddItem(ControlId.Structural(k + "head"),
-                GraphNodes.Text(() => ProgressHeader(cp)));
+                GraphNodes.TextWithTooltip(() => ProgressHeader(cp), () => cp.CareerTooltip));
 
             int actual = cp.Unit.Progression.GetPathRank(cp.CareerPath); // committed rank (before this level-up)
             var range = cp.GetCurrentLevelupRange();                     // ranks being added now (Min..Max, or -1)

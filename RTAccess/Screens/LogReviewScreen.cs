@@ -136,7 +136,7 @@ namespace RTAccess.Screens
         // (GraphNavigator.OpenTooltipOrLinks over the old LogRow element) offered.
         private static NodeVtable LogLine(CombatLogMessage msg)
         {
-            var vt = GraphNodes.Text(() => Clean(msg.Message));
+            var vt = GraphNodes.Text(() => LogLineText(msg));
             vt.OnTooltip = () => OpenDetail(msg);
             // Backspace — the sighted LEFT-CLICK on a log line (CombatLogItemPCView.OnPointerClick scrolls
             // the camera to the message's unit): plant the tile cursor on that unit instead — PlantOn scrolls
@@ -144,6 +144,19 @@ namespace RTAccess.Screens
             // Only lines that carry a unit advertise the verb (system lines get the navigator's "nothing").
             if (msg.Unit != null) vt.OnSecondary = () => FollowUnit(msg);
             return vt;
+        }
+
+        /// <summary>The line as the card reads it: the per-shot ordinal badge, then the message. That badge is
+        /// a second visible TMP field beside the text (CombatLogItemBaseView.SetIcon writes ShotNumber and
+        /// alpha-hides it at 0), and Space does not recover it — TooltipTemplateCombatLogMessage carries no
+        /// ordinal. With per-line positions suppressed on this screen, nothing else supplied it, so a burst of
+        /// identical outcomes read byte-identically. Set only for a real volley (PerformAttackLogThread zeroes
+        /// it unless AttacksCount > 1), so single shots are unchanged.</summary>
+        private static string LogLineText(CombatLogMessage msg)
+        {
+            var text = Clean(msg.Message);
+            int shot = msg.ShotNumber;
+            return shot > 0 ? Loc.T("log.shot", new { number = shot, text }) : text;
         }
 
         // Fog parity: the sighted click only MOVES THE CAMERA (fogged ground stays black), but planting the
@@ -166,7 +179,7 @@ namespace RTAccess.Screens
             string raw = msg?.Message;
             var tpl = msg?.Tooltip;
             TooltipChooser.Open(Clean(raw), tpl != null ? TooltipReader.GetFull(tpl) : null,
-                sections: null, links: GlossaryLinks.Gather(raw));
+                sections: NestedTooltips.Gather(tpl), links: GlossaryLinks.Gather(raw));
         }
 
         // A channel tab ("All, tab[, selected], n of 4"): selecting reads live view state, activation

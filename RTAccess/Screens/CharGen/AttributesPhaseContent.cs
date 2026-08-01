@@ -34,6 +34,16 @@ namespace RTAccess.Screens.CharGen
             foreach (var it in vm.SelectionGroup.EntitiesCollection)
                 b.AddItem(ControlId.Referenced(it, k + "stat:" + i++), CharGenNodes.StatRow(it));
             b.PopContext();
+
+            // The live SKILLS panel the detailed view binds beside the steppers
+            // (CharGenAttributesPhaseDetailedView → CharGenAttributesPhaseVM.CharInfoSkillsBlock). It is the
+            // whole point of the page's right-hand side: a characteristic spend RAISES SKILLS, and the block
+            // re-highlights per selected attribute and carries the career's recommended marks. Without it a
+            // blind player never learned their character's 13 skills during creation — not the values, not
+            // which the career recommends, not which move when a point is spent, and no per-skill card.
+            // Its own Tab-stop, so the arrows stay in the steppers and Tab reaches the consequences.
+            CharGenNodes.StatBlock(b, "skills", k + "skill:", Loc.T("charinfo.skills"),
+                vm.CharInfoSkillsBlock?.Stats);
         }
     }
 }

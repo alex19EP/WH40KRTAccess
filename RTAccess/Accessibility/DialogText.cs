@@ -62,14 +62,40 @@ internal static class DialogText
     /// <c>ShowSkillcheckResult</c> toggle internally (returns "" when off — matching the answer side, which
     /// gates on the same setting). Guarded: a formatting failure must never swallow the cue line itself.
     /// </summary>
-    private static string BuildSkillCheckPrefix(CueVM cue)
+    private static string BuildSkillCheckPrefix(CueVM cue) => Clean(MechanicRaw(cue));
+
+    /// <summary>
+    /// The mechanic overlay MARKUP-INTACT — the same string <see cref="BuildMechanicLine"/> returns cleaned.
+    /// This is where the game MINTS the two runtime <c>&lt;link&gt;</c> anchors a player can follow: the check
+    /// result itself (<c>SkillcheckResult</c>) and the acting character's rolled stat (<c>us:</c>, which opens
+    /// their stat page). Both are composed by <c>UIUtility.SkillCheckText</c> at draw time and appear NOWHERE
+    /// in <c>RawText</c> — which is only <c>BlueprintCue.DisplayText</c> — so link mining that reads RawText
+    /// alone can never see them. Null when the cue rolled no check.
+    /// </summary>
+    public static string MechanicRaw(CueVM cue)
     {
         var checks = cue?.SkillChecks;
         if (checks == null || checks.Count == 0) return null;
         var colors = UIConfig.Instance?.DialogColors;
         if (colors == null) return null;
-        try { return Clean(UIUtility.SkillCheckText(checks, colors)); }
+        try { return UIUtility.SkillCheckText(checks, colors); }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// The cue as the game's own views COMPOSE it, markup intact: the mechanic overlay then the narrative,
+    /// exactly the <c>mechanicText + " " + text</c> that <c>BookEventCueView</c> sets and that
+    /// <c>DialogCuePCView</c> hands to <c>SetLinkTooltip</c>. Use this — never bare <c>RawText</c> — as the
+    /// source for anything that must see what the player sees: link mining, and the book-event passage rows.
+    /// <paramref name="includeNarrative"/> false keeps only the mechanic half, for the case where the game's
+    /// own voice-over is reading the prose but never the roll result.
+    /// </summary>
+    public static string ComposedRaw(CueVM cue, bool includeNarrative = true)
+    {
+        var mech = MechanicRaw(cue);
+        var narrative = includeNarrative ? cue?.RawText : null;
+        if (string.IsNullOrEmpty(mech)) return narrative;
+        return string.IsNullOrEmpty(narrative) ? mech : mech + " " + narrative;
     }
 
     private static string Clean(string raw)

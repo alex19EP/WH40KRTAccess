@@ -16,6 +16,7 @@ using Kingmaker.Items;                             // ItemEntityWeapon (the weap
 using Kingmaker.Stores;                            // StoreManager (the augmentations filter's DLC3 gate)
 using Kingmaker.Stores.DlcInterfaces;              // DlcNameEnum
 using Kingmaker.UI.Common;                         // ItemsFilterType, ItemsSorterType
+using Kingmaker.UI.Models.Tooltip;                 // TooltipElement (the game's own weapon-stat labels)
 using Owlcat.Runtime.UI.Tooltips;                  // TooltipBaseTemplate
 using RTAccess.Accessibility;                       // ViewedCharacter (switch announce + header + pet swap)
 using RTAccess.UI;
@@ -140,8 +141,11 @@ namespace RTAccess.Screens
             if (unit == null) return;
             b.BeginStop("character");
             b.PushContext(Loc.T("inv.character"), Loc.T("role.list"));
+            // The header carries the wounds readout, and the window binds the same CharInfoHitPointsVM the
+            // sheet does — so Space gives the max-wounds breakdown + the HitPoints glossary here too.
             b.AddItem(ControlId.Structural(uk + "char:readout"),
-                GraphNodes.Text(() => ViewedCharacter.HeaderLine(vm.Unit?.Value)));
+                GraphNodes.TextWithTooltip(() => ViewedCharacter.HeaderLine(vm.Unit?.Value),
+                    () => CharacterInfoScreen.HitPointsCard(vm.Unit?.Value)));
             // The level block beside the portrait (the window binds CharInfoLevelClassScoresVM here):
             // XP + psy rating off the live Experience VM, the careers list, and the Level Up entry while
             // a rank is pending — driving the VM's OWN LevelUp() (raises ILevelUpInitiateUIHandler, the
@@ -150,8 +154,12 @@ namespace RTAccess.Screens
             var exp = vm.LevelClassScoresVM?.Experience;
             if (exp != null)
             {
-                b.AddItem(ControlId.Structural(uk + "char:xp"), GraphNodes.Text(
-                    () => Loc.T("inv.xp", new { current = exp.CurrentExp.Value, next = exp.NextLevelExp.Value })));
+                // Space = the game's own level card. The line already speaks current/next exp, so what it
+                // adds is the exp-till-next delta and the CharacterLevel glossary write-up — and the psy
+                // rating line right below already carried its tooltip, so this was an inconsistency too.
+                b.AddItem(ControlId.Structural(uk + "char:xp"), StatLine(
+                    () => Loc.T("inv.xp", new { current = exp.CurrentExp.Value, next = exp.NextLevelExp.Value }),
+                    () => new TooltipTemplateLevelExp(exp)));
                 if (exp.HasPsyRating.Value)
                     b.AddItem(ControlId.Structural(uk + "char:psy"), StatLine(
                         () => Loc.T("inv.psy_rating", new { value = exp.PsyRating.Value }),
@@ -364,7 +372,8 @@ namespace RTAccess.Screens
                 var weapon = row.weapon;
                 string prefix = multi ? Loc.T("inv.weapon_set", new { index = row.set + 1 }) + ": " : "";
                 string wkey = uk + "weap:" + row.set + ":" + (weapon.UniqueId ?? weapon.Name);
-                b.BeginGroup(ControlId.Structural(wkey), GraphNodes.Group(() => prefix + weapon.Name));
+                b.BeginGroup(ControlId.Structural(wkey),
+                    GraphNodes.Group(() => prefix + weapon.Name + WeaponCardStats(weapon, unit)));
                 int ai = 0;
                 var abilities = weapon.Blueprint?.WeaponAbilities;
                 if (abilities != null)
@@ -385,6 +394,56 @@ namespace RTAccess.Screens
             b.PopContext();
         }
 
+        /// <summary>The four combat numbers the weapons block prints ON THE CARD, as a browse-label tail:
+        /// damage, penetration, range and ammo. These are the headline figures a sighted player reads with
+        /// NO hover at all (CharInfoWeaponSetPCView writes them as plain TMP labels), so they belong in the
+        /// label, not on Space — the only other route in the mod was the weapon's item card from a different
+        /// Tab-stop, the doll's hand slot.
+        ///
+        /// Read exactly the way that view reads them, including the ammo block's own SetActive gate
+        /// (WarhammerMaxAmmo > 0 — melee weapons show no ammo field). One deliberate difference: the game's
+        /// block is per SET and shows the selected hand's numbers, while these rows are per WEAPON, which is
+        /// the faithful mapping for a per-weapon row. GetWeaponStats takes the VIEWED unit — the view resolves
+        /// the wielder via UIUtility.GetCurrentSelectedUnit(), and letting it default would drift the numbers
+        /// onto whoever the field selection happens to be.</summary>
+        private static string WeaponCardStats(ItemEntityWeapon weapon, BaseUnitEntity unit)
+        {
+            if (weapon?.Blueprint == null) return "";
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                var dmg = weapon.GetWeaponStats(unit)?.ResultDamage;
+                if (dmg != null)
+                    Add(sb, TooltipElement.Damage, "stat.damage",
+                        Loc.T("inv.weapon_range_value",
+                            new { from = dmg.MinValueBase, to = dmg.MaxValueBase }));
+                Add(sb, TooltipElement.Penetration, "stat.penetration",
+                    weapon.Blueprint.WarhammerPenetration.ToString());
+                Add(sb, TooltipElement.Range, "stat.range",
+                    Loc.T("inv.weapon_range_value",
+                        new { from = weapon.AttackOptimalRange, to = weapon.AttackRange }));
+                if (weapon.Blueprint.WarhammerMaxAmmo > 0)
+                    Add(sb, TooltipElement.MaxAmmo, "stat.ammo",
+                        weapon.Blueprint.WarhammerMaxAmmo.ToString());
+                return sb.Length > 0 ? ", " + sb : "";
+            }
+            catch (Exception e)
+            {
+                Main.Log?.Error("InventoryScreen.WeaponCardStats: " + e);
+                return "";
+            }
+
+            void Add(System.Text.StringBuilder sb, TooltipElement element, string fallbackKey, string value)
+            {
+                string label;
+                try { label = UIStrings.Instance?.TooltipsElementLabels?.GetLabel(element); }
+                catch { label = null; }
+                if (string.IsNullOrEmpty(label)) label = Loc.T(fallbackKey);
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append(label).Append(' ').Append(value);
+            }
+        }
+
         // The derived defensive stats the game shows beside the doll — read live from the reachable
         // InventoryDollAdditionalStatsVM (already-formatted strings + breakdown tooltips on Space). Resolve is
         // hidden for pets (the VM reports "—"). Per-character, so keyed on the viewed unit.
@@ -400,13 +459,21 @@ namespace RTAccess.Screens
                 StatLine(() => Loc.T("stat.absorption", new { value = s.ArmorAbsorption?.Value }), () => s.AbsorptionTooltip?.Value));
             b.AddItem(ControlId.Structural(uk + "def:dodge"),
                 StatLine(() => Loc.T("stat.dodge", new { value = s.Dodge?.Value }), () => s.DodgeTooltip?.Value));
+            // Deflection / absorption / dodge carry breakdown templates on the VM; the other three don't —
+            // InventoryDollAdditionalStatsPCView sets THEIR tooltips on the view instead
+            // (SetGlossaryTooltip on the OwlcatMultiButton), the documented "some control state lives on
+            // game VIEWS, not VMs" case. Same glossary keys the view passes, so no new locale strings; an
+            // unresolvable key yields an empty card, which is what the sighted hover shows too.
             b.AddItem(ControlId.Structural(uk + "def:dodge_reduction"),
-                StatLine(() => Loc.T("stat.dodge_reduction", new { value = s.DodgeReduction?.Value })));
+                StatLine(() => Loc.T("stat.dodge_reduction", new { value = s.DodgeReduction?.Value }),
+                    () => new TooltipTemplateGlossary("DodgeReduction")));
             if (!string.IsNullOrEmpty(s.Resolve?.Value) && s.Resolve?.Value != "—")
                 b.AddItem(ControlId.Structural(uk + "def:resolve"),
-                    StatLine(() => Loc.T("stat.resolve", new { value = s.Resolve?.Value })));
+                    StatLine(() => Loc.T("stat.resolve", new { value = s.Resolve?.Value }),
+                        () => new TooltipTemplateGlossary("Resolve")));
             b.AddItem(ControlId.Structural(uk + "def:parry"),
-                StatLine(() => Loc.T("stat.parry", new { value = s.Parry?.Value })));
+                StatLine(() => Loc.T("stat.parry", new { value = s.Parry?.Value }),
+                    () => new TooltipTemplateGlossary("Parry")));
             b.PopContext();
         }
 

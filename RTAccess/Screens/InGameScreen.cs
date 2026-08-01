@@ -21,6 +21,8 @@ using Kingmaker.Blueprints.Root.Strings;             // UIStrings (reuse the gam
 using Kingmaker.UI.Models.SettingsUI;                // UISettingsRoot (keybind Description labels)
 using Kingmaker.Stores;                              // StoreManager (Augmentations DLC gate)
 using Kingmaker.Stores.DlcInterfaces;                // DlcNameEnum
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;   // TooltipTemplateSimple (the Necron timer's card)
+using RTAccess.Accessibility;                        // HudGauges (shared gauge lines + their tooltip VMs)
 using RTAccess.UI;
 using RTAccess.UI.Graph;
 using UnityEngine;                                   // Mathf
@@ -147,6 +149,7 @@ namespace RTAccess.Screens
         public override void Build(GraphBuilder b)
         {
             BuildStatus(b);
+            BuildGauges(b);
             BuildActions(b);
             BuildParty(b);
             BuildCombat(b);
@@ -160,6 +163,38 @@ namespace RTAccess.Screens
         {
             b.BeginStop("status").SetRegion("hud:status");
             b.AddItem(ControlId.Structural("hud:status"), GraphNodes.Text(() => StatusLine()));
+        }
+
+        // ---- Gauges stop ----
+
+        // The two HUD gauges that PERSIST OUTSIDE combat (momentum lives in the combat stop with its VM).
+        // Both are self-hiding on exactly the conditions HudGauges reports them under, so the stop exists
+        // only while one of them does. K still reads every gauge in one line; these rows exist because the
+        // gauges' own explanatory cards had no route at all.
+        private static void BuildGauges(GraphBuilder b)
+        {
+            string veil = HudGauges.VeilLine();
+            string necron = HudGauges.NecronLine();
+            if (veil == null && necron == null) return;
+
+            b.BeginStop("gauges").SetRegion("hud:gauges");
+            b.PushContext(Loc.T("hud.gauges"), Loc.T("role.list"));
+            // Veil: the numbers are largely spoken already, so what Space adds is the write-up — what veil
+            // thickness IS, the state ladder, and the exact critical threshold (TooltipTemplateVail's Info
+            // body). Hand over the VM's LONG-LIVED template field, never a fresh one: it only knows its
+            // value through a subscription set up in the VM's ctor.
+            if (veil != null)
+                b.AddItem(ControlId.Structural("hud:veil"), GraphNodes.TextWithTooltip(
+                    () => HudGauges.VeilLine() ?? "", () => HudGauges.VeilVm()?.Tooltip));
+            // Necron countdown: NecronTimerDescription is the game's only explanation of what the count
+            // reaches and what happens then, and it had no route in the mod. Same template shape the base
+            // view builds; header string from the game so it follows the game's language.
+            if (necron != null)
+                b.AddItem(ControlId.Structural("hud:necron"), GraphNodes.TextWithTooltip(
+                    () => HudGauges.NecronLine() ?? "",
+                    () => new TooltipTemplateSimple(UIStrings.Instance.Tooltips.NecronTimerHeader,
+                                                    UIStrings.Instance.Tooltips.NecronTimerDescription)));
+            b.PopContext();
         }
 
         // ---- Windows stop (static set) ----
@@ -362,6 +397,11 @@ namespace RTAccess.Screens
                     Announcements = new List<NodeAnnouncement> { GraphNodes.LabelPart(() => PartyLabel(unit)) },
                     SearchText = () => unit.CharacterName,
                     OnActivate = () => Select(unit),
+                    // The row speaks the wounds; Space gives their derivation. The portrait's health bar
+                    // binds UnitHealthPartVM — a CharInfoHitPointsVM — so the sighted hover here is the same
+                    // max-wounds card the character sheet and the inventory header carry.
+                    OnTooltip = () => TooltipChooser.OpenTemplate(PartyLabel(unit),
+                        CharacterInfoScreen.HitPointsCard(unit)),
                     // Selecting flips the unit's IsSelected VM reactive, which the live PartyCharacterPCView
                     // already answers with Character.CharacterSelect — so no generic click of ours on top
                     // (the spoken feedback is SelectionAnnouncer.Announce(force: true) inside Select).
@@ -449,6 +489,16 @@ namespace RTAccess.Screens
 
             // The combat-aware status line, focusable on its own.
             b.AddItem(ControlId.Structural("hud:cstatus"), GraphNodes.Text(() => StatusLine()));
+
+            // Momentum. K already reads the number and whether a heroic act is live RIGHT NOW; what only the
+            // card carries is how far off the thresholds are — the heroic-act threshold, the acting unit's
+            // desperate-measure threshold, and (in Info mode, the mode TooltipReader renders) one
+            // available/not-available line per party member for their momentum ability. Turn-based only,
+            // matching MomentumEntityVM's own combat gate, which is also this stop's gate.
+            if (HudGauges.MomentumVm() != null)
+                b.AddItem(ControlId.Structural("hud:momentum"), GraphNodes.TextWithTooltip(
+                    () => HudGauges.MomentumLine() ?? "",
+                    () => HudGauges.MomentumVm()?.Tooltip?.Value));
 
             // TryEndPlayerTurnManually plays Combat.EndTurn itself (TurnController), so no ActivateSound —
             // a generic ButtonClick would stack on top of the real end-turn sting.

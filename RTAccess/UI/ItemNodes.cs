@@ -62,6 +62,16 @@ namespace RTAccess.UI
             var grade = slot.ItemGrade.Value;
             if (grade != ItemGrade.Common)
                 flags.Add(Loc.T("item.grade." + grade.ToString().ToLowerInvariant()));
+            // The Uncollectable badge the card overlays on junk (ItemSlotVM drives a three-state ItemStatus
+            // and ItemSlotView.SetupStatus renders it on any filled slot). Gated on CanUse, mirroring the
+            // VM's own else-if precedence — an unusable item shows Unsuitable instead, and that is already
+            // the "unusable" flag above. It matters most in the cargo bays, where CanTransferFromCargo
+            // refuses trash outright, so the row offers no action and, without this, no reason.
+            // IsTrash is a DIFFERENT predicate from ItemGrade.Trash (CargoHelper.IsTrashItem = a plain
+            // BlueprintItem that is not notable, while the grade comes from Rarity, which defaults to
+            // Common) — so suppress it only when the grade badge already said the word.
+            if (slot.CanUse.Value && slot.IsTrash.Value && grade != ItemGrade.Trash)
+                flags.Add(Loc.T("item.uncollectable"));
             if (slot.Count.Value > 1) flags.Add(Loc.T("item.count", new { count = slot.Count.Value }));
             if (slot.UsableCount.Value > 0) flags.Add(Loc.T("item.charges", new { count = slot.UsableCount.Value }));
             if (withFavorite && slot.Item.Value != null && slot.Item.Value.IsFavorite)
@@ -133,6 +143,10 @@ namespace RTAccess.UI
                         removed = Loc.T("insert.removed", new { name });
                 },
                 StateText = () => removed,
+                // A OneSlot device's filled slot goes through the same ItemSlotPCView tooltip chain as every
+                // other item row (InteractionSlotPartView binds it), and this was the one item row in the
+                // loot family with NO tooltip at all.
+                OnTooltip = () => OpenItemTooltip(inSlot, withFavorite: false),
                 ActivateSound = Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick,
             };
         }
@@ -592,27 +606,30 @@ namespace RTAccess.UI
         // alongside the equipped items it would replace. Resolved live per press; links mined from the
         // item's own template so inline glossary terms drill too. (Internal: display-only item rows —
         // the exit-battle rewards — reuse it for their Space read.)
-        internal static void OpenItemTooltip(ItemSlotVM slot)
+        internal static void OpenItemTooltip(ItemSlotVM slot) => OpenItemTooltip(slot, withFavorite: true);
+
+        /// <summary>As above, with control over the title's favourite badge: inventory cards overlay the
+        /// star, LOOT cards do not, so a loot row's page title must not claim one (the label-mirror law).</summary>
+        internal static void OpenItemTooltip(ItemSlotVM slot, bool withFavorite)
         {
             var t = slot.Tooltip.Value;
             var own = t != null && t.Count > 0 ? t[t.Count - 1] : null;
             var body = own != null ? TooltipReader.GetFull(own) : null;
             var links = GlossaryLinks.Gather(own);
-            List<(string, string)> sections = null;
-            if (t != null && t.Count > 1) // count 1 = own card only, no comparison
+            var sections = new List<TooltipRef>();
+            // Each comparison card is its own drill-in page, so it drills onward exactly like the item's own
+            // card does — nothing is rendered here, the page builds when you open it. Count 1 = own card
+            // only, no comparison.
+            int compares = t != null ? t.Count - 1 : 0;
+            for (int i = 0; i < compares; i++)
             {
-                int compares = t.Count - 1;
-                sections = new List<(string, string)>();
-                for (int i = 0; i < compares; i++)
-                {
-                    var cb = TooltipReader.GetFull(t[i]);
-                    if (string.IsNullOrWhiteSpace(cb)) continue;
-                    sections.Add((compares > 1 ? Loc.T("inv.compare_n", new { index = i + 1 })
-                        : Loc.T("inv.compare"), cb));
-                }
-                if (sections.Count == 0) sections = null;
+                if (t[i] == null) continue;
+                sections.Add(TooltipRef.To(compares > 1 ? Loc.T("inv.compare_n", new { index = i + 1 })
+                    : Loc.T("inv.compare"), t[i]));
             }
-            TooltipChooser.Open(ItemLabel(slot, withFavorite: true), body, sections, links);
+            // The card's own rows drill too (a weapon's abilities, the stats it grants).
+            sections.AddRange(NestedTooltips.Gather(own));
+            TooltipChooser.Open(ItemLabel(slot, withFavorite), body, sections, links);
         }
 
         // Action verbs, routed exactly like InventorySlotView (EventBus → InventoryVM) — the game's own
@@ -640,7 +657,13 @@ namespace RTAccess.UI
                 SearchText = label,
                 OnActivate = activate,
                 StateText = activate != null ? stateText : null,
-                OnTooltip = () => TooltipChooser.OpenTemplate(ItemLabel(slot), OwnTemplate(slot)),
+                // The full item read, not just the item's own card. Loot slots are plain ItemSlotVMs built by
+                // ItemSlotsGroupVM, so the compare gate passes and the game's hover shows the item card
+                // ALONGSIDE the equipped items it would replace — a rendered delta view, not merely the
+                // equipped item's card, so it is reproducible from no other surface while the window is open:
+                // the player would have to take the item first and re-read it in the stash. Same for corpses
+                // and the player chest, which all build through this shell.
+                OnTooltip = () => OpenItemTooltip(slot, withFavorite: false),
                 HoverSound = Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
                 ActivateSound = activate != null
                     ? Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Buttons?.ButtonClick

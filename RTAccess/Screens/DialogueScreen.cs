@@ -5,8 +5,10 @@ using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.Dialog;        // DialogContextVM
 using Kingmaker.Code.UI.MVVM.VM.Dialog.Dialog; // DialogVM, CueVM, AnswerVM
 using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates; // TooltipTemplateSkillCheckResult
+using Kingmaker.Controllers.Dialog;            // SkillCheckResult (the cue's own roll list)
 using Kingmaker.DialogSystem.Blueprints;       // BlueprintCue (stable cue identity)
 using Kingmaker.PubSubSystem.Core;             // EventBus, IEscMenuHandler
+using Kingmaker.UI.Common;                     // EntityLink (link-type dispatch)
 using Owlcat.Runtime.UI.Tooltips;              // TooltipBaseTemplate
 using RTAccess.Accessibility;                  // DialogText.BuildCueLine, TooltipReader, GlossaryLinks
 using RTAccess.UI;
@@ -175,12 +177,25 @@ namespace RTAccess.Screens
                 foreach (var d in vm.History)
                 {
                     int idx = i++;
-                    string text;
-                    try { text = TextUtil.StripRichText(d.GetText(colors)); }
+                    string raw, text;
+                    try { raw = d.GetText(colors); text = TextUtil.StripRichText(raw); }
                     catch { continue; }
                     if (string.IsNullOrWhiteSpace(text)) continue;
                     var captured = text;
-                    b.AddItem(ControlId.Structural(k + "row:" + idx), GraphNodes.Text(() => captured));
+                    var vt = GraphNodes.Text(() => captured);
+                    // Every scrollback line the game draws is a DialogHistoryEntity, and Initialize wires
+                    // SetLinkTooltip on it unconditionally — so a sighted player right-clicks any highlighted
+                    // term for its page, over this exact string. Keep the raw form beside the stripped label
+                    // (the strip removes the very tags we match) and offer them on Space. GLOSSARY ONLY: the
+                    // view passes (null, null), and TooltipHelper returns null for a skill-check link with no
+                    // roll list, so those anchors are dead in the game too and must stay dead here.
+                    if (raw.IndexOf("<link", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        var capturedRaw = raw;
+                        vt.OnTooltip = () => TooltipChooser.Open(captured, null,
+                            links: GlossaryLinks.Gather(capturedRaw));
+                    }
+                    b.AddItem(ControlId.Structural(k + "row:" + idx), vt);
                 }
             }
 
@@ -249,14 +264,20 @@ namespace RTAccess.Screens
         private static void OpenCueTooltip(DialogVM vm)
         {
             var cue = vm.Cue.Value;
-            if (cue == null) { TooltipChooser.Open(null, null, sections: null, links: null); return; }
+            if (cue == null) { TooltipChooser.Open(null, null); return; }
             var checks = cue.SkillChecks;
             TooltipBaseTemplate tpl = checks != null && checks.Count > 0
                 ? new TooltipTemplateSkillCheckResult(checks, Array.Empty<string>())
                 : null;
             var body = tpl != null ? TooltipReader.GetFull(tpl) : null;
-            var links = GlossaryLinks.Gather(cue.RawText);
-            TooltipChooser.Open(DialogText.BuildCueLine(cue, includeSpeaker: false), body, sections: null, links: links);
+            // A skill-check <link> in the cue can't resolve from the id alone — the roll it describes lives on
+            // the cue's own results list (see SkillCheckLinks) — so each highlighted check drills to its OWN
+            // page: acting character, stat total, DC, roll and chance, PLUS the glossary blurb for that check
+            // type, which the body's keyword-less template omits.
+            // Mine the COMPOSED cue, not RawText: the check anchors (and the acting character's stat page)
+            // are minted at draw time and are absent from RawText, so mining it left the resolver dead.
+            var links = GlossaryLinks.Gather(DialogText.ComposedRaw(cue), SkillCheckLinks.Results(checks));
+            TooltipChooser.Open(DialogText.BuildCueLine(cue, includeSpeaker: false), body, links: links);
         }
 
         // ---- identity keys (Build + OnUpdate must agree) ----

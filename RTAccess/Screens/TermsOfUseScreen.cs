@@ -65,7 +65,9 @@ namespace RTAccess.Screens
             if (!string.IsNullOrWhiteSpace(licence))
             {
                 int i = 0;
-                foreach (var line in TooltipScreen.SplitLines(TextUtil.StripRichTextSpaced(licence)))
+                // Break-preserving strip: the licence is a document, so it reads one line per PARAGRAPH.
+                // (SplitLines falls back to sentences only if it arrives with no breaks at all.)
+                foreach (var line in TooltipScreen.SplitLines(TextUtil.StripRichTextLines(licence)))
                 {
                     var l = line; // capture
                     b.AddItem(ControlId.Structural("terms:line:" + i++), GraphNodes.Text(() => l));

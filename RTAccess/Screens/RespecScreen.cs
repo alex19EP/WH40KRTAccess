@@ -1,7 +1,8 @@
 using Kingmaker;                                          // Game (root UI context + the PF pool)
 using Kingmaker.Blueprints.Root.Strings;                  // UIStrings (header / warning / Accept)
 using Kingmaker.Code.UI.MVVM.VM.Retrain;                  // RespecVM, RespecCharacterVM
-using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;        // TooltipTemplateSimple
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;        // TooltipTemplateSimple / TooltipTemplateProfitFactor
+using Owlcat.Runtime.UI.Tooltips;                         // TooltipBaseTemplate
 using RTAccess.UI;
 using RTAccess.UI.Graph;
 
@@ -99,10 +100,19 @@ namespace RTAccess.Screens
                 ControlType = ControlTypes.Text,
                 Announcements = new List<NodeAnnouncement> { GraphNodes.LabelPart(ProfitFactorLine) },
                 SearchText = ProfitFactorLine,
-                OnTooltip = () => TooltipChooser.OpenTemplate(
-                    UIStrings.Instance.ProfitFactorTexts.Title.Text,
-                    new TooltipTemplateSimple(UIStrings.Instance.ProfitFactorTexts.Title.Text,
-                        UIStrings.Instance.ProfitFactorTexts.Description.Text)),
+                // The game's OWN profit-factor card, not a hand-built Simple one: the total PLUS every income
+                // and loss modifier by name. That breakdown matters exactly here — this pool is what pays the
+                // respec cost. The window's VM already owns the ProfitFactorVM the widget's tooltip is built
+                // from (SystemMapSpaceProfitFactorView binds the same template over it).
+                OnTooltip = () =>
+                {
+                    var pf = vm?.SystemMapSpaceResourcesVM?.JournalOrderProfitFactorVM?.ProfitFactorVM;
+                    TooltipChooser.OpenTemplate(UIStrings.Instance.ProfitFactorTexts.Title.Text,
+                        pf != null
+                            ? (TooltipBaseTemplate)new TooltipTemplateProfitFactor(pf)
+                            : new TooltipTemplateSimple(UIStrings.Instance.ProfitFactorTexts.Title.Text,
+                                UIStrings.Instance.ProfitFactorTexts.Description.Text));
+                },
             });
             b.PopContext();
         }

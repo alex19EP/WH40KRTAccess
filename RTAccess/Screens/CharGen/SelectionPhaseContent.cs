@@ -4,6 +4,10 @@ using System.Linq;
 using Kingmaker.UI.MVVM.VM.CharGen.Phases;
 using Kingmaker.UI.MVVM.VM.CharGen.Phases.BackgroundBase;
 using Kingmaker.UI.MVVM.VM.Tooltip.Templates; // TooltipTemplateChargenBackground
+using Kingmaker.Blueprints;                   // BlueprintExtenstions.TryGetComponent
+using Kingmaker.UI.Common;                    // UIUtilityTexts.UpdateDescriptionWithUIProperties
+using Kingmaker.UnitLogic.Components;         // ReplaceDescriptionForCharGen
+using Kingmaker.UnitLogic.Progression.Features; // BlueprintFeature
 using Owlcat.Runtime.UI.Tooltips;
 using RTAccess.UI;
 using RTAccess.UI.Graph;
@@ -86,11 +90,29 @@ namespace RTAccess.Screens.CharGen
             }
         }
 
+        /// <summary>The SELECTED background's description, composed the way
+        /// <c>TooltipTemplateChargenBackground.AddDescription</c> composes it — which is the panel this line
+        /// mirrors. A feature that ships a chargen-specific write-up (ReplaceDescriptionForCharGen; real in
+        /// shipped data — Arbitrator, Exaction Castigators and Subductors all carry one) must speak THAT, not
+        /// its generic Description, and the result goes through the game's UI-property expansion so embedded
+        /// values resolve. Reading Description directly spoke the wrong text and contradicted this file's own
+        /// Space page, which already passes isCharGen: true.</summary>
         private static string SelectedDescription(IEnumerable<CharGenBackgroundBaseItemVM> items)
         {
             foreach (var it in items)
-                if (it.IsSelected.Value) return it.Feature?.Description ?? "";
+                if (it.IsSelected.Value) return FeatureDescription(it.Feature);
             return "";
+        }
+
+        private static string FeatureDescription(BlueprintFeature feature)
+        {
+            if (feature == null) return "";
+            string text = feature.TryGetComponent<ReplaceDescriptionForCharGen>(out var c)
+                ? (string)c.CharGenDescription
+                : feature.Description;
+            if (string.IsNullOrEmpty(text)) return "";
+            try { return UIUtilityTexts.UpdateDescriptionWithUIProperties(text, null); }
+            catch { return text; }
         }
 
         // The phase's SelectionGroup (and its EntitiesCollection) are public fields on the open-generic

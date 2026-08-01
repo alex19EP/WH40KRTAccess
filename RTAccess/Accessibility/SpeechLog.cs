@@ -26,6 +26,10 @@ internal static class SpeechLog
     public static void Write(string text, bool interrupt)
     {
         if (_path == null || string.IsNullOrEmpty(text)) return;
-        try { File.AppendAllText(_path, (interrupt ? "[!] " : "[+] ") + text + "\n", Encoding.UTF8); } catch { }
+        // One utterance is one line — the transcript is read (and parsed) line-wise. Spoken text may itself
+        // carry breaks now that tooltip bodies keep their paragraph structure (the inspect readout renders a
+        // whole template into one utterance), so fold them here rather than letting one line become several.
+        var flat = text.Replace("\r", "").Replace('\n', ' ');
+        try { File.AppendAllText(_path, (interrupt ? "[!] " : "[+] ") + flat + "\n", Encoding.UTF8); } catch { }
     }
 }

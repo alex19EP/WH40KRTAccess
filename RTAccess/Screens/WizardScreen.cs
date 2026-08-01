@@ -51,6 +51,12 @@ namespace RTAccess.Screens
         protected virtual bool NextEnabled() => true;
         protected virtual bool BackEnabled() => true;
 
+        /// <summary>Space on Next — the "why can't I proceed" hint the game hangs on that very button
+        /// (CharGenPCView subscribes the phase's PhaseNextHint into m_NextButton.SetHint). Without it a
+        /// greyed Next reads only "disabled". Null by default; GraphNodes.Button leaves OnTooltip ungated by
+        /// enabled precisely so a disabled button can still carry one.</summary>
+        protected virtual Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate NextTooltip() => null;
+
         /// <summary>Escape mirrors the footer's Back button. Without this the wizards advertise NO Back
         /// handler at all (<see cref="Screen.GetActions"/> defaults to nothing), so <c>ui.back</c> finds
         /// nothing to invoke and Escape is a DEAD KEY on a focused wizard — the action only yields Escape
@@ -125,7 +131,7 @@ namespace RTAccess.Screens
                 GraphNodes.Button(() => Loc.T("wizard.back"), OnBack, BackEnabled,
                     hoverSound: plastick, clickSound: plastick));
             b.BeginStop("next").AddItem(ControlId.Structural("wiz:next"),
-                GraphNodes.Button(NextLabel, OnNext, NextEnabled,
+                GraphNodes.Button(NextLabel, OnNext, NextEnabled, NextTooltip,
                     hoverSound: plastick, clickSound: plastick));
         }
     }

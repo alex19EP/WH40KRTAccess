@@ -19,25 +19,33 @@ namespace RTAccess.Accessibility
     /// eight of them declare the same <c>Tooltip</c> + name pair independently, with no shared interface —
     /// the same reason <see cref="TooltipReader"/> checks field OR property.
     ///
-    /// Bounded on purpose: every entry costs one render through the game's tooltip engine, and this runs on
-    /// a keypress.
+    /// Each entry carries the nested TEMPLATE, not its rendered text, so the page it opens can be drilled
+    /// again (a granted talent's card links the buff it applies, and so on) — see <see cref="TooltipRef"/>.
+    /// That also makes gathering nearly free: it used to render every nested tooltip through the game's
+    /// engine up front, on a keypress, for entries you would mostly never open. The cap is now only a
+    /// runaway guard on a pathological brick list, not a cost ceiling.
+    ///
+    /// The deliberate cost of going lazy: an entry whose template renders to nothing can no longer be
+    /// dropped up front, so it answers "No tooltip" when opened instead of being absent. Proving it empty
+    /// means rendering it, which is the very work being deferred. In practice a nested template is a
+    /// feature/ability card and always carries at least its own name.
     /// </summary>
     internal static class NestedTooltips
     {
-        private const int MaxEntries = 12;
+        private const int MaxEntries = 64;
 
         // Name-carrying members, in the order a brick VM is worth asking. Name is the feature/ability
         // bricks; Text/Label cover the stat-value and titled ones.
         private static readonly string[] LabelMembers = { "Name", "Text", "Label" };
 
         /// <summary>
-        /// The nested tooltips <paramref name="tpl"/>'s body bricks hang off themselves, as (label, body)
-        /// pairs in render order, deduped by label. Empty for a tooltip whose rows drill nowhere — which is
-        /// most of them, so this stays free where it buys nothing.
+        /// The nested tooltips <paramref name="tpl"/>'s body bricks hang off themselves, in render order,
+        /// deduped by label. Empty for a tooltip whose rows drill nowhere — which is most of them, so this
+        /// stays free where it buys nothing.
         /// </summary>
-        public static List<(string label, string body)> Gather(TooltipBaseTemplate tpl)
+        public static List<TooltipRef> Gather(TooltipBaseTemplate tpl)
         {
-            var outList = new List<(string, string)>();
+            var outList = new List<TooltipRef>();
             if (tpl == null) return outList;
 
             IEnumerable<ITooltipBrick> bricks;
@@ -61,11 +69,7 @@ namespace RTAccess.Accessibility
                 seen ??= new HashSet<string>();
                 if (!seen.Add(label)) continue; // the same talent listed twice drills once
 
-                string body;
-                try { body = TooltipReader.GetFull(nested); }
-                catch { continue; }
-                if (string.IsNullOrWhiteSpace(body)) continue;
-                outList.Add((label, body));
+                outList.Add(TooltipRef.To(label, nested));
             }
             return outList;
         }

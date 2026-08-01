@@ -284,10 +284,11 @@ namespace RTAccess.Screens
                 return string.IsNullOrWhiteSpace(desc) ? title() : title() + ". " + desc;
             });
             vt.SearchText = title;
-            if (HasLinks(g.Description))
+            // The view link-wires the TITLE as well as the description, so mine both.
+            if (HasLinks(g.Description) || HasLinks(g.Title))
                 vt.OnTooltip = () => TooltipChooser.Open(
-                    title(), TextUtil.StripRichTextSpaced(g.Description), sections: null,
-                    links: GlossaryLinks.Gather(g.Description));
+                    title(), TextUtil.StripRichTextLines(g.Description), // a definition reads by paragraph
+                    links: GlossaryLinks.Gather(g.Title + "\n" + g.Description));
             return vt;
         }
 
@@ -307,51 +308,57 @@ namespace RTAccess.Screens
         }
 
         // A scanned planet, mirroring the game's own card fields (its own localized labels, passed through).
+        // Every field goes through Prose: EncyclopediaPageBlockPlanetPCView.SetLinks() link-wires ALL SEVEN
+        // of its TMP fields with the encyclopedia config (left-click follows the link there), so any inline
+        // anchor an authored planet name or objective carries is followable for a sighted player. Prose
+        // no-ops when a string holds no anchor, which is the common case here.
         private void EmitPlanet(GraphBuilder b, string bkey, EncyclopediaPageBlockPlanetVM p)
         {
-            b.AddItem(ControlId.Structural(bkey + ":name"),
-                GraphNodes.Text(() => TextUtil.StripRichText(p.Title.Value)));
-            b.AddItem(ControlId.Structural(bkey + ":admin"), GraphNodes.Text(() => p.AdminKnowAboutIt.Value
+            b.AddItem(ControlId.Structural(bkey + ":name"), Prose(p.Title.Value));
+            b.AddItem(ControlId.Structural(bkey + ":admin"), Prose(p.AdminKnowAboutIt.Value
                 ? GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.EncyclopediaIsReportedToAdministratum, "ency.reported")
                 : GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.EncyclopediaIsNotReportedToAdministratum, "ency.not_reported")));
-            b.AddItem(ControlId.Structural(bkey + ":system"), GraphNodes.Text(() => string.Format(
+            b.AddItem(ControlId.Structural(bkey + ":system"), Prose(string.Format(
                 GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.EncyclopediaPlanetPageSystem, "ency.system"),
                 p.SystemName.Value)));
             if (p.HaveColony.Value)
             {
-                b.AddItem(ControlId.Structural(bkey + ":colony"), GraphNodes.Text(() =>
+                b.AddItem(ControlId.Structural(bkey + ":colony"), Prose(
                     GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.EncyclopediaPlanetPageIsColonized, "ency.colonized")
                     + " " + GameText.Or(() => UIStrings.Instance.SettingsUI.DialogYes, "value.yes")));
-                b.AddItem(ControlId.Structural(bkey + ":security"), GraphNodes.Text(() => string.Format(
+                b.AddItem(ControlId.Structural(bkey + ":security"), Prose(string.Format(
                     GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.EncyclopediaPlanetPageSecurity, "ency.security"),
                     p.Security.Value)));
             }
             if (p.HaveQuest.Value && !string.IsNullOrWhiteSpace(p.QuestObjectiveName.Value))
-                b.AddItem(ControlId.Structural(bkey + ":quest"), GraphNodes.Text(() =>
+                b.AddItem(ControlId.Structural(bkey + ":quest"), Prose(
                     GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.EncyclopediaPlanetPageHaveQuest, "ency.quests")
                     + " " + p.QuestObjectiveName.Value));
             if (p.HaveRumour.Value && !string.IsNullOrWhiteSpace(p.RumourObjectiveName.Value))
-                b.AddItem(ControlId.Structural(bkey + ":rumour"), GraphNodes.Text(() =>
+                b.AddItem(ControlId.Structural(bkey + ":rumour"), Prose(
                     GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.EncyclopediaPlanetPageHaveRumour, "ency.rumours")
                     + " " + p.RumourObjectiveName.Value));
         }
 
-        // An astropathic brief, mirroring the card's labeled fields (the game's own strings).
+        // An astropathic brief, mirroring the card's labeled fields (the game's own strings). Header fields
+        // go through Prose for the same reason as the planet card's — the PC view link-wires all five —
+        // which also settles an inconsistency here: the BODY was already link-mined while the location /
+        // date / sender / read lines beside it were inert.
         private void EmitAstropath(GraphBuilder b, string bkey, EncyclopediaPageBlockAstropathBriefVM a)
         {
-            b.AddItem(ControlId.Structural(bkey + ":loc"), GraphNodes.Text(() => Field(
+            b.AddItem(ControlId.Structural(bkey + ":loc"), Prose(Field(
                 GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.AstropathBriefLocation, "ency.astropath_location"),
                 a.MessageLocation.Value)));
-            b.AddItem(ControlId.Structural(bkey + ":date"), GraphNodes.Text(() => Field(
+            b.AddItem(ControlId.Structural(bkey + ":date"), Prose(Field(
                 GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.AstropathBriefDate, "ency.astropath_date"),
                 a.MessageDate.Value)));
-            b.AddItem(ControlId.Structural(bkey + ":sender"), GraphNodes.Text(() => Field(
+            b.AddItem(ControlId.Structural(bkey + ":sender"), Prose(Field(
                 GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.AstropathBriefSender, "ency.astropath_sender"),
                 a.MessageSender.Value)));
             if (!string.IsNullOrWhiteSpace(a.MessageBody.Value))
                 b.AddItem(ControlId.Structural(bkey + ":body"), Prose(a.MessageBody.Value));
             if (a.IsMessageRead.Value)
-                b.AddItem(ControlId.Structural(bkey + ":read"), GraphNodes.Text(() =>
+                b.AddItem(ControlId.Structural(bkey + ":read"), Prose(
                     GameText.Or(() => UIStrings.Instance.EncyclopediaTexts.AstropathBriefIsRead, "ency.astropath_read")));
         }
 

@@ -33,6 +33,12 @@ internal static class TooltipReader
     /// owning focusable widget). Same read path as the component overload.</summary>
     public static string GetFull(TooltipBaseTemplate template) => ReadFull(Wrap(template));
 
+    /// <summary>Just the template's own name — its header title, or the first body text when it has no
+    /// header. Used to LABEL a drill-in entry whose on-screen anchor is an icon rather than a word (a
+    /// dialogue answer's conditions or exchange sprite), where there is no link text to speak.</summary>
+    public static string GetTitle(TooltipBaseTemplate template)
+        => ReadTemplates(Wrap(template), TooltipTemplateType.Info, titleOnly: true);
+
     /// <summary>Full-detail read (Space, the browse-label drill-in). Primary path renders each template through
     /// the game's OWN view factory and scrapes the visible text (<see cref="TooltipViewScraper"/>) — the fix that
     /// mirrors exactly what sighted players see, for every brick type. Falls back per-template to the curated
@@ -56,7 +62,9 @@ internal static class TooltipReader
                 text = fb.Length > 0 ? fb.ToString() : null;
             }
             if (string.IsNullOrWhiteSpace(text)) continue;
-            if (sb.Length > 0) sb.Append(". ");
+            // Newline, not ". ": the reader navigates the body by paragraph, and one template is at least
+            // its own paragraph. Gluing them with a full stop is what made the split ambiguous with prose.
+            if (sb.Length > 0) sb.Append('\n');
             sb.Append(text);
         }
         return sb.Length > 0 ? sb.ToString() : null;
@@ -120,7 +128,8 @@ internal static class TooltipReader
         {
             var t = BrickText(brick);
             if (string.IsNullOrWhiteSpace(t)) continue;
-            if (sb.Length > 0) sb.Append(". ");
+            // One brick is one visual row is one navigable line (same contract as TooltipViewScraper).
+            if (sb.Length > 0) sb.Append('\n');
             sb.Append(t);
         }
     }
@@ -315,10 +324,12 @@ internal static class TooltipReader
         return inner as string;
     }
 
+    // Break-preserving, like the scraper's: a prose brick's own paragraph breaks are what the reader
+    // navigates by. (Title bricks carry none, so GetTitle is unaffected.)
     private static string Clean(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
-        var clean = TextUtil.StripRichTextSpaced(s);
+        var clean = TextUtil.StripRichTextLines(s);
         return string.IsNullOrEmpty(clean) ? null : clean;
     }
 

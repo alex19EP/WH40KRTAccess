@@ -2,9 +2,11 @@ using System.Collections.Generic;
 using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.Dialog;          // DialogContextVM
 using Kingmaker.Code.UI.MVVM.VM.Dialog.BookEvent; // BookEventVM
+using Kingmaker.Code.UI.MVVM.VM.Dialog.Dialog;    // CueVM (a book page's paragraphs)
 using Kingmaker.Code.UI.MVVM.VM.Dialog.Epilog;    // EpilogVM (a BookEventVM subclass)
+using Kingmaker.Controllers.Dialog;               // SkillCheckResult
 using Kingmaker.DialogSystem.Blueprints;          // BlueprintBookPage
-using RTAccess.Accessibility;                     // VoiceOver (paragraphs the game narrates itself)
+using RTAccess.Accessibility;                     // VoiceOver, GlossaryLinks, SkillCheckLinks
 using RTAccess.UI;
 using RTAccess.UI.Graph;
 
@@ -54,7 +56,10 @@ namespace RTAccess.Screens
         protected override void SpeakLine(BookEventVM vm, BlueprintBookPage page)
         {
             var lines = PassageLines(vm, skipVoiced: true);
-            if (lines.Count > 0) Tts.Speak(string.Join("\n", lines.ToArray()), interrupt: false);
+            if (lines.Count == 0) return;
+            var spoken = new string[lines.Count];
+            for (int i = 0; i < lines.Count; i++) spoken[i] = lines[i].Text;
+            Tts.Speak(string.Join("\n", spoken), interrupt: false);
         }
 
         // Same transcript shape as ordinary dialogue: one silent, positions-off scope holding the passage lines,
@@ -72,8 +77,17 @@ namespace RTAccess.Screens
             var lines = PassageLines(vm);
             for (int i = 0; i < lines.Count; i++)
             {
-                var captured = lines[i];
-                b.AddItem(ControlId.Structural(k + "row:" + i), GraphNodes.Text(() => captured));
+                var line = lines[i]; // capture
+                var vt = GraphNodes.Text(() => line.Text);
+                // Space follows the paragraph's own inline <link> terms — the highlighted words a sighted
+                // player hovers (BookEventCueView wires the same links via SetLinkTooltip). Mining needs the
+                // RAW paragraph, which is why the row keeps it: the displayed text has been stripped of the
+                // very tags we match. Skill-check links resolve against THIS cue's rolls; a paragraph with no
+                // links answers "No tooltip", so the wiring costs nothing where there is nothing to follow.
+                if (line.HasLinks)
+                    vt.OnTooltip = () => TooltipChooser.Open(line.Text, null,
+                        links: GlossaryLinks.Gather(line.Raw, SkillCheckLinks.Results(line.Checks)));
+                b.AddItem(ControlId.Structural(k + "row:" + i), vt);
             }
 
             // Choices — the game's own AnswerVM list, through the shared answer node factory (numbered label,
@@ -96,24 +110,47 @@ namespace RTAccess.Screens
         private static string PageKey(BookEventVM vm, BlueprintBookPage page)
             => "book:" + vm.GetHashCode() + ":page:" + page.GetHashCode() + ":";
 
-        // The page as transcript lines: the epilogue title first (if any), then one line per cue paragraph
-        // (RawText = BlueprintCue.DisplayText, split on newlines, rich-text stripped). With skipVoiced the
-        // paragraphs the game reads aloud itself are left out — for the spoken pass only, never for Build.
-        // The title is never voiced, so it always reads.
-        private static List<string> PassageLines(BookEventVM vm, bool skipVoiced = false)
+        /// <summary>One passage paragraph: what it reads as, plus what it was BEFORE the markup was stripped
+        /// and the cue it came from. A row can only offer its links if it kept both — the strip that makes
+        /// the text speakable is the same strip that removes the <c>&lt;link&gt;</c> anchors, and a skill
+        /// check resolves only against its own cue's roll list.</summary>
+        private readonly struct PassageLine
         {
-            var lines = new List<string>();
+            public readonly string Text;
+            public readonly string Raw;
+            public readonly CueVM Cue;
+            public PassageLine(string text, string raw, CueVM cue) { Text = text; Raw = raw; Cue = cue; }
+
+            public List<SkillCheckResult> Checks => Cue?.SkillChecks;
+            public bool HasLinks => Raw != null && Raw.IndexOf("<link", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // The page as transcript lines: the epilogue title first (if any), then the cues split on newlines and
+        // rich-text stripped. The cue text is COMPOSED the way BookEventCueView composes it — mechanic overlay
+        // then narrative — not read off RawText: the skill-check result is the payoff of a book-event page, it
+        // is minted at draw time and lives nowhere in RawText, and book events never reach the combat log
+        // either (GameLogEventDialogHistory skips DialogType.Book), so reading RawText alone left the roll
+        // outcome unobtainable. In Book dialogs the mechanic text ends with its own blank line, so it falls
+        // out as its own row — carrying the two link anchors the row's Space then follows.
+        //
+        // skipVoiced (the spoken pass only, never Build) drops the paragraphs the game narrates itself — but
+        // only the NARRATIVE half: no actor ever reads the roll result, so the mechanic line still speaks.
+        // The title is never voiced, so it always reads; it carries no cue, hence no links to follow.
+        private static List<PassageLine> PassageLines(BookEventVM vm, bool skipVoiced = false)
+        {
+            var lines = new List<PassageLine>();
             if (vm is EpilogVM ep && !string.IsNullOrWhiteSpace(ep.Title.Value))
-                lines.Add(TextUtil.StripRichText(ep.Title.Value));
+                lines.Add(new PassageLine(TextUtil.StripRichText(ep.Title.Value), null, null));
             foreach (var cue in vm.Cues)
             {
-                if (skipVoiced && VoiceOver.Covers(cue?.BlueprintCue?.Text)) continue;
-                var t = cue != null ? cue.RawText : null;
+                if (cue == null) continue;
+                bool voiced = skipVoiced && VoiceOver.Covers(cue.BlueprintCue?.Text);
+                var t = DialogText.ComposedRaw(cue, includeNarrative: !voiced);
                 if (string.IsNullOrWhiteSpace(t)) continue;
                 foreach (var part in t.Split('\n'))
                 {
                     var clean = TextUtil.StripRichText(part);
-                    if (!string.IsNullOrWhiteSpace(clean)) lines.Add(clean);
+                    if (!string.IsNullOrWhiteSpace(clean)) lines.Add(new PassageLine(clean, part, cue));
                 }
             }
             return lines;

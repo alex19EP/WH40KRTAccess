@@ -7,6 +7,7 @@ using Kingmaker.Blueprints.Root.Strings;                                        
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;                                         // ServiceWindowsType, ServiceWindowsVM
 using Kingmaker.Code.UI.MVVM.VM.ShipCustomization;                                      // ShipCustomizationVM + tab enum + Upgrade-tab VMs
 using Kingmaker.Code.UI.MVVM.VM.Slots;                                                  // ItemSlotVM, IInventoryHandler
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;                                      // TooltipTemplateGlossary / TooltipTemplateSimple (the status readouts' own cards)
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.CharacterInfo.Sections.Abilities;        // CharInfoFeatureVM (Abilities tab rows)
 using Kingmaker.GameCommands;                                                           // UpgradeSystemComponent / SetInventorySorter extensions
 using Kingmaker.PubSubSystem.Core;                                                      // EventBus
@@ -736,6 +737,18 @@ namespace RTAccess.Screens
                 if (!pab.IsUnlocked) s += ", " + Loc.T("ship.ability_locked", new { reason = pab.LockedReason });
                 if (pab.HasCooldown && pab.Cooldown > 0)
                     s += ", " + Loc.T("ship.cooldown_penalty", new { rounds = pab.Cooldown });
+                // The buff LENGTH, printed on the card in its own block right beside the cooldown one this
+                // row already speaks. Not recoverable from Space: TooltipTemplateShipAbility carries only the
+                // blueprint's CooldownRounds and description, while UltimateDuration is computed live
+                // (StartingUltimateRounds + postSkill / SkillPointsToAddExtraUltimateRound) and moves with the
+                // seated officer's skill, so it can never appear in blueprint text.
+                if (pab.HasDuration && pab.UltimateDuration > 0)
+                    s += ", " + DurationLabel(pab.UltimateDuration);
+                // What the ability BECOMES once attuned — card text (SetupAttuneBlock writes the upgraded
+                // ability's name). Without it the name cost two keypresses: Space, then a section labelled
+                // with the generic "Attuned ability" string.
+                if (pab.IsAttunable && !string.IsNullOrEmpty(pab.AttuneAbility?.Name))
+                    s += ", " + AttunedLabel(pab.AttuneAbility.Name);
                 if (pab.IsAlreadyAttuned) s += ", " + Loc.T("ship.attuned");
                 return s;
             };
@@ -766,24 +779,45 @@ namespace RTAccess.Screens
             };
         }
 
+        // "{the game's Duration label} {n}" — the card's own block title, so the reading follows the game's
+        // language; the mod string is only the fallback.
+        private static string DurationLabel(int rounds)
+        {
+            var title = GameString(() => UIStrings.Instance.ShipCustomization.PostAbilityDuration.Text);
+            return title == null ? Loc.T("ship.ability_duration", new { rounds }) : title + " " + rounds;
+        }
+
+        private static string AttunedLabel(string name)
+        {
+            var title = GameString(() => UIStrings.Instance.ShipCustomization.AttunedAbility.Text);
+            return (title ?? Loc.T("ship.attuned")) + " " + name;
+        }
+
+        // A game string when it's there, else null — for labels that COMPOSE with a value, where
+        // GameText.Or's key fallback would produce the wrong shape.
+        private static string GameString(Func<string> read)
+        {
+            try { var s = read(); return string.IsNullOrEmpty(s) ? null : s; }
+            catch { return null; }
+        }
+
         // The ability's card, with the attuned variant (when the seated officer has the expertise) as a
-        // drill-in section — the sighted view shows both cards side by side.
+        // drill-in section — the sighted view shows both cards side by side. The section is labelled with the
+        // upgraded ability's OWN NAME (which is what the card prints) rather than the generic caption.
         private static void OpenAbilityTooltip(PostAbilityVM pab)
         {
             var templates = pab.TooltipTemplates();
             var own = templates != null && templates.Count > 0 ? templates[0] : null;
             string body = own != null ? TooltipReader.GetFull(own) : null;
-            List<(string, string)> sections = null;
-            if (templates != null && templates.Count > 1)
-            {
-                var attuned = TooltipReader.GetFull(templates[1]);
-                if (!string.IsNullOrWhiteSpace(attuned))
-                    sections = new List<(string, string)>
-                    {
-                        (GameText.Or(() => UIStrings.Instance.ShipCustomization.AttunedAbility, "ship.attuned"), attuned),
-                    };
-            }
-            TooltipChooser.Open(pab.DisplayName, body, sections, links: null);
+            var sections = new List<TooltipRef>();
+            if (templates != null && templates.Count > 1 && templates[1] != null)
+                sections.Add(TooltipRef.To(
+                    string.IsNullOrEmpty(pab.AttuneAbility?.Name)
+                        ? GameText.Or(() => UIStrings.Instance.ShipCustomization.AttunedAbility, "ship.attuned")
+                        : pab.AttuneAbility.Name,
+                    templates[1]));
+            sections.AddRange(NestedTooltips.Gather(own));
+            TooltipChooser.Open(pab.DisplayName, body, sections, links: GlossaryLinks.Gather(own));
         }
 
         // ---- Accolades (Abilities) tab: the ship's active/passive lists, read-only with Space cards. The
@@ -839,8 +873,9 @@ namespace RTAccess.Screens
                 b.AddItem(ControlId.Structural(k + "st:name"), GraphNodes.Text(() => ship.ShipName.Value));
             if (hr != null)
             {
-                b.AddItem(ControlId.Structural(k + "st:hull"), GraphNodes.Text(
-                    () => Loc.T("ship.hull", new { current = hr.CurrentShipHealth.Value, max = hr.MaxShipHealth.Value })));
+                b.AddItem(ControlId.Structural(k + "st:hull"), GraphNodes.TextWithTooltip(
+                    () => Loc.T("ship.hull", new { current = hr.CurrentShipHealth.Value, max = hr.MaxShipHealth.Value }),
+                    () => new TooltipTemplateGlossary("HullIntegritySpace")));
                 b.AddItem(ControlId.Structural(k + "st:repair"), GraphNodes.Button(
                     () => Loc.T("ship.repair_full", new { cost = hr.ScrapNeedForRepair.Value }),
                     () => hr.RepairShipFull(),
@@ -849,35 +884,62 @@ namespace RTAccess.Screens
                     () => Loc.T("ship.repair_all", new { scrap = hr.ScrapWeHave.Value }),
                     () => hr.RepairShipForAllScrap(),
                     () => hr.CanRepair.Value && hr.ScrapWeHave.Value < hr.ScrapNeedForRepair.Value));
-                b.AddItem(ControlId.Structural(k + "st:scrap"), GraphNodes.Text(
-                    () => Loc.T("ship.scrap", new { value = hr.ScrapWeHave.Value })));
+                b.AddItem(ControlId.Structural(k + "st:scrap"), GraphNodes.TextWithTooltip(
+                    () => Loc.T("ship.scrap", new { value = hr.ScrapWeHave.Value }),
+                    () => new TooltipTemplateGlossary("ScrapSpace")));
             }
             if (ship != null)
             {
-                b.AddItem(ControlId.Structural(k + "st:xp"), GraphNodes.Text(
-                    () => Loc.T("ship.xp_line", new { level = ship.ShipLvl.Value, xp = ship.ShipExperience.Value })));
+                // Ship experience: ShipExperienceDescription is in no encyclopedia entry, so this write-up
+                // exists nowhere else in the mod. Read the game's two UIStrings fields rather than retyping
+                // the prose — same template ShipUpgradeBaseView builds for the experience panel. (Deliberately
+                // NOT hung on the Skills tab's rank/XP header: ShipRankExpCounterPCView binds no tooltip
+                // there at all, only a hint, so doing so would invent parity that does not exist.)
+                b.AddItem(ControlId.Structural(k + "st:xp"), GraphNodes.TextWithTooltip(
+                    () => Loc.T("ship.xp_line", new { level = ship.ShipLvl.Value, xp = ship.ShipExperience.Value }),
+                    () => new TooltipTemplateSimple(UIStrings.Instance.Tooltips.CurrentLevelExperience,
+                                                    UIStrings.Instance.ShipCustomization.ShipExperienceDescription)));
                 b.AddItem(ControlId.Structural(k + "st:crew"), GraphNodes.Text(
                     () => Loc.T("ship.morale_crew", new { morale = ship.ShipMoraleValue.Value, crew = ship.ShipCrewValue.Value })));
-                b.AddItem(ControlId.Structural(k + "st:armor"), GraphNodes.Text(
+                // Armour plating: ShipPCView hangs this template on every hull plate. It is the other readout
+                // here reachable from nowhere else — TooltipTemplateSpaceUnitInspect carries the same string
+                // but only inside a ship-scheme brick, whose per-cell values NestedTooltips cannot reach.
+                // (The mod reads the armour VM correctly; ShipPCView.UpdateArmor has an upstream port/starboard
+                // swap that must NOT be copied.)
+                b.AddItem(ControlId.Structural(k + "st:armor"), GraphNodes.TextWithTooltip(
                     () => Loc.T("ship.armor", new
                     {
                         fore = (int)ship.ShipArmorFront.Value,
                         port = (int)ship.ShipArmorLeft.Value,
                         starboard = (int)ship.ShipArmorRight.Value,
                         aft = (int)ship.ShipArmorRear.Value,
-                    })));
-                b.AddItem(ControlId.Structural(k + "st:shields"), GraphNodes.Text(
+                    }),
+                    () => new TooltipTemplateSimple(UIStrings.Instance.ShipCustomization.ArmorPlating,
+                                                    UIStrings.Instance.ShipCustomization.ArmorPlatingDescription)));
+                // The LIVE shield key is "VoidshipShields" (ShipPCView puts it on every m_Shields button).
+                // ShieldsTooltip on that same view is assigned TooltipTemplateGlossary("SpeedSpace") and then
+                // never bound — dead upstream code; do not follow it.
+                b.AddItem(ControlId.Structural(k + "st:shields"), GraphNodes.TextWithTooltip(
                     () => Loc.T("ship.shields", new
                     {
                         fore = ship.ShipFrontShield.Value,
                         port = ship.ShipLeftShield.Value,
                         starboard = ship.ShipRightShield.Value,
                         aft = ship.ShipRearShield.Value,
-                    })));
+                    }),
+                    () => new TooltipTemplateGlossary("VoidshipShields")));
             }
+            // Speed and inertia are two distinct blocks with two distinct glossary keys in ShipStatsPCView,
+            // so they are two nodes here — one row could only carry one of the two write-ups.
             if (stats != null)
-                b.AddItem(ControlId.Structural(k + "st:speed"), GraphNodes.Text(
-                    () => Loc.T("ship.speed", new { speed = stats.Speed.Value, inertia = stats.Inertia.Value })));
+            {
+                b.AddItem(ControlId.Structural(k + "st:speed"), GraphNodes.TextWithTooltip(
+                    () => Loc.T("ship.speed_only", new { speed = stats.Speed.Value }),
+                    () => new TooltipTemplateGlossary("SpeedSpace")));
+                b.AddItem(ControlId.Structural(k + "st:inertia"), GraphNodes.TextWithTooltip(
+                    () => Loc.T("ship.inertia_only", new { inertia = stats.Inertia.Value }),
+                    () => new TooltipTemplateGlossary("ManoeuvrabilitySpace")));
+            }
             if (ship != null)
                 b.AddItem(ControlId.Structural(k + "st:rating"), GraphNodes.Text(
                     () => Loc.T("ship.rating", new { military = ship.ShipMilitaryRating.Value, turret = ship.ShipTurretRating.Value })));

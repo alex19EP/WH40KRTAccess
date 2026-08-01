@@ -71,9 +71,10 @@ internal static class TooltipViewScraper
             MonoBehaviour view = null;
             // Clean path buffers per BRICK: a brick's TMP fragments are the cells of one visual row (a
             // stat brick binds name/value/bonus as sibling TMPs), so they join with ", " to stay on one
-            // spoken reader line — TooltipScreen splits lines only after [.!?] + space, so only the ". "
-            // between BRICKS makes a line break. A prose fragment that already ends a sentence gets a
-            // bare " " join instead, so we never emit "., " runs inside a brick.
+            // spoken reader line — the reader splits on '\n', so only the newline between BRICKS makes a
+            // line break, and a prose brick keeps whatever paragraph breaks its own text carries. A
+            // fragment that already ends a sentence gets a bare " " join instead, so we never emit "., "
+            // runs inside a brick.
             var brickSb = raw ? null : new StringBuilder();
             try
             {
@@ -105,16 +106,18 @@ internal static class TooltipViewScraper
             // Flush outside the try so a mid-scrape fault still keeps the fragments already harvested.
             if (brickSb != null && brickSb.Length > 0)
             {
-                if (sb.Length > 0) sb.Append(". ");
+                if (sb.Length > 0) sb.Append('\n');
                 sb.Append(brickSb);
             }
         }
     }
 
+    // Break-preserving strip: a description brick's own paragraph breaks (<br>/<p>, literal newlines) are
+    // structure the reader navigates by, so they must survive the strip that flattens everything else.
     private static string Clean(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
-        var stripped = TextUtil.StripRichTextSpaced(s);
+        var stripped = TextUtil.StripRichTextLines(s);
         return string.IsNullOrEmpty(stripped) ? null : stripped;
     }
 

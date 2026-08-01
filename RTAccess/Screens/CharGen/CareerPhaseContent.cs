@@ -56,22 +56,33 @@ namespace RTAccess.Screens.CharGen
             }
             b.PopContext();
 
-            // Live description of the SELECTED archetype (the committed selection); self-hides while
-            // nothing is selected yet. Space reads the phase's info panel (the InfoVM fallback).
+            // Live description of the SELECTED archetype (the committed selection). Emitted ALWAYS, not only
+            // once something is selected: while nothing is picked the phase's info panel holds
+            // TooltipTemplateCharGenDoctrinesDesc — the game explaining what a doctrine/archetype IS, which
+            // is precisely the moment a player arriving on this page needs it. Behind an emptiness guard that
+            // explainer was unreachable at every point in chargen, because the instant an archetype IS picked
+            // the same OnTooltip resolves to that archetype's career card instead. (This phase does not
+            // auto-select — SetupDefaultItemsState leaves it open with a "select archetype" hint — unlike the
+            // background phases, where the identical guard is harmless.)
             var phase = Phase;
-            if (!string.IsNullOrEmpty(SelectedDescription(items)))
-                b.AddItem(ControlId.Structural(k + "desc"), new NodeVtable
+            b.AddItem(ControlId.Structural(k + "desc"), new NodeVtable
+            {
+                ControlType = ControlTypes.Text,
+                Announcements = new List<NodeAnnouncement>
                 {
-                    ControlType = ControlTypes.Text,
-                    Announcements = new List<NodeAnnouncement>
+                    GraphNodes.LabelPart(() =>
                     {
-                        GraphNodes.LabelPart(() => SelectedDescription(Archetypes())),
-                    },
-                    // Template path, like the background phases: the panel's rows carry the archetype's
-                    // own talents' tooltips, which a flattened string throws away.
-                    OnTooltip = () => TooltipChooser.OpenTemplate(phase?.PhaseName?.Value,
-                        RTAccess.Accessibility.CharGenAnnounce.GetActivePhaseTooltip()),
-                });
+                        var d = SelectedDescription(Archetypes());
+                        // With nothing picked the line has no text of its own; say what it IS rather than
+                        // reading as a blank stop, and let Space carry the explainer.
+                        return string.IsNullOrEmpty(d) ? Loc.T("chargen.details") : d;
+                    }),
+                },
+                // Template path, like the background phases: the panel's rows carry the archetype's
+                // own talents' tooltips, which a flattened string throws away.
+                OnTooltip = () => TooltipChooser.OpenTemplate(phase?.PhaseName?.Value,
+                    RTAccess.Accessibility.CharGenAnnounce.GetActivePhaseTooltip()),
+            });
         }
 
         private static string SelectedDescription(List<CareerPathVM> items)
