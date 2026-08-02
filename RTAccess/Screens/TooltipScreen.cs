@@ -1,5 +1,4 @@
-using System.Text.RegularExpressions;
-using RTAccess.Accessibility; // TooltipRef
+using RTAccess.Accessibility; // TooltipRef, TooltipLine, TooltipPage
 using RTAccess.UI;
 using RTAccess.UI.Graph;
 
@@ -8,13 +7,16 @@ namespace RTAccess.Screens
     /// <summary>
     /// The tooltip reader — opened with Space (ui.tooltip) on a focused control. Space reads the
     /// tooltip immediately: the reader opens on the first body line (one line per PARAGRAPH, arrow
-    /// through at your own pace); keep arrowing (or End) to reach the References list — one entry per
-    /// caller-supplied section, per nested row tooltip, and per inline link term (see
-    /// <see cref="RTAccess.Accessibility.GlossaryLinks"/>); Enter on a reference opens it as a page of
-    /// its own, WITH ITS OWN REFERENCES, so you can keep following links the way you would in a browser;
-    /// Back steps back one page, and Back from the first returns to where you were. Each page is pushed
-    /// as a CHILD SCREEN of the current one — <c>ScreenManager.Current</c> is the deepest active screen,
-    /// so the child chain IS the page history and focus returns to the right line automatically.
+    /// through at your own pace). A line that carries inline link terms says so ("…, 2 links") and
+    /// follows them IN PLACE — Space or Enter on the line opens the single term's page directly, or a
+    /// small chooser when the line carries several — so reviewing never means walking to the bottom of
+    /// the page and back (the consolidated-links complaint). The References list after the body keeps
+    /// only what has no line to live on: caller-supplied sections (compare cards), the rows' nested
+    /// tooltips, and orphan links. Every page opens WITH ITS OWN LINKS, so you can keep following terms
+    /// the way you would in a browser; Back steps back one page, and Back from the first returns to
+    /// where you were. Each page is pushed as a CHILD SCREEN of the current one —
+    /// <c>ScreenManager.Current</c> is the deepest active screen, so the child chain IS the page history
+    /// and focus returns to the right line automatically.
     ///
     /// Graph-native: body lines and entries are immutable per instance (a fresh instance per page, gone
     /// on Back), so declaring from the snapshot IS declaring from the state that opened it. Body lines
@@ -24,39 +26,37 @@ namespace RTAccess.Screens
     public sealed class TooltipScreen : Screen
     {
         private readonly string _title;
-        private readonly List<string> _lines;
+        private readonly List<TooltipLine> _lines;
         private readonly List<TooltipRef> _refs;
 
-        private TooltipScreen(string title, string body, List<TooltipRef> refs)
+        private TooltipScreen(string title, List<TooltipLine> lines, List<TooltipRef> refs)
         {
             _title = title;
-            _lines = new List<string>(SplitLines(body));
+            _lines = lines;
             _refs = refs ?? new List<TooltipRef>();
             Wrap = true;
         }
 
         /// <summary>Open a plain tooltip reader (pushed as a child of the current screen).</summary>
-        public static void Open(string title, string body) => Open(title, body, refs: null);
+        public static void Open(string title, string body)
+            => Open(title, TooltipPage.FromPlain(body).Lines, refs: null);
 
-        /// <summary>Open the reader with drill-in entries (sections / nested tooltips / link terms)
-        /// following the body lines. No-op for a blank body — <see cref="RTAccess.UI.TooltipChooser"/>
-        /// routes the body-less entries-only case to <see cref="DrillMenuScreen"/> instead.</summary>
-        internal static void Open(string title, string body, List<TooltipRef> refs)
+        /// <summary>Open the reader over assembled page lines (each with its own inline links) and the
+        /// References entries that follow them (sections / nested tooltips / orphan link terms). No-op with
+        /// nothing to show — <see cref="RTAccess.UI.TooltipChooser"/> routes the body-less entries-only
+        /// case to <see cref="DrillMenuScreen"/> instead.</summary>
+        internal static void Open(string title, List<TooltipLine> lines, List<TooltipRef> refs)
         {
-            if (string.IsNullOrWhiteSpace(body)) return;
-            // A reader with nothing to read must never take the keyboard. IsNullOrWhiteSpace is not a strong
-            // enough gate: SplitLines trims and drops empty fragments, so a body that is markup-only (or strips
-            // to nothing) passes it and builds a screen with ZERO focusable nodes. That screen is unclosable —
-            // ui.back YieldsWhenUnfocused, so with no focus Escape goes to the game instead of the Back action,
-            // and arrows/Tab have nothing to move between. Fall back to the same "no tooltip" answer the
-            // chooser gives for a control with no tooltip at all.
-            var lines = new List<string>(SplitLines(body));
-            if (lines.Count == 0 && (refs == null || refs.Count == 0))
+            // A reader with nothing to read must never take the keyboard: a screen with ZERO focusable
+            // nodes is unclosable — ui.back YieldsWhenUnfocused, so with no focus Escape goes to the game
+            // instead of the Back action, and arrows/Tab have nothing to move between. Fall back to the
+            // same "no tooltip" answer the chooser gives for a control with no tooltip at all.
+            if (lines == null || (lines.Count == 0 && (refs == null || refs.Count == 0)))
             {
                 Tts.Speak(Loc.T("nav.no_tooltip"), interrupt: true);
                 return;
             }
-            ScreenManager.Current?.PushChild(new TooltipScreen(title, body, refs));
+            ScreenManager.Current?.PushChild(new TooltipScreen(title, lines, refs));
         }
 
         public override string Key => "overlay.tooltip";
@@ -75,7 +75,7 @@ namespace RTAccess.Screens
             for (int i = 0; i < _lines.Count; i++)
             {
                 var line = _lines[i];
-                b.AddItem(ControlId.Structural("line:" + i), GraphNodes.Text(() => line));
+                b.AddItem(ControlId.Structural("line:" + i), LineNode(line));
             }
 
             if (_refs.Count == 0) return;
@@ -95,29 +95,36 @@ namespace RTAccess.Screens
             b.PopContext();
         }
 
-        // One navigable line per PARAGRAPH. Paragraph is the unit a document is read in, and the game's own
-        // text already carries the breaks (brick boundaries, <br>/<p>, literal newlines) as long as the body
-        // was stripped with TextUtil.StripRichTextLines. Splitting a paragraph at sentence punctuation is
-        // what tore the noble homeworld's "You. Serve me." into two lines, so it is NOT what we do to
-        // structured text. It survives only for a body that arrived with NO breaks at all — a hand-built
-        // string (a message of the day, a DLC blurb) that would otherwise be one unnavigable node — where
-        // there is no paragraph structure to damage. Shared with the document screens (the licence).
-        private static readonly Regex SentenceSplit = new Regex(@"(?<=[\.!?]) +", RegexOptions.Compiled);
-        internal static IEnumerable<string> SplitLines(string body)
+        // A body line. With links: the readout appends how many ("…, 2 links" — the spoken form of the
+        // highlighting a sighted player sees inline; a Tooltip-kind part, so the per-kind announcement
+        // setting can silence it), and Space OR Enter follows them — one link opens its page directly,
+        // several open a small chooser; the opened page lands as a child of THIS page, so Back returns to
+        // this very line. Without links: a plain re-readable text row (Space answers "No tooltip").
+        private static NodeVtable LineNode(TooltipLine line)
         {
-            if (string.IsNullOrEmpty(body)) yield break;
-            bool structured = body.IndexOf('\n') >= 0;
-            foreach (var para in body.Split('\n'))
+            if (line.Links == null)
             {
-                var p = para.Trim();
-                if (p.Length == 0) continue;
-                if (structured) { yield return p; continue; }
-                foreach (var s in SentenceSplit.Split(p))
-                {
-                    var t = s.Trim();
-                    if (t.Length > 0) yield return t;
-                }
+                var vt = GraphNodes.Text(() => line.Text);
+                vt.SearchText = () => line.Text;
+                return vt;
             }
+            var links = line.Links;
+            Action follow = () => TooltipChooser.FollowRefs(links);
+            return new NodeVtable
+            {
+                ControlType = ControlTypes.Text,
+                Announcements = new List<NodeAnnouncement>
+                {
+                    GraphNodes.LabelPart(() => line.Text),
+                    new NodeAnnouncement(() => links.Count == 1
+                            ? Loc.T("tooltip.links_one")
+                            : Loc.T("tooltip.links_many", new { count = links.Count }),
+                        kind: AnnouncementKinds.Tooltip),
+                },
+                SearchText = () => line.Text,
+                OnTooltip = follow,
+                OnActivate = follow,
+            };
         }
     }
 }

@@ -82,11 +82,12 @@ namespace RTAccess.Screens
                 // Space follows the paragraph's own inline <link> terms — the highlighted words a sighted
                 // player hovers (BookEventCueView wires the same links via SetLinkTooltip). Mining needs the
                 // RAW paragraph, which is why the row keeps it: the displayed text has been stripped of the
-                // very tags we match. Skill-check links resolve against THIS cue's rolls; a paragraph with no
-                // links answers "No tooltip", so the wiring costs nothing where there is nothing to follow.
+                // very tags we match. Skill-check links resolve against THIS cue's rolls; a single term opens
+                // its page directly, several offer a small chooser; a paragraph with no links answers
+                // "No tooltip", so the wiring costs nothing where there is nothing to follow.
                 if (line.HasLinks)
-                    vt.OnTooltip = () => TooltipChooser.Open(line.Text, null,
-                        links: GlossaryLinks.Gather(line.Raw, SkillCheckLinks.Results(line.Checks)));
+                    vt.OnTooltip = () => TooltipChooser.FollowLinks(line.Raw,
+                        SkillCheckLinks.Results(line.Checks));
                 b.AddItem(ControlId.Structural(k + "row:" + i), vt);
             }
 

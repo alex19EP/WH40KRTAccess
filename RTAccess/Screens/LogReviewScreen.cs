@@ -178,8 +178,9 @@ namespace RTAccess.Screens
         {
             string raw = msg?.Message;
             var tpl = msg?.Tooltip;
-            TooltipChooser.Open(Clean(raw), tpl != null ? TooltipReader.GetFull(tpl) : null,
-                sections: NestedTooltips.Gather(tpl), links: GlossaryLinks.Gather(raw));
+            // The template body carries its own per-line link terms; the log line's raw text is a SECOND
+            // link source mined on top — the chooser adds only the terms the page doesn't already carry.
+            TooltipChooser.OpenTemplate(Clean(raw), tpl, linksFrom: raw);
         }
 
         // A channel tab ("All, tab[, selected], n of 4"): selecting reads live view state, activation

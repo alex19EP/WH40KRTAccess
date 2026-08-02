@@ -192,8 +192,7 @@ namespace RTAccess.Screens
                     if (raw.IndexOf("<link", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         var capturedRaw = raw;
-                        vt.OnTooltip = () => TooltipChooser.Open(captured, null,
-                            links: GlossaryLinks.Gather(capturedRaw));
+                        vt.OnTooltip = () => TooltipChooser.FollowLinks(capturedRaw);
                     }
                     b.AddItem(ControlId.Structural(k + "row:" + idx), vt);
                 }
@@ -269,15 +268,14 @@ namespace RTAccess.Screens
             TooltipBaseTemplate tpl = checks != null && checks.Count > 0
                 ? new TooltipTemplateSkillCheckResult(checks, Array.Empty<string>())
                 : null;
-            var body = tpl != null ? TooltipReader.GetFull(tpl) : null;
             // A skill-check <link> in the cue can't resolve from the id alone — the roll it describes lives on
             // the cue's own results list (see SkillCheckLinks) — so each highlighted check drills to its OWN
             // page: acting character, stat total, DC, roll and chance, PLUS the glossary blurb for that check
             // type, which the body's keyword-less template omits.
             // Mine the COMPOSED cue, not RawText: the check anchors (and the acting character's stat page)
             // are minted at draw time and are absent from RawText, so mining it left the resolver dead.
-            var links = GlossaryLinks.Gather(DialogText.ComposedRaw(cue), SkillCheckLinks.Results(checks));
-            TooltipChooser.Open(DialogText.BuildCueLine(cue, includeSpeaker: false), body, links: links);
+            TooltipChooser.OpenTemplate(DialogText.BuildCueLine(cue, includeSpeaker: false), tpl,
+                linksFrom: DialogText.ComposedRaw(cue), resolve: SkillCheckLinks.Results(checks));
         }
 
         // ---- identity keys (Build + OnUpdate must agree) ----

@@ -36,30 +36,66 @@ internal static class TooltipViewScraper
     /// <summary>True when the game's brick-view registry is reachable (i.e. scraping can run this frame).</summary>
     public static bool Available => Config != null;
 
-    /// <summary>Render <paramref name="tpl"/>'s Info bricks through the game's factory and return the joined
-    /// visible text, or null if nothing was scraped (caller should fall back to the brick-walk).</summary>
-    public static string Read(TooltipBaseTemplate tpl, TooltipTemplateType type) => Read(tpl, type, raw: false);
+    /// <summary>One scraped spoken LINE: the clean text, the raw form carrying the line's own
+    /// <c>&lt;link&gt;</c> anchors, and — for an icon row (a granted talent, a stat bonus) — the nested
+    /// tooltip its BRICK hangs off itself, so the row's card follows from the row too.</summary>
+    internal sealed class ScrapedLine
+    {
+        public string Clean;
+        public string Raw;
+        public TooltipRef? Nested;
+    }
 
-    /// <summary>Like <see cref="Read"/> but MARKUP-INTACT (no tag strip, no placeholder filter): the raw TMP
-    /// source text of the rendered bricks. The link-extraction source for template-backed (factory) tooltips —
-    /// <see cref="GlossaryLinks"/> matches the inline <c>&lt;link&gt;</c> tags the clean read strips. Same
-    /// on-demand cost profile as <see cref="Read"/> (a Space press, never per-frame).</summary>
-    public static string ReadRaw(TooltipBaseTemplate tpl, TooltipTemplateType type) => Read(tpl, type, raw: true);
+    /// <summary>A scraped render as the reader's page source: the lines, plus the whole raw text (every
+    /// fragment, dropped noise included) for the page assembler's nothing-lost safety net.</summary>
+    internal sealed class ScrapeResult
+    {
+        public readonly List<ScrapedLine> Lines = new List<ScrapedLine>();
+        public readonly StringBuilder Raw = new StringBuilder();
+    }
 
-    private static string Read(TooltipBaseTemplate tpl, TooltipTemplateType type, bool raw)
+    /// <summary>Render <paramref name="tpl"/>'s bricks through the game's factory ONCE and return the
+    /// per-line page source, or null when the registry is unreachable / nothing was scraped (caller should
+    /// fall back to the brick-walk). <see cref="Read"/>/<see cref="ReadRaw"/> are views over the same
+    /// pass.</summary>
+    public static ScrapeResult ReadPage(TooltipBaseTemplate tpl, TooltipTemplateType type)
     {
         var cfg = Config;
         if (cfg == null || tpl == null) return null;
         try { tpl.Prepare(type); } catch { }
 
-        var sb = new StringBuilder();
-        Harvest(cfg, tpl.GetHeader(type), sb, raw);
-        Harvest(cfg, tpl.GetBody(type), sb, raw);
-        Harvest(cfg, tpl.GetFooter(type), sb, raw);
-        return sb.Length > 0 ? sb.ToString() : null;
+        var r = new ScrapeResult();
+        Harvest(cfg, tpl.GetHeader(type), r);
+        Harvest(cfg, tpl.GetBody(type), r);
+        Harvest(cfg, tpl.GetFooter(type), r);
+        return r.Lines.Count > 0 || r.Raw.Length > 0 ? r : null;
     }
 
-    private static void Harvest(TooltipBricksView cfg, IEnumerable<ITooltipBrick> bricks, StringBuilder sb, bool raw)
+    /// <summary>The joined visible text (one line per '\n'), or null if nothing was scraped.</summary>
+    public static string Read(TooltipBaseTemplate tpl, TooltipTemplateType type)
+    {
+        var page = ReadPage(tpl, type);
+        if (page == null || page.Lines.Count == 0) return null;
+        var sb = new StringBuilder();
+        foreach (var line in page.Lines)
+        {
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append(line.Clean);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Like <see cref="Read"/> but MARKUP-INTACT (no tag strip, no placeholder filter): the raw TMP
+    /// source text of the rendered bricks. The link-extraction source for template-backed (factory) tooltips —
+    /// <see cref="GlossaryLinks"/> matches the inline <c>&lt;link&gt;</c> tags the clean read strips. Same
+    /// on-demand cost profile as <see cref="Read"/> (a Space press, never per-frame).</summary>
+    public static string ReadRaw(TooltipBaseTemplate tpl, TooltipTemplateType type)
+    {
+        var page = ReadPage(tpl, type);
+        return page != null && page.Raw.Length > 0 ? page.Raw.ToString() : null;
+    }
+
+    private static void Harvest(TooltipBricksView cfg, IEnumerable<ITooltipBrick> bricks, ScrapeResult r)
     {
         if (bricks == null) return;
         foreach (var brick in bricks)
@@ -69,13 +105,15 @@ internal static class TooltipViewScraper
             if (vm == null) continue;
 
             MonoBehaviour view = null;
-            // Clean path buffers per BRICK: a brick's TMP fragments are the cells of one visual row (a
-            // stat brick binds name/value/bonus as sibling TMPs), so they join with ", " to stay on one
-            // spoken reader line — the reader splits on '\n', so only the newline between BRICKS makes a
-            // line break, and a prose brick keeps whatever paragraph breaks its own text carries. A
-            // fragment that already ends a sentence gets a bare " " join instead, so we never emit "., "
-            // runs inside a brick.
-            var brickSb = raw ? null : new StringBuilder();
+            // Line assembly per BRICK: a brick's TMP fragments are the cells of one visual row (a stat
+            // brick binds name/value/bonus as sibling TMPs), so a fragment's FIRST segment joins the open
+            // line with ", " — or a bare " " when the line already ends a sentence, so we never emit "., "
+            // runs — while a break INSIDE a fragment (a prose brick's paragraph gap) closes the line and
+            // starts the next. Splitting the RAW at the same boundaries keeps each line's <link> anchors
+            // paired with the clean text they appear in.
+            var lineClean = new StringBuilder();
+            var lineRaw = new StringBuilder();
+            int firstLineOfBrick = r.Lines.Count;
             try
             {
                 view = TooltipEngine.GetBrickView(cfg, vm);
@@ -83,49 +121,48 @@ internal static class TooltipViewScraper
                 // Only ACTIVE TMP children are what a sighted player sees (bind logic disables absent fields).
                 foreach (var tmp in view.GetComponentsInChildren<TMP_Text>(includeInactive: false))
                 {
-                    if (raw)
+                    var rt = tmp?.text;
+                    if (string.IsNullOrWhiteSpace(rt)) continue;
+                    // The whole-raw mirror keeps EVERY fragment (newline-joined so tags never glue across
+                    // fields) — dropped noise segments may still carry followable links.
+                    if (r.Raw.Length > 0) r.Raw.Append('\n');
+                    r.Raw.Append(rt);
+
+                    var segs = TextUtil.SplitRichLines(rt);
+                    for (int j = 0; j < segs.Count; j++)
                     {
-                        // Markup-intact harvest: keep the source string as-is (link/color tags survive);
-                        // newline-joined so tags never glue across fields.
-                        var rt = tmp?.text;
-                        if (string.IsNullOrWhiteSpace(rt)) continue;
-                        if (sb.Length > 0) sb.Append('\n');
-                        sb.Append(rt);
-                        continue;
+                        var clean = TextUtil.StripRichTextLines(segs[j]);
+                        // Drop prefab design-time placeholders left in active-but-unbound fields ("+++",
+                        // "-//---", bare separators): a real value carries at least one letter or digit.
+                        if (!TextUtil.HasLetterOrDigit(clean)) continue;
+                        if (j > 0) Flush(r, lineClean, lineRaw); // a break inside the fragment = a new line
+                        if (lineClean.Length > 0)
+                        {
+                            lineClean.Append(EndsSentence(lineClean) ? " " : ", ");
+                            lineRaw.Append(' ');
+                        }
+                        lineClean.Append(clean);
+                        lineRaw.Append(segs[j]);
                     }
-                    var t = Clean(tmp?.text);
-                    // Drop prefab design-time placeholders left in active-but-unbound fields ("+++", "-//---",
-                    // bare separators): a real tooltip value always carries at least one letter or digit.
-                    if (t == null || !HasAlnum(t)) continue;
-                    if (brickSb.Length > 0) brickSb.Append(EndsSentence(brickSb) ? " " : ", ");
-                    brickSb.Append(t);
                 }
             }
             catch { }
             finally { if (view != null) TooltipEngine.DestroyBrickView(view); }
             // Flush outside the try so a mid-scrape fault still keeps the fragments already harvested.
-            if (brickSb != null && brickSb.Length > 0)
-            {
-                if (sb.Length > 0) sb.Append('\n');
-                sb.Append(brickSb);
-            }
+            Flush(r, lineClean, lineRaw);
+            // An icon row's brick hangs a nested tooltip off itself (a granted talent's card, a stat
+            // bonus's glossary page) — attach it to the brick's ROW so the card follows from the row,
+            // not from a References entry at the bottom of the page.
+            if (r.Lines.Count > firstLineOfBrick)
+                r.Lines[firstLineOfBrick].Nested = NestedTooltips.RefFor(vm);
         }
     }
 
-    // Break-preserving strip: a description brick's own paragraph breaks (<br>/<p>, literal newlines) are
-    // structure the reader navigates by, so they must survive the strip that flattens everything else.
-    private static string Clean(string s)
+    private static void Flush(ScrapeResult r, StringBuilder clean, StringBuilder raw)
     {
-        if (string.IsNullOrWhiteSpace(s)) return null;
-        var stripped = TextUtil.StripRichTextLines(s);
-        return string.IsNullOrEmpty(stripped) ? null : stripped;
-    }
-
-    private static bool HasAlnum(string s)
-    {
-        foreach (var c in s)
-            if (char.IsLetterOrDigit(c)) return true;
-        return false;
+        if (clean.Length > 0) r.Lines.Add(new ScrapedLine { Clean = clean.ToString(), Raw = raw.ToString() });
+        clean.Length = 0;
+        raw.Length = 0;
     }
 
     /// <summary>True when the buffered brick text already ends a sentence, so the next fragment must not

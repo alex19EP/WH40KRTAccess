@@ -39,6 +39,24 @@ internal static class TooltipReader
     public static string GetTitle(TooltipBaseTemplate template)
         => ReadTemplates(Wrap(template), TooltipTemplateType.Info, titleOnly: true);
 
+    /// <summary>The reader's PAGE model for a template: spoken lines each carrying the inline link terms
+    /// that occur ON that line, plus the orphan links for the References list — the source for
+    /// <see cref="RTAccess.UI.TooltipChooser.OpenTemplate"/>. One render pass: the scrape supplies aligned
+    /// (clean, raw) line pairs; when it can't run (registry not loaded) the curated brick-walk supplies the
+    /// text — with no raw form, so no line links — and any scraped raw still mines, so an icon-only page
+    /// (every line stripped to noise) keeps its followable links.</summary>
+    public static TooltipPage GetPage(TooltipBaseTemplate tpl,
+        Func<string, string[], TooltipBaseTemplate> resolve = null)
+    {
+        if (tpl == null) return null;
+        var sc = TooltipViewScraper.ReadPage(tpl, TooltipTemplateType.Info);
+        if (sc != null && sc.Lines.Count > 0)
+            return TooltipPage.FromScraped(sc.Lines, sc.Raw.ToString(), resolve);
+        var page = TooltipPage.FromPlain(BrickWalkText(tpl));
+        if (sc != null) page.MineOrphans(sc.Raw.ToString(), resolve);
+        return page;
+    }
+
     /// <summary>Full-detail read (Space, the browse-label drill-in). Primary path renders each template through
     /// the game's OWN view factory and scrapes the visible text (<see cref="TooltipViewScraper"/>) — the fix that
     /// mirrors exactly what sighted players see, for every brick type. Falls back per-template to the curated
@@ -51,16 +69,7 @@ internal static class TooltipReader
         {
             if (tpl == null) continue;
             var text = TooltipViewScraper.Read(tpl, TooltipTemplateType.Info);
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                // Fallback: the curated typed-case walk (still covers ~half the bricks, and all of GetTitle).
-                try { tpl.Prepare(TooltipTemplateType.Info); } catch { }
-                var fb = new StringBuilder();
-                AppendAll(fb, tpl.GetHeader(TooltipTemplateType.Info));
-                AppendAll(fb, tpl.GetBody(TooltipTemplateType.Info));
-                AppendAll(fb, tpl.GetFooter(TooltipTemplateType.Info));
-                text = fb.Length > 0 ? fb.ToString() : null;
-            }
+            if (string.IsNullOrWhiteSpace(text)) text = BrickWalkText(tpl);
             if (string.IsNullOrWhiteSpace(text)) continue;
             // Newline, not ". ": the reader navigates the body by paragraph, and one template is at least
             // its own paragraph. Gluing them with a full stop is what made the split ambiguous with prose.
@@ -68,6 +77,18 @@ internal static class TooltipReader
             sb.Append(text);
         }
         return sb.Length > 0 ? sb.ToString() : null;
+    }
+
+    // The curated typed-case walk (still covers ~half the bricks, and all of GetTitle) — the fallback text
+    // source when the view scrape can't run.
+    private static string BrickWalkText(TooltipBaseTemplate tpl)
+    {
+        try { tpl.Prepare(TooltipTemplateType.Info); } catch { }
+        var fb = new StringBuilder();
+        AppendAll(fb, tpl.GetHeader(TooltipTemplateType.Info));
+        AppendAll(fb, tpl.GetBody(TooltipTemplateType.Info));
+        AppendAll(fb, tpl.GetFooter(TooltipTemplateType.Info));
+        return fb.Length > 0 ? fb.ToString() : null;
     }
 
     private static string ReadTemplates(List<TooltipBaseTemplate> templates, TooltipTemplateType type, bool titleOnly)

@@ -490,8 +490,7 @@ namespace RTAccess.Screens
         {
             var vt = GraphNodes.Text(() => TextUtil.StripRichTextLines(raw()));
             vt.SearchText = () => TextUtil.StripRichTextLines(raw());
-            vt.OnTooltip = () => TooltipChooser.Open(title(), TextUtil.StripRichTextLines(raw()),
-                links: GlossaryLinks.Gather(raw()));
+            vt.OnTooltip = () => TooltipChooser.OpenRaw(title(), raw());
             return vt;
         }
 

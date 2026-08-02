@@ -89,7 +89,7 @@ namespace RTAccess.Accessibility
                 var label = CleanLabel(m.Groups["txt"].Value)
                             ?? CleanLabel(Safe(() => TooltipReader.GetTitle(probe)))
                             ?? id;
-                outList.Add(new TooltipRef(label, open));
+                outList.Add(new TooltipRef(label, open, id));
             }
             return outList;
         }

@@ -808,7 +808,6 @@ namespace RTAccess.Screens
         {
             var templates = pab.TooltipTemplates();
             var own = templates != null && templates.Count > 0 ? templates[0] : null;
-            string body = own != null ? TooltipReader.GetFull(own) : null;
             var sections = new List<TooltipRef>();
             if (templates != null && templates.Count > 1 && templates[1] != null)
                 sections.Add(TooltipRef.To(
@@ -816,8 +815,7 @@ namespace RTAccess.Screens
                         ? GameText.Or(() => UIStrings.Instance.ShipCustomization.AttunedAbility, "ship.attuned")
                         : pab.AttuneAbility.Name,
                     templates[1]));
-            sections.AddRange(NestedTooltips.Gather(own));
-            TooltipChooser.Open(pab.DisplayName, body, sections, links: GlossaryLinks.Gather(own));
+            TooltipChooser.OpenTemplate(pab.DisplayName, own, sections: sections);
         }
 
         // ---- Accolades (Abilities) tab: the ship's active/passive lists, read-only with Space cards. The

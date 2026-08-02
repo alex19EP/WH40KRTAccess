@@ -41,7 +41,9 @@ namespace RTAccess.Accessibility
         /// <summary>
         /// The nested tooltips <paramref name="tpl"/>'s body bricks hang off themselves, in render order,
         /// deduped by label. Empty for a tooltip whose rows drill nowhere — which is most of them, so this
-        /// stays free where it buys nothing.
+        /// stays free where it buys nothing. Entries carry the same label-derived Id
+        /// <see cref="RefFor"/> stamps, so a nested tooltip already attached to its own body LINE is
+        /// filtered out of the trailing References list (see <see cref="RTAccess.UI.TooltipChooser"/>).
         /// </summary>
         public static List<TooltipRef> Gather(TooltipBaseTemplate tpl)
         {
@@ -62,16 +64,28 @@ namespace RTAccess.Accessibility
                 catch { continue; }
                 if (vm == null) continue;
 
-                if (!(Member(vm, "Tooltip") is TooltipBaseTemplate nested)) continue;
-                var label = Label(vm);
-                if (string.IsNullOrEmpty(label)) continue;
+                var r = RefFor(vm);
+                if (r == null) continue;
 
                 seen ??= new HashSet<string>();
-                if (!seen.Add(label)) continue; // the same talent listed twice drills once
+                if (!seen.Add(r.Value.Label)) continue; // the same talent listed twice drills once
 
-                outList.Add(TooltipRef.To(label, nested));
+                outList.Add(r.Value);
             }
             return outList;
+        }
+
+        /// <summary>The drill-in reference ONE brick VM hangs off itself (its nested template + its own
+        /// row label), or null when the brick drills nowhere. The per-line attachment source for the
+        /// scrape pipeline — the row's card follows from the row itself, like everything else on a line.
+        /// The Id is label-derived so the line attachment and <see cref="Gather"/>'s page-level sweep
+        /// dedup against each other.</summary>
+        public static TooltipRef? RefFor(object vm)
+        {
+            if (!(Member(vm, "Tooltip") is TooltipBaseTemplate nested)) return null;
+            var label = Label(vm);
+            if (string.IsNullOrEmpty(label)) return null;
+            return new TooltipRef(label, () => nested, "nested:" + label);
         }
 
         private static string Label(object vm)

@@ -263,13 +263,13 @@ namespace RTAccess.Screens
         }
 
         // A prose line: the block's text, TMP markup stripped; Space follows any inline glossary <link>
-        // terms (deferred to the press — cheap only-if-present check gates the wiring).
+        // terms (deferred to the press — cheap only-if-present check gates the wiring; a single term opens
+        // its page directly).
         private static NodeVtable Prose(string raw)
         {
             var vt = GraphNodes.Text(() => TextUtil.StripRichTextSpaced(raw));
             if (HasLinks(raw))
-                vt.OnTooltip = () => TooltipChooser.Open(
-                    TextUtil.StripRichTextSpaced(raw), null, sections: null, links: GlossaryLinks.Gather(raw));
+                vt.OnTooltip = () => TooltipChooser.FollowLinks(raw);
             return vt;
         }
 
@@ -284,11 +284,10 @@ namespace RTAccess.Screens
                 return string.IsNullOrWhiteSpace(desc) ? title() : title() + ". " + desc;
             });
             vt.SearchText = title;
-            // The view link-wires the TITLE as well as the description, so mine both.
+            // The view link-wires the TITLE as well as the description, so mine both — the raw path splits
+            // the definition by paragraph and keeps each term on the line it occurs on.
             if (HasLinks(g.Description) || HasLinks(g.Title))
-                vt.OnTooltip = () => TooltipChooser.Open(
-                    title(), TextUtil.StripRichTextLines(g.Description), // a definition reads by paragraph
-                    links: GlossaryLinks.Gather(g.Title + "\n" + g.Description));
+                vt.OnTooltip = () => TooltipChooser.OpenRaw(title(), g.Title + "\n" + g.Description);
             return vt;
         }
 
@@ -302,8 +301,7 @@ namespace RTAccess.Screens
                 return be.IsAnswer ? Loc.T("ency.book_answer") + " " + text : text;
             });
             if (HasLinks(be.Text))
-                vt.OnTooltip = () => TooltipChooser.Open(
-                    TextUtil.StripRichTextSpaced(be.Text), null, sections: null, links: GlossaryLinks.Gather(be.Text));
+                vt.OnTooltip = () => TooltipChooser.FollowLinks(be.Text);
             return vt;
         }
 

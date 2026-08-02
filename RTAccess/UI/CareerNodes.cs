@@ -144,16 +144,12 @@ namespace RTAccess.UI
         {
             string title = FeatureName(f);
             var tpl = f.TooltipTemplate();
-            var body = tpl != null ? TooltipReader.GetFull(tpl) : null;
-            var links = GlossaryLinks.Gather(tpl);
-
             var sections = new List<TooltipRef>();
             var category = CategorySection(f);
             if (category != null) sections.Add(TooltipRef.To(CategoryLabel(f), category));
-            // The feature card's own rows drill too (the abilities the feature grants).
-            sections.AddRange(NestedTooltips.Gather(tpl));
-
-            TooltipChooser.Open(title, body, sections, links);
+            // The chooser renders the card into per-line link terms and harvests the card's own nested
+            // rows (the abilities the feature grants) itself.
+            TooltipChooser.OpenTemplate(title, tpl, sections: sections);
         }
 
         // The category panel's template, or null when the game ships it blank (nothing to drill into). The

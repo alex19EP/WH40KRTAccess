@@ -25,10 +25,16 @@ namespace RTAccess.Accessibility
         public readonly string Label;
         public readonly Func<TooltipBaseTemplate> Open;
 
-        public TooltipRef(string label, Func<TooltipBaseTemplate> open)
+        /// <summary>The raw <c>&lt;link&gt;</c> id for an inline link term, null for the other kinds.
+        /// Identity for the page assembler's dedup: a link already attached to the body line it appears on
+        /// must not ALSO appear in the trailing References list (the scroll-to-the-bottom complaint).</summary>
+        public readonly string Id;
+
+        public TooltipRef(string label, Func<TooltipBaseTemplate> open, string id = null)
         {
             Label = label;
             Open = open;
+            Id = id;
         }
 
         /// <summary>A reference to an already-resolved template (a nested row, a compare card) — the common

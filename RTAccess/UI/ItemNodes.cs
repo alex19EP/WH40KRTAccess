@@ -614,8 +614,6 @@ namespace RTAccess.UI
         {
             var t = slot.Tooltip.Value;
             var own = t != null && t.Count > 0 ? t[t.Count - 1] : null;
-            var body = own != null ? TooltipReader.GetFull(own) : null;
-            var links = GlossaryLinks.Gather(own);
             var sections = new List<TooltipRef>();
             // Each comparison card is its own drill-in page, so it drills onward exactly like the item's own
             // card does — nothing is rendered here, the page builds when you open it. Count 1 = own card
@@ -627,9 +625,9 @@ namespace RTAccess.UI
                 sections.Add(TooltipRef.To(compares > 1 ? Loc.T("inv.compare_n", new { index = i + 1 })
                     : Loc.T("inv.compare"), t[i]));
             }
-            // The card's own rows drill too (a weapon's abilities, the stats it grants).
-            sections.AddRange(NestedTooltips.Gather(own));
-            TooltipChooser.Open(ItemLabel(slot, withFavorite), body, sections, links);
+            // The chooser renders the card into per-line link terms and harvests the card's own nested
+            // rows (a weapon's abilities, the stats it grants) itself.
+            TooltipChooser.OpenTemplate(ItemLabel(slot, withFavorite), own, sections: sections);
         }
 
         // Action verbs, routed exactly like InventorySlotView (EventBus → InventoryVM) — the game's own

@@ -62,11 +62,9 @@ namespace RTAccess.UI
         private static void OpenAnswerTooltip(AnswerVM vm)
         {
             var own = vm?.AnswerTooltip?.Value;
-            var body = own != null ? TooltipReader.GetFull(own) : null;
-            var links = GlossaryLinks.Gather(AnswerText(vm),
-                SkillCheckLinks.Dcs(vm?.Answer?.Value?.SkillChecksDC));
-            TooltipChooser.Open(TextUtil.StripRichText(AnswerText(vm)), body,
-                sections: NestedTooltips.Gather(own), links: links);
+            TooltipChooser.OpenTemplate(TextUtil.StripRichText(AnswerText(vm)), own,
+                linksFrom: AnswerText(vm),
+                resolve: SkillCheckLinks.Dcs(vm?.Answer?.Value?.SkillChecksDC));
         }
 
         // Book events draw their answer number through UIDialog.AnswerDialogueBeFormat — a decorative

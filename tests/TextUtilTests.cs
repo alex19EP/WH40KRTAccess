@@ -155,5 +155,70 @@ namespace RTAccess.Tests
             Assert.Equal("first second", TextUtil.StripRichTextSpaced("first<br>second"));
             Assert.Equal("first second", TextUtil.StripRichTextSpaced("first\nsecond"));
         }
+
+        // --- SplitRichLines: RAW segments at exactly the boundaries StripRichTextLines makes '\n' ---
+        // This is what lets a tooltip line keep the <link> anchors that occur ON it: the raw splits first,
+        // each segment strips to one reader line, and the segment's tags are still intact for mining.
+
+        [Fact]
+        public void RawSplit_BreakTagsAndNewlinesBound()
+        {
+            Assert.Equal(new[] { "first", "second", "third" },
+                TextUtil.SplitRichLines("first<br>second\nthird"));
+            Assert.Equal(new[] { "first", "second" },
+                TextUtil.SplitRichLines("first</p><p>second"));
+        }
+
+        [Fact]
+        public void RawSplit_KeepsLinkTagsIntactWithinTheirSegment()
+        {
+            var segs = TextUtil.SplitRichLines("para one.<br><link=\"g:Int\">Intelligence</link> matters.");
+            Assert.Equal(2, segs.Count);
+            Assert.Equal("para one.", segs[0]);
+            // The link tag adjacent to the break belongs to the SECOND segment — treating the whole
+            // adjacent-tag run as the boundary would sever the anchor and lose the link.
+            Assert.Equal("<link=\"g:Int\">Intelligence</link> matters.", segs[1]);
+        }
+
+        [Fact]
+        public void RawSplit_BlankSegmentsDrop()
+        {
+            Assert.Equal(new[] { "a", "b" }, TextUtil.SplitRichLines("a<br> <br>\n\nb"));
+        }
+
+        [Fact]
+        public void RawSplit_AlignsWithTheLineStrip()
+        {
+            // The contract the pairing relies on: strip-of-segments == segments-of-strip.
+            var raw = "one <b>bold</b>.<br>two<link=x>term</link>\nthree";
+            var viaWhole = TextUtil.StripRichTextLines(raw).Split('\n');
+            var viaSegments = TextUtil.SplitRichLines(raw)
+                .ConvertAll(s => TextUtil.StripRichTextLines(s));
+            Assert.Equal(viaWhole, viaSegments);
+        }
+
+        // --- SplitSpokenLines: the reader's navigation model (moved from TooltipScreen) ---
+
+        [Fact]
+        public void SpokenSplit_StructuredBodySplitsByParagraphOnly()
+        {
+            // A body WITH breaks never re-splits at sentence punctuation ("You. Serve me." stays whole).
+            Assert.Equal(new[] { "You. Serve me.", "Second para." },
+                TextUtil.SplitSpokenLines("You. Serve me.\nSecond para."));
+        }
+
+        [Fact]
+        public void SpokenSplit_BreaklessBodyFallsBackToSentences()
+        {
+            Assert.Equal(new[] { "One.", "Two!", "Three?" },
+                TextUtil.SplitSpokenLines("One. Two! Three?"));
+        }
+
+        [Fact]
+        public void SpokenSplit_EmptyAndWhitespaceYieldNothing()
+        {
+            Assert.Empty(TextUtil.SplitSpokenLines(null));
+            Assert.Empty(TextUtil.SplitSpokenLines("  \n \n"));
+        }
     }
 }
