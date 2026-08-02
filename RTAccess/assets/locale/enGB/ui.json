@@ -508,8 +508,6 @@
   "tooltip.archetype_removed": "removed",
   "tooltip.view": "View tooltip",
   "tooltip.links_title": "Tooltip and links",
-  "tooltip.links_one": "1 link",
-  "tooltip.links_many": "{count} links",
   "hud.log": "Log",
   "hud.menu": "Menu",
   "hud.game_menu": "Game menu",

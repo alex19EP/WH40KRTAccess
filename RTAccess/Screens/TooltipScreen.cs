@@ -7,10 +7,11 @@ namespace RTAccess.Screens
     /// <summary>
     /// The tooltip reader — opened with Space (ui.tooltip) on a focused control. Space reads the
     /// tooltip immediately: the reader opens on the first body line (one line per PARAGRAPH, arrow
-    /// through at your own pace). A line that carries inline link terms says so ("…, 2 links") and
-    /// follows them IN PLACE — Space or Enter on the line opens the single term's page directly, or a
-    /// small chooser when the line carries several — so reviewing never means walking to the bottom of
-    /// the page and back (the consolidated-links complaint). The References list after the body keeps
+    /// through at your own pace). A line that carries inline link terms follows them IN PLACE — Space
+    /// or Enter on the line opens the single term's page directly, or a small chooser when the line
+    /// carries several; a line without links answers "No tooltip", so Space is always safe to try (the
+    /// WA convention — no spoken link hint). Reviewing never means walking to the bottom of the page
+    /// and back (the consolidated-links complaint). The References list after the body keeps
     /// only what has no line to live on: caller-supplied sections (compare cards), the rows' nested
     /// tooltips, and orphan links. Every page opens WITH ITS OWN LINKS, so you can keep following terms
     /// the way you would in a browser; Back steps back one page, and Back from the first returns to
@@ -95,36 +96,23 @@ namespace RTAccess.Screens
             b.PopContext();
         }
 
-        // A body line. With links: the readout appends how many ("…, 2 links" — the spoken form of the
-        // highlighting a sighted player sees inline; a Tooltip-kind part, so the per-kind announcement
-        // setting can silence it), and Space OR Enter follows them — one link opens its page directly,
+        // A body line, spoken identically whether or not it carries links (the WA convention — no spoken
+        // link hint; a sighted player's highlighting has no audio cost, and a suffix on every linked row
+        // proved to be noise). With links, Space OR Enter follows them — one link opens its page directly,
         // several open a small chooser; the opened page lands as a child of THIS page, so Back returns to
-        // this very line. Without links: a plain re-readable text row (Space answers "No tooltip").
+        // this very line. Without links, Space answers "No tooltip", so trying costs nothing.
         private static NodeVtable LineNode(TooltipLine line)
         {
-            if (line.Links == null)
+            var vt = GraphNodes.Text(() => line.Text);
+            vt.SearchText = () => line.Text;
+            if (line.Links != null)
             {
-                var vt = GraphNodes.Text(() => line.Text);
-                vt.SearchText = () => line.Text;
-                return vt;
+                var links = line.Links;
+                Action follow = () => TooltipChooser.FollowRefs(links);
+                vt.OnTooltip = follow;
+                vt.OnActivate = follow;
             }
-            var links = line.Links;
-            Action follow = () => TooltipChooser.FollowRefs(links);
-            return new NodeVtable
-            {
-                ControlType = ControlTypes.Text,
-                Announcements = new List<NodeAnnouncement>
-                {
-                    GraphNodes.LabelPart(() => line.Text),
-                    new NodeAnnouncement(() => links.Count == 1
-                            ? Loc.T("tooltip.links_one")
-                            : Loc.T("tooltip.links_many", new { count = links.Count }),
-                        kind: AnnouncementKinds.Tooltip),
-                },
-                SearchText = () => line.Text,
-                OnTooltip = follow,
-                OnActivate = follow,
-            };
+            return vt;
         }
     }
 }
