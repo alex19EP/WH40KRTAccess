@@ -1,5 +1,6 @@
 using System.Text;
 using Kingmaker.EntitySystem.Entities; // BaseUnitEntity (TargetUnit), MechanicEntity (TargetEntity)
+using Kingmaker.UnitLogic.Parts;       // GetVisionOptional (the game's own line-of-sight rule, see DetectableFrom)
 using RTAccess.Accessibility; // InteractableDescriber (name/verb/compass reuse)
 using UnityEngine;
 
@@ -8,8 +9,10 @@ namespace RTAccess.Exploration;
 /// <summary>
 /// One thing the scanner can list: a stable identity key (the backing entity), a name, a world position, the
 /// taxonomy nodes it belongs to, and the single state-aware role it sounds/cycles as. Visibility is a live
-/// per-item lens: <see cref="IsVisible"/> is reveal-latched ("we know it's here", the area-wide scanner), while
-/// <see cref="CurrentlySeen"/> is "can perceive it right now" (the tactical review cycles). A thing also has a
+/// per-item lens: <see cref="IsVisible"/> is "the player could know it's here" (the area-wide scanner) — which the
+/// engine latches for STATICS and refuses to latch for CREATURES, so the split falls out of the game's own flags
+/// rather than anything we model — while <see cref="CurrentlySeen"/> is "can perceive it right now" and
+/// <see cref="DetectableFrom"/> narrows to "could be made out from the cursor". A thing also has a
 /// spatial extent (<see cref="Bounds"/> / <see cref="Footprint"/>): distance and bearing report the nearest PART
 /// of it (its <see cref="NearestPoint"/>), so a large creature or wide area effect reads by its nearest edge, not
 /// its centre. <see cref="Describe"/> composes the spoken line relative to a reference point, reusing
@@ -31,31 +34,48 @@ internal abstract class ScanItem
     /// objects). Drives the party/enemies/neutrals review cycles.</summary>
     public abstract string Primary { get; }
 
-    /// <summary>Reveal-latched knowledge: listed when the player could know it's here (the area-wide scanner).</summary>
+    /// <summary>Listed when the player could know it's here (the area-wide scanner). Whether that knowledge LATCHES
+    /// is the engine's call, not ours, and it differs by kind: a static keeps it once revealed
+    /// (<c>ProxyMapObject</c> reads <c>IsRevealed</c>), a creature loses it the moment it re-enters fog
+    /// (<c>ProxyUnit</c> reads <c>IsVisibleForPlayer</c>, which never latches for units). That is the sighted
+    /// player's own discovery model, so we get it by reading the right flag per kind.</summary>
     public virtual bool IsVisible => true;
 
     /// <summary>Can the player perceive it right now (not in fog) — used by the review cycles.</summary>
     public virtual bool CurrentlySeen => true;
 
-    // Small tolerance so a target grazing a corner/edge still reads as detectable (matches WrathAccess's LosFudge).
-    private const float LosFudge = 0.2f;
-
-    /// <summary>Cycle-visibility for the review cycles (M / comma / period / N): currently seen, OR a remembered
-    /// (reveal-latched) thing under fog that has a CLEAR line of sight from <paramref name="cursor"/> — so a chest
-    /// behind a wall isn't offered until you'd actually have a straight path to it. The category browse stays
-    /// reveal-latched on <see cref="IsVisible"/> ("everything you know is here"); this is the narrower "what can I
-    /// make out from here" gate. Ported from WrathAccess (ScanItem.DetectableFrom); the fog case uses the game's own
-    /// line-of-sight geometry (<c>LineOfSightGeometry.HasObstacle</c>). A null LoS system (areas without one) admits;
-    /// a failed check refuses (conservative — don't re-admit a fogged thing we can't clear).</summary>
+    /// <summary>Cycle-visibility for the review cycles (M) and the sonar: currently seen, OR a remembered
+    /// (reveal-latched) thing that a party member standing at <paramref name="cursor"/> would be able to see — so a
+    /// chest behind a closed door isn't offered until you'd actually have a straight line to it. The category browse
+    /// stays reveal-latched on <see cref="IsVisible"/> ("everything you know is here"); this is the narrower "what
+    /// could I make out from there" gate, with the cursor as a hypothetical observer.
+    ///
+    /// The fog branch is the game's OWN rule rather than a rebuilt one: <c>PartVision.HasLOS(point, overridePosition)</c>
+    /// shifts the origin by <c>LosCalculations.EyeShift</c> (1.5 m — NOT the dead <c>LineOfSightGeometry.EyeShift</c>
+    /// of 1 m, which no game caller uses) and tests BOTH halves of visibility: within <c>RangeMeters</c> (a flat 22 m
+    /// for the player faction) AND no blocker on the ray, plus any scripted <c>ExtendedVisionArea</c>. Both halves are
+    /// load-bearing — obstacle testing alone can never say no down a long unobstructed corridor, and a ray from the
+    /// cursor's own ground height reads the wrong side of the oracle's only vertical rule (<c>LinecastCell</c> blocks
+    /// iff a blocker's top is at or above <c>from.y</c>). Door state comes free: <c>FogOfWarBootstrapper</c> feeds
+    /// blocker activate/deactivate straight into <c>LineOfSightGeometry.UpdateBlocker</c>.
+    ///
+    /// Never reached for creatures: a fogged unit already fails <see cref="IsVisible"/> above, because the engine
+    /// refuses to latch units — <c>EntityVisibilityForPlayerController.IsVisible(BaseUnitEntity)</c> has no
+    /// <c>IsRevealed</c> escape, unlike its <c>MechanicEntity</c> overload. So this clause only ever re-admits
+    /// statics, which is exactly the discovery model a sighted player gets.
+    ///
+    /// Aimed at <see cref="Position"/> (the entity centre) like every game caller, NOT <see cref="NearestPoint"/>:
+    /// that bounds-shrunk endpoint was half of the hand-rolled call WrathAccess had to retire. No fudge radius,
+    /// matching the game's own override-position path; doors don't depend on this anyway, since V cycles a room's
+    /// exits off <see cref="IsVisible"/> with no line-of-sight gate at all.
+    ///
+    /// No resolvable observer (mid-transition, or an anchor carrying no vision part) refuses — don't re-admit a
+    /// remembered thing we cannot verify.</summary>
     public bool DetectableFrom(Vector3 cursor)
     {
         if (!IsVisible) return false;
         if (CurrentlySeen) return true;
-        try
-        {
-            var los = Kingmaker.Controllers.FogOfWar.LineOfSight.LineOfSightGeometry.Instance;
-            return los == null || !los.HasObstacle(cursor, NearestPoint(cursor), LosFudge);
-        }
+        try { return MapCursor.Anchor()?.GetVisionOptional()?.HasLOS(Position, cursor) == true; }
         catch { return false; }
     }
 
