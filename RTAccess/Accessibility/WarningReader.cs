@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Kingmaker.Blueprints.Root;                     // LocalizedTexts
 using Kingmaker.Code.UI.MVVM.VM.WarningNotification; // WarningNotificationType, WarningNotificationFormat
 using Kingmaker.PubSubSystem;                        // IWarningNotificationUIHandler
@@ -21,6 +22,8 @@ namespace RTAccess.Accessibility;
 /// <see cref="LogTap"/> cannot see them). The matching <c>WarningNotificationLogThread</c> stays owned here
 /// (suppressed in <see cref="LogTap"/>) so the <c>addToLog:true</c> ones are not read twice (toast + log).
 /// Speech is queued (interrupt:false), like the rest of the combat/event feedback (see [[rt-interrupt-speech-rule]]).
+/// Keep-alive toasts the game re-raises to hold one sticky banner on screen ("Saving...", auto-end-turn)
+/// collapse to one spoken line per run — see <see cref="IsKeepAliveRefresh"/>.
 /// </summary>
 internal sealed class WarningReader : IWarningNotificationUIHandler
 {
@@ -36,6 +39,7 @@ internal sealed class WarningReader : IWarningNotificationUIHandler
         WarningNotificationFormat warningFormat = WarningNotificationFormat.Common, bool withSound = true)
     {
         Count++;
+        if (warningType == WarningNotificationType.GameSavedInProgress && IsKeepAliveRefresh("saving")) return;
         Speak(Localize(warningType));
     }
 
@@ -45,7 +49,40 @@ internal sealed class WarningReader : IWarningNotificationUIHandler
     {
         Count++;
         if (IsTurnChromeToast(text)) return;
+        if (IsAutoEndTurnToast(text) && IsKeepAliveRefresh("auto-end-turn")) return;
         Speak(text);
+    }
+
+    // Keep-alive toasts: for a lasting state the game RE-RAISES the same warning to keep its one on-screen
+    // banner alive (WarningsTextVM just refreshes the same string in place, so a sighted player sees a
+    // single sticky toast). Two known cases: "Saving..." (GameSavedInProgress) fires every 1 s for the whole
+    // save via LoadingProcess.UpdateLockedNotification — and for AUTOsaves that keep-alive is the ONLY
+    // source, SaveRoutine's initial showNotification raise is manual/quick-save only, so the first raise of
+    // a run must speak; and the auto-end-turn banner re-fires every ~9 simulation ticks per attempt and
+    // chains across consecutive helpless/0-AP units (AutoEndTurnController.TryEndTurn). Collapse each run to
+    // ONE spoken line: every raise extends the run (sliding window), and only a raise that starts a NEW run
+    // — arriving more than KeepAliveWindowSeconds after the previous one — is spoken. Applied ONLY to these
+    // two toasts; ordinary refusal toasts (keypress-paced) are never suppressed.
+    private const float KeepAliveWindowSeconds = 3f;
+    private static readonly Dictionary<string, float> KeepAliveLastRaise = new Dictionary<string, float>();
+
+    private static bool IsKeepAliveRefresh(string key)
+    {
+        float now = UnityEngine.Time.unscaledTime;
+        bool refresh = KeepAliveLastRaise.TryGetValue(key, out float last) && now - last <= KeepAliveWindowSeconds;
+        KeepAliveLastRaise[key] = now;
+        return refresh;
+    }
+
+    // The auto-end-turn banner (AutoEndTurnController) — matched by its localized text, like IsTurnChromeToast.
+    private static bool IsAutoEndTurnToast(string text)
+    {
+        try
+        {
+            string autoEnd = Kingmaker.Blueprints.Root.Strings.UIStrings.Instance?.TurnBasedTexts?.AutoEndTurn;
+            return !string.IsNullOrEmpty(autoEnd) && text == autoEnd;
+        }
+        catch { return false; }
     }
 
     // The initiative tracker's coop "your turn" banner (OnCurrentUnitChanged) duplicates CombatEvents'
