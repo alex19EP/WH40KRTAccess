@@ -5,13 +5,15 @@ using Kingmaker.Code.UI.MVVM.VM.NavigatorResource;          // SectorMapBottomHu
 using Kingmaker.Code.UI.MVVM.VM.Overtips.SectorMap;          // OvertipEntitySystemVM, SectorMapOvertipsVM
 using Kingmaker.Code.UI.MVVM.VM.SectorMap;                   // SectorMapVM
 using Kingmaker.Code.UI.MVVM.VM.ServiceWindows;              // ServiceWindowsType
-using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;          // TooltipTemplateSimple (the Space readout)
+using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates;          // TooltipTemplateGlobalMapSystem (the Space readout)
 using Kingmaker.Code.UI.MVVM.VM.Space;                       // SpaceStaticPartVM, SpaceStaticComponentType
 using Kingmaker.Controllers.GlobalMap;                       // SectorMapController
 using Kingmaker.GameCommands;                                // GameCommandQueue.CreateNewWarpRoute / LowerWarpRouteDifficulty
 using Kingmaker.GameModes;                                   // GameModeType
 using Kingmaker.Globalmap.Blueprints;                        // BlueprintSectorMapArea (the area type)
 using Kingmaker.Globalmap.SectorMap;                         // SectorMapObject(Entity), SectorMapPassageEntity
+using Kingmaker.PubSubSystem;                                // IGlobalMapSpaceSystemInformationWindowHandler
+using Kingmaker.PubSubSystem.Core;                           // EventBus (the sighted Info button's own raise)
 using RTAccess.Localization;
 using RTAccess.UI;
 using RTAccess.UI.Graph;
@@ -123,10 +125,16 @@ namespace RTAccess.Screens
                 var v = view; // capture per iteration
                 overtips.TryGetValue(uid, out var vm);
                 var overtipVm = vm;
-                b.AddItem(ControlId.Referenced(v.Data, "sms:" + uid), GraphNodes.Button(
+                var vt = GraphNodes.Button(
                     () => SystemLabel(v, overtipVm),
-                    () => Activate(v, overtipVm),
-                    tooltip: SystemTooltip(v, overtipVm)));   // Space → the system dossier
+                    () => Activate(v, overtipVm));
+                // Space → the sighted right-click card itself (TooltipTemplateGlobalMapSystem: the unknown-
+                // system plate for unvisited, colonization/quests/rumours/enemies/planets/objects/anomalies
+                // for visited — the template carries the visited gate, so parity is its own), preceded by our
+                // translation of the map's VISUAL channels (route status + the drawn links) as the lead line.
+                vt.OnTooltip = () => TooltipChooser.OpenTemplate(SystemName(v),
+                    new TooltipTemplateGlobalMapSystem(v), lead: SystemDetail(v));
+                b.AddItem(ControlId.Referenced(v.Data, "sms:" + uid), vt);
                 any = true;
             }
             if (!any)
@@ -144,6 +152,16 @@ namespace RTAccess.Screens
             if (Accessibility.SpaceNotifications.ColonyEventLine() != null)
                 b.AddLabel(ControlId.Structural("status:colony"),
                     () => Accessibility.SpaceNotifications.ColonyEventLine());
+            // The floating rumour circles the sighted map draws in world space (hover = the objective title).
+            // They are anchored to areas, not systems, so the per-system rumour flags never cover them; one
+            // line each with a bearing from the ship. Read off the game's own rumour overtip VMs, gated on
+            // their live IsVisible — never a marker the sighted map isn't currently drawing.
+            int ri = 0;
+            foreach (var line in RumourLines())
+            {
+                var l = line; // capture
+                b.AddLabel(ControlId.Structural("status:rumour:" + ri++), () => l);
+            }
             b.PopContext();
 
             // -- Actions --
@@ -216,7 +234,12 @@ namespace RTAccess.Screens
             {
                 foreach (var view in ctrl.GetAllStarSystems())
                 {
-                    if (view?.Data == null || !view.IsExploredOrHasQuests) continue;
+                    // IsVisible is the node's actual rendered flag (EntityViewBase.SetVisible), recomputed
+                    // only at attach / SetExplored / SetVisited — deliberately ANDed in so we inherit the
+                    // game's own reveal timing: a quest activating mid-session does NOT light the sighted
+                    // node until an area reload, so it must not appear here either ([[rt-visual-parity]];
+                    // the overtip's UpdateEnabled uses this exact pair of flags).
+                    if (view?.Data == null || !view.IsExploredOrHasQuests || !view.IsVisible) continue;
                     result[view.Data.UniqueId] = view;
                 }
             }
@@ -270,20 +293,22 @@ namespace RTAccess.Screens
             => view.IsExploredOrHasQuests && !string.IsNullOrWhiteSpace(view.Name)
                 ? view.Name : Loc.T("sectormap.unknown_system");
 
-        // Status / route word — mirrors the card's risk indicator (0–3 skulls → difficulty word). Difficulty ONLY:
-        // the encounter % is an internal PassagesGenerator roll shown NOWHERE to sighted players, and travel time
-        // only surfaces in the history log after committing — so we reveal neither (parity; user call 2026-07-14).
+        // Status + route words. Visited-ness and reachability are INDEPENDENT signals on the sighted map (the
+        // node visual vs the travel decal + route line), so both are spoken: "visited, reachable, safe route".
+        // Difficulty ONLY: the encounter % is an internal PassagesGenerator roll shown NOWHERE to sighted
+        // players, and travel time only surfaces in the history log after committing — so we reveal neither
+        // (parity; user call 2026-07-14).
         private static string StatusWord(SectorMapObject view)
         {
             var entity = view.Data;
             var ctrl = Ctrl;
             var current = ctrl?.CurrentStarSystem;
             if (current != null && entity == current) return Loc.T("sectormap.here");
-            if (entity.IsVisited) return Loc.T("sectormap.visited");
             var passage = current != null ? ctrl.FindPassageBetween(current, entity) : null;
-            return passage != null && passage.IsExplored
+            string route = passage != null && passage.IsExplored
                 ? Loc.T("sectormap.route", new { difficulty = DifficultyWord(passage.CurrentDifficulty) })
                 : Loc.T("sectormap.no_route");
+            return entity.IsVisited ? Loc.T("sectormap.visited") + ", " + route : route;
         }
 
         private static string SystemLabel(SectorMapObject view, OvertipEntitySystemVM overtip)
@@ -306,22 +331,13 @@ namespace RTAccess.Screens
             }
         }
 
-        // Space on a system → a short dossier: name (title) + status/route word + the quest/rumour objective TITLES
-        // the card itself shows (OvertipEntitySystemVM.QuestObjectiveName / RumourObjectiveName — sighted card text)
-        // + colony. Same difficulty-only parity as the browse label. Replaces the bare "No tooltip".
-        private static Func<Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate> SystemTooltip(
-            SectorMapObject view, OvertipEntitySystemVM overtip)
-            => () => new TooltipTemplateSimple(SystemName(view), SystemDetail(view, overtip));
-
-        private static string SystemDetail(SectorMapObject view, OvertipEntitySystemVM overtip)
+        // The LEAD paragraph of the Space page: our translation of the map's purely visual channels — the
+        // route status word and the drawn link lines. Everything textual (quests, rumours, colonization,
+        // planets, the unknown-system plate) comes from the game's own TooltipTemplateGlobalMapSystem body
+        // underneath, so nothing is duplicated here.
+        private static string SystemDetail(SectorMapObject view)
         {
             var lines = new List<string> { StatusWord(view) };
-            if (overtip != null)
-            {
-                try { if (overtip.CheckQuests() && !string.IsNullOrWhiteSpace(overtip.QuestObjectiveName.Value)) lines.Add(overtip.QuestObjectiveName.Value); } catch { }
-                try { if (overtip.CheckRumours() && !string.IsNullOrWhiteSpace(overtip.RumourObjectiveName.Value)) lines.Add(overtip.RumourObjectiveName.Value); } catch { }
-            }
-            if (Game.Instance?.ColonizationController?.GetColony(view) != null) lines.Add(Loc.T("systemmap.has_colony"));
             var links = ExploredLinks(view);
             if (links != null) lines.Add(links);
             // Sentences, not newlines. A newline-separated description renders as a LIST in the tooltip body, and
@@ -462,15 +478,44 @@ namespace RTAccess.Screens
 
                 var rows = new List<ChoiceSubmenuScreen.Row>();
 
-                // Travel an existing explored route.
+                // The etude quest-lock: every sighted travel/visit/create flag ANDs IsAvailable, and a locked
+                // system's overtip goes inert outright (UpdateEnabled false) — so a locked system gets NO verbs
+                // at all, only the "nothing from here" row below. WarpTravel itself does NOT re-check the lock,
+                // so skipping this gate would let us command a jump the game forbids (sequence break).
+                if (!entity.IsAvailable)
+                {
+                    rows.Add(ChoiceSubmenuScreen.Row.Header(() => Loc.T("sectormap.verb_none")));
+                    ChoiceSubmenuScreen.OpenRows(name, rows);
+                    return;
+                }
+
+                // Travel an existing explored route — named with the passage difficulty, like the sighted
+                // button's hover label (TravelToWithRoute); a fake system takes the game's own special wording
+                // (TravelToFakeSystem), which deliberately does not name a difficulty.
                 if (hasRoute)
+                {
+                    var p0 = passage; // capture
+                    bool fake = view.StarSystemBlueprint?.IsFakeSystem == true;
                     rows.Add(ChoiceSubmenuScreen.Row.Action(
-                        () => Loc.T("sectormap.verb_travel", new { name }), () => DoTravel(view, overtip, name)));
+                        () => fake
+                            ? GameText.Or(() => Kingmaker.Blueprints.Root.Strings.UIStrings.Instance
+                                .GlobalMap.TravelToFakeSystem, "sectormap.verb_travel_fake")
+                            : Loc.T("sectormap.verb_travel_diff",
+                                new { name, difficulty = DifficultyWord(p0.CurrentDifficulty) }),
+                        () => DoTravel(view, overtip, name)));
+                }
 
                 // Visit the current system's own area.
                 if (canVisit)
                     rows.Add(ChoiceSubmenuScreen.Row.Action(
                         () => Loc.T("sectormap.verb_visit", new { name }), () => DoVisit(view, overtip, name)));
+
+                // The current system's Info button: re-open the arrival dossier panel on demand, via the exact
+                // EventBus raise the sighted button makes (OvertipEntitySystemVM.ShowVisitDialogBox). The panel
+                // then surfaces as SectorSystemInfoScreen.
+                if (isCurrent)
+                    rows.Add(ChoiceSubmenuScreen.Row.Action(
+                        () => Loc.T("sysinfo.screen"), OpenCurrentSystemInfo));
 
                 // Make an existing route safer — one row per REACHABLE safer tier, mirroring the sighted popup's
                 // up-to-3 upgrade buttons (SpaceSystemNavigationButtonsBaseView.CheckUpgradeButtonsVisible): target
@@ -541,6 +586,21 @@ namespace RTAccess.Screens
             catch (Exception e) { Main.Log?.Error("SectorMapScreen.DoVisit failed: " + e); }
         }
 
+        // Re-open the current system's information side panel — the sighted overtip's Info button. Same raise
+        // as OvertipEntitySystemVM.ShowVisitDialogBox: the window VM resolves the current system itself.
+        private static void OpenCurrentSystemInfo()
+        {
+            if (!Interactive) { Tts.Speak(Loc.T("sectormap.not_now"), interrupt: true); return; }
+            try
+            {
+                EventBus.RaiseEvent(delegate(IGlobalMapSpaceSystemInformationWindowHandler h)
+                {
+                    h.HandleShowSpaceSystemInformationWindow();
+                });
+            }
+            catch (Exception e) { Main.Log?.Error("SectorMapScreen.OpenCurrentSystemInfo failed: " + e); }
+        }
+
         // ---- warp-route shop (Navigator's Resource): create / make-safer, driven through the game's own
         // networked GameCommandQueue — the exact path the sighted Create/Upgrade popup buttons use. Both commands
         // are async (queued, run over later frames); WarpEvents speaks the charted / safer line on completion. ----
@@ -550,17 +610,27 @@ namespace RTAccess.Screens
         private static int UpgradeCost
             => Kingmaker.Blueprints.Root.BlueprintWarhammerRoot.Instance?.WarpRoutesSettings?.LowerPassageDifficultyCost ?? 0;
 
-        // "Create route to X, costs N" when scanned + affordable; "…scan required" when unscanned (the row is
-        // disabled, so the announcer adds "disabled" — the game's ScanRequired hint); "…not enough" when scanned
-        // but you can't pay (still enabled, mirroring the sighted button that stays clickable and warns).
+        // The difficulty a NEWLY created passage arrives at — Deadly, or Dangerous once the colony-project
+        // reward flag is set (SectorMapController.GenerateNewPassage's own pick). The sighted hover names it
+        // (CreateWay [Deadly], coloured), so the row must too.
+        private static SectorMapPassageEntity.PassageDifficulty NewRouteDifficulty
+            => Game.Instance?.Player?.WarpTravelState?.AllRoutesNotDeadlyFlag == true
+                ? SectorMapPassageEntity.PassageDifficulty.Dangerous
+                : SectorMapPassageEntity.PassageDifficulty.Deadly;
+
+        // "Create deadly route to X, costs N" when scanned + affordable; "…scan required" when unscanned (the
+        // row is disabled, so the announcer adds "disabled" — the game's ScanRequired hint; no difficulty
+        // named, matching the sighted hover which is suppressed entirely while unscanned); "…not enough" when
+        // scanned but you can't pay (still enabled, mirroring the sighted button that warns on click).
         private static string CreateLabel(string name)
         {
             // "Scan required" keys off the CURRENT system's scan flag (matching the sighted button hint), not the target.
             if (Ctrl?.CurrentStarSystem?.IsScannedFrom != true) return Loc.T("sectormap.verb_create_scan", new { name });
             int cost = CreateCost;
+            string difficulty = DifficultyWord(NewRouteDifficulty);
             return NavResource >= cost
-                ? Loc.T("sectormap.verb_create", new { name, cost })
-                : Loc.T("sectormap.verb_create_poor", new { name, cost });
+                ? Loc.T("sectormap.verb_create", new { name, cost, difficulty })
+                : Loc.T("sectormap.verb_create_poor", new { name, cost, difficulty });
         }
 
         // Cost to lower a passage to a target tier — (current - target) * per-tier cost, matching the game's own
@@ -648,6 +718,53 @@ namespace RTAccess.Screens
             }
             if (vm?.IsScanning.Value == true || Ctrl?.IsScanning == true) return Loc.T("sectormap.scanning");
             return Loc.T("sectormap.idle");
+        }
+
+        // ---- rumour circles (the map's free-floating world-space markers) ----
+
+        // One line per rumour marker the sighted map is currently drawing: the overtip's IsVisible already
+        // folds in the active-objective check and the Rumors layer mask, so it is the exact render gate.
+        // Titles read the way OvertipRumourPCView builds its hover hint (single marker → its blueprint title;
+        // a group → the joined active objective titles); the bearing is from the ship to the circle's centre.
+        private static List<string> RumourLines()
+        {
+            var result = new List<string>();
+            try
+            {
+                var overtips = SectorMapOvertipsVM.Instance?.RumoursOvertipsCollectionVM?.Overtips;
+                if (overtips == null) return result;
+                foreach (var vm in overtips)
+                {
+                    if (vm == null || vm.IsVisible.Value != true) continue;
+                    string title = RumourTitle(vm);
+                    if (string.IsNullOrWhiteSpace(title)) continue;
+                    string bearing = Bearing(CurrentPos(), vm.GetEntityPosition());
+                    result.Add(string.IsNullOrEmpty(bearing)
+                        ? Loc.T("sectormap.rumour", new { title })
+                        : Loc.T("sectormap.rumour_dir", new { title, bearing }));
+                }
+            }
+            catch (Exception e) { Main.Log?.Log("sector rumour overtips failed: " + e.Message); }
+            return result;
+        }
+
+        private static string RumourTitle(OvertipEntityRumourVM vm)
+        {
+            try
+            {
+                if (vm.SectorMapRumour != null && vm.SectorMapRumour.View?.HasParent != true)
+                    return vm.SectorMapRumour.View?.Blueprint?.GetTitile()?.Text;
+                var objectives = vm.SectorMapRumourGroup?.View?.ActiveQuestObjectives;
+                if (objectives == null) return null;
+                var titles = new List<string>();
+                foreach (var o in objectives)
+                {
+                    string t = o?.GetTitile()?.Text;
+                    if (!string.IsNullOrWhiteSpace(t)) titles.Add(t);
+                }
+                return titles.Count > 0 ? string.Join(", ", titles) : null;
+            }
+            catch { return null; }
         }
 
         // ---- input ----
