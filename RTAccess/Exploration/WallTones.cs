@@ -92,7 +92,7 @@ internal static class WallTones
 
             TrackMotion(dt);
 
-            bool active = InGameScreen.ExplorationActive && ControlState.HasControl;
+            bool active = InGameScreen.SoundscapeActive && ControlState.HasControl;
             bool play = active && (mode == Playback.Continuous || _sinceMoved < MoveGrace);
             // Not playing, or playing but the cursor has no grid node: glide every voice down to silence rather
             // than cutting it — same slew, so a menu open / a step off the grid fades out instead of clicking.
@@ -147,7 +147,7 @@ internal static class WallTones
     private static bool CursorNeverSeen(CustomGridNodeBase node, float dt)
     {
         _fogTimer -= dt;
-        if (!MapCursor.Has) { _fogNode = null; _fogNeverSeen = false; return false; }
+        if (!MapCursor.HasListen) { _fogNode = null; _fogNeverSeen = false; return false; }
         if (!ReferenceEquals(node, _fogNode) && _fogTimer <= 0f)
         {
             _fogTimer = 0.1f;
@@ -181,11 +181,11 @@ internal static class WallTones
     }
 
     private static CustomGridNodeBase CursorNode()
-        => MapCursor.Node ?? MapCursor.Position.GetNearestNodeXZ() as CustomGridNodeBase;
+        => MapCursor.ListenNode;
 
     private static void TrackMotion(float dt)
     {
-        var p = MapCursor.Position;
+        var p = MapCursor.ListenPosition;
         if (_haveLast && (p - _lastPos).sqrMagnitude > 1e-4f) _sinceMoved = 0f;
         else _sinceMoved += dt;
         _lastPos = p; _haveLast = true;

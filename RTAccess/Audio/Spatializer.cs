@@ -154,7 +154,7 @@ namespace RTAccess.Audio
         /// this only resolves the pan from the current frame. The compass-stable in-code frame the plan calls for.</summary>
         public static void PlayAt(Vector3 worldPos, float[] buffer, float volume, float panWidth = DefaultPanWidth)
         {
-            var c = MapCursor.Position;
+            var c = MapCursor.ListenPosition;
             AudioMixer.Instance.Play(buffer, volume, Pan(worldPos.x - c.x, worldPos.z - c.z, panWidth));
         }
     }

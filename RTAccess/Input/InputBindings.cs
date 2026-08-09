@@ -377,6 +377,73 @@ namespace RTAccess.Input
                 Screens.SectorMapWalk.AnchorHere).AddBinding(KeyCode.Slash).Grouped("sectormap");
             InputManager.Register("sectormap.walk_home", "Sector map: back to current system", InputCategory.WorldMap,
                 Screens.SectorMapWalk.Home).AddBinding(KeyCode.C).Grouped("sectormap");
+
+            // ---- LocalMap: the map window's free cursor + review cycles (declared ONLY by LocalMapScreen, so
+            // these keys are live only while the map is open and are fully isolated from the in-area ones).
+            // Deliberately the SAME physical keys as their in-area counterparts — arrows sweep, comma/period/N
+            // cycle factions, Home and slash jump the cursor to the selection, Enter/Backspace/C/Delete/X keep
+            // their meanings — so the map costs no new muscle memory; only the SURFACE they act on changes.
+            // See RTAccess.Exploration.LocalMapCursor / LocalMapReview. ----
+            InputManager.Register("localmap.up", "Local map: sweep north", InputCategory.LocalMap,
+                Ex.LocalMapCursor.StepNorth).AddBinding(KeyCode.UpArrow).Repeating().Grouped("localmap");
+            InputManager.Register("localmap.down", "Local map: sweep south", InputCategory.LocalMap,
+                Ex.LocalMapCursor.StepSouth).AddBinding(KeyCode.DownArrow).Repeating().Grouped("localmap");
+            InputManager.Register("localmap.left", "Local map: sweep west", InputCategory.LocalMap,
+                Ex.LocalMapCursor.StepWest).AddBinding(KeyCode.LeftArrow).Repeating().Grouped("localmap");
+            InputManager.Register("localmap.right", "Local map: sweep east", InputCategory.LocalMap,
+                Ex.LocalMapCursor.StepEast).AddBinding(KeyCode.RightArrow).Repeating().Grouped("localmap");
+            // Shift+arrows drop to a single cell — the map's detail gear, for reading a doorway precisely.
+            InputManager.Register("localmap.up_fine", "Local map: step north (one cell)", InputCategory.LocalMap,
+                Ex.LocalMapCursor.FineNorth).AddBinding(KeyCode.UpArrow, shift: true).Repeating().Grouped("localmap");
+            InputManager.Register("localmap.down_fine", "Local map: step south (one cell)", InputCategory.LocalMap,
+                Ex.LocalMapCursor.FineSouth).AddBinding(KeyCode.DownArrow, shift: true).Repeating().Grouped("localmap");
+            InputManager.Register("localmap.left_fine", "Local map: step west (one cell)", InputCategory.LocalMap,
+                Ex.LocalMapCursor.FineWest).AddBinding(KeyCode.LeftArrow, shift: true).Repeating().Grouped("localmap");
+            InputManager.Register("localmap.right_fine", "Local map: step east (one cell)", InputCategory.LocalMap,
+                Ex.LocalMapCursor.FineEast).AddBinding(KeyCode.RightArrow, shift: true).Repeating().Grouped("localmap");
+            InputManager.Register("localmap.recenter", "Local map: recenter on party", InputCategory.LocalMap,
+                Ex.LocalMapCursor.Recenter).AddBinding(KeyCode.C).Grouped("localmap");
+            InputManager.Register("localmap.reannounce", "Local map: re-read the spot", InputCategory.LocalMap,
+                Ex.LocalMapCursor.ReAnnounce).AddBinding(KeyCode.Delete).Grouped("localmap");
+            // Enter = peek → commit: plant the IN-AREA cursor at the map cursor, so every world verb now answers
+            // from the spot you found here. Backspace = the sighted map's right-click (send the party).
+            InputManager.Register("localmap.plant", "Local map: plant the world cursor here", InputCategory.LocalMap,
+                Ex.LocalMapCursor.PlantWorldCursor).AddBinding(KeyCode.Return).AddBinding(KeyCode.KeypadEnter).Grouped("localmap");
+            InputManager.Register("localmap.move_party", "Local map: send the party here", InputCategory.LocalMap,
+                Ex.LocalMapCursor.MoveParty).AddBinding(KeyCode.Backspace).Grouped("localmap");
+            InputManager.Register("localmap.jump", "Local map: cursor to review selection", InputCategory.LocalMap,
+                Ex.LocalMapCursor.JumpToSelection).AddBinding(KeyCode.Home).AddBinding(KeyCode.Slash).Grouped("localmap");
+            InputManager.Register("localmap.where_am_i", "Local map: where is the cursor", InputCategory.LocalMap,
+                Ex.LocalMapCursor.WhereAmI).AddBinding(KeyCode.X).Grouped("localmap");
+            // Escape closes the map from HERE rather than through ui.back. The map screen is permanently
+            // unfocused (the cursor owns the keyboard), and ui.back is a YieldsWhenUnfocused chord — it would
+            // still dispatch our Back action but NOT claim the key, so the game's own EscHotkeyManager would run
+            // on the same press and pop the pause menu behind the closing window. A plain LocalMap-category
+            // binding claims Escape properly, and shadows ui.back because LocalMap is declared first.
+            InputManager.Register("localmap.close", "Local map: close", InputCategory.LocalMap,
+                Screens.LocalMapScreen.Close).AddBinding(KeyCode.Escape).Grouped("localmap");
+            // The review cycles — the same faction letters the in-area scanner uses, plus B for the map's pins and
+            // M for exits only (B is free, and M is the scanner's object cycle, which has no meaning on a map).
+            InputManager.Register("localmap.review_party", "Local map: cycle party", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleParty(false)).AddBinding(KeyCode.Comma).Grouped("localmap");
+            InputManager.Register("localmap.review_party_back", "Local map: cycle party (reverse)", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleParty(true)).AddBinding(KeyCode.Comma, shift: true).Grouped("localmap");
+            InputManager.Register("localmap.review_enemies", "Local map: cycle enemies", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleEnemies(false)).AddBinding(KeyCode.Period).Grouped("localmap");
+            InputManager.Register("localmap.review_enemies_back", "Local map: cycle enemies (reverse)", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleEnemies(true)).AddBinding(KeyCode.Period, shift: true).Grouped("localmap");
+            InputManager.Register("localmap.review_neutrals", "Local map: cycle neutrals", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleNeutrals(false)).AddBinding(KeyCode.N).Grouped("localmap");
+            InputManager.Register("localmap.review_neutrals_back", "Local map: cycle neutrals (reverse)", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleNeutrals(true)).AddBinding(KeyCode.N, shift: true).Grouped("localmap");
+            InputManager.Register("localmap.review_markers", "Local map: cycle map markers", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleMarkers(false)).AddBinding(KeyCode.B).Grouped("localmap");
+            InputManager.Register("localmap.review_markers_back", "Local map: cycle map markers (reverse)", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleMarkers(true)).AddBinding(KeyCode.B, shift: true).Grouped("localmap");
+            InputManager.Register("localmap.review_exits", "Local map: cycle exits", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleExits(false)).AddBinding(KeyCode.M).Grouped("localmap");
+            InputManager.Register("localmap.review_exits_back", "Local map: cycle exits (reverse)", InputCategory.LocalMap,
+                () => Ex.LocalMapReview.CycleExits(true)).AddBinding(KeyCode.M, shift: true).Grouped("localmap");
         }
 
         // The review-buffer keys are Global (always polled), so their handlers stand down when not in a

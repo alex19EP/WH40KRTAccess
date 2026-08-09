@@ -87,7 +87,7 @@ internal static class Sonar
             var mode = Mode;
             bool play = mode == Playback.Continuous
                 || (mode == Playback.WhenMoving && _sinceMoved < MoveGrace);
-            if (!play || !InGameScreen.ExplorationActive || !ControlState.HasControl) { ResetSweep(); return; }
+            if (!play || !InGameScreen.SoundscapeActive || !ControlState.HasControl) { ResetSweep(); return; }
 
             _timer -= dt;
             if (_timer > 0f) return;
@@ -123,7 +123,7 @@ internal static class Sonar
 
     private static void TrackMotion(float dt)
     {
-        var p = MapCursor.Position;
+        var p = MapCursor.ListenPosition;
         if (_haveLast && (p - _lastPos).sqrMagnitude > 1e-4f) _sinceMoved = 0f;
         else _sinceMoved += dt;
         _lastPos = p; _haveLast = true;
@@ -135,7 +135,7 @@ internal static class Sonar
     // glides across the sweep (two same-type things read as "left … right", not a centred average).
     private static void Snapshot()
     {
-        var c = MapCursor.Position;
+        var c = MapCursor.ListenPosition;
         float maxDist = MaxDist; // read the setting once per sweep
         _sweep.Clear();
         foreach (var it in WorldModel.Items)
@@ -165,7 +165,7 @@ internal static class Sonar
         // SpatialSources — in real 3D (pan + ITD + front/back filter) — until it drains. No longer freezes at fire.
         SpatialSources.Play(
             AudioAssets.Interactable(stem),
-            () => MapCursor.Position,
+            () => MapCursor.ListenPosition,
             c => item.NearestPoint(c),
             d => Spatializer.VolumeFor(d, RefDist, MinVol) * Volume,
             PanWidth);

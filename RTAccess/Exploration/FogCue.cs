@@ -51,15 +51,15 @@ internal static class FogCue
     {
         try
         {
-            if (!Enabled || !InGameScreen.ExplorationActive || !ControlState.HasControl)
+            if (!Enabled || !InGameScreen.SoundscapeActive || !ControlState.HasControl)
             { _wasFogged = null; _haveLast = false; return; }
 
             _timer -= dt;
 
             // Skip the GPU readback unless the cursor is planted AND moved: unplanted it tracks the party (always in
             // sight → nothing to cue), and a stationary planted cursor cannot have crossed the boundary.
-            if (!MapCursor.Has) { _wasFogged = null; _haveLast = false; return; }
-            var pos = MapCursor.Position;
+            if (!MapCursor.HasListen) { _wasFogged = null; _haveLast = false; return; }
+            var pos = MapCursor.ListenPosition;
             if (_haveLast && (pos - _lastPos).sqrMagnitude < 1e-4f) return; // cursor hasn't moved — no readback
             if (_timer > 0f) return;                                        // moved, but cap the sample rate
             _timer = SampleSec;

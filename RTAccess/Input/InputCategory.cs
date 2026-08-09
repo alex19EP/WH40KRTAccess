@@ -28,6 +28,13 @@ namespace RTAccess.Input
         /// <see cref="Exploration"/> so the world-map systems are fully isolated from the in-area ones — the
         /// same physical keys (PageUp/Down, …) route to whichever screen is up. Declared by the world-map screen.</summary>
         WorldMap,
+        /// <summary>The LOCAL map window: its free map cursor, review cycles and map verbs. Isolated from
+        /// <see cref="Exploration"/> for the same reason <see cref="WorldMap"/> is — the arrows, the review
+        /// letters and Enter/Backspace all mean something different over a map than they do in the world, and a
+        /// map peek must never disturb the in-area cursor. Declared ONLY by
+        /// <see cref="RTAccess.Screens.LocalMapScreen"/>, and declared FIRST there so its arrows shadow the
+        /// navigator's identical UI chords.</summary>
+        LocalMap,
         /// <summary>The mod's service-window hotkeys (open character sheet / inventory / spellbook / journal).
         /// Declared by the in-game screen ONLY while it has control, and by the world-map screen — so the same
         /// chords open the windows both in an area and on the world map, yet stay dead during a cutscene /

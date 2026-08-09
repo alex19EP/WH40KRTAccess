@@ -42,6 +42,13 @@ internal sealed class ProxyMarker : ScanItem
         }
     }
 
+    /// <summary>The pin's kind as the game classifies it — read by the local map's exits-only cycle, which is a
+    /// filter over the same pin set rather than a second source.</summary>
+    public LocalMapMarkType MarkType
+    {
+        get { try { return _marker.GetMarkerType(); } catch { return LocalMapMarkType.Invalid; } }
+    }
+
     // The type word ("point of interest" / "loot" / "objective" / "important") — the base Describe slots it after
     // the name, giving the marker readout line composed by InteractableDescriber.DescribeMarker.
     public override string Detail => InteractableDescriber.MarkerTypeLabel(_marker.GetMarkerType());
@@ -51,4 +58,22 @@ internal sealed class ProxyMarker : ScanItem
     // the abstract contract.
     public override string Primary => ScanTaxonomy.Exits;
     public override IEnumerable<string> Nodes { get { yield return ScanTaxonomy.Exits; } }
+
+    /// <summary>
+    /// May this pin be listed at all — the one spoiler gate every marker-sourced browse shares (the scanner's
+    /// "Points of interest" category and the local map's marker/exit cycles), so the two can never drift into
+    /// disagreeing about which pins a blind player is allowed to hear about.
+    ///
+    /// <c>IsVisible()</c> is the game's own per-pin perception check (the same one that decides whether the
+    /// sighted map draws the icon), and <c>Suppressed</c> drops a pin whose owning entity has been switched off.
+    /// Both are guarded: a marker whose check throws is treated as HIDDEN, the safe side for a loot pin.
+    /// </summary>
+    internal static bool Listable(ILocalMapMarker m)
+    {
+        if (m == null) return false;
+        try { if (!m.IsVisible()) return false; }
+        catch { return false; }
+        try { return m.GetEntity()?.Suppressed != true; }
+        catch { return false; }
+    }
 }
