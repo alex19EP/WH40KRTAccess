@@ -78,8 +78,9 @@ internal static class InteractableDescriber
 
     /// <summary>
     /// Full spoken line for a single grid tile relative to <paramref name="anchor"/>, for the tile explorer
-    /// (<see cref="TileExplorer"/>): occupant, then walkability/reason when empty, then cover on each cardinal
-    /// edge, then the tile offset from the anchor. Never throws; returns "" only when <paramref name="node"/> is null.
+    /// (<see cref="TileExplorer"/>): occupant, then "wall" when an empty tile is unwalkable (an empty WALKABLE tile
+    /// adds nothing), then cover on each cardinal edge, then the tile offset from the anchor. Never throws; returns
+    /// "" only when <paramref name="node"/> is null.
     /// </summary>
     public static string DescribeTile(CustomGridNodeBase node, MechanicEntity anchor)
     {
@@ -89,8 +90,8 @@ internal static class InteractableDescriber
         // 1. Headline — what is on/near the tile. A unit on the tile is announced first; the interactable NEAR this
         //    tile is then ALWAYS announced too (even behind a unit), because the cursor's Enter acts on it and it can
         //    share the tile with a unit — interactables are off-grid, so this is a nearest-within-reach hint, not a
-        //    per-tile lookup. With neither a unit nor an interactable, walkability fills in (unwalkable = "wall",
-        //    empty walkable = "clear").
+        //    per-tile lookup. With neither a unit nor an interactable, only an unwalkable tile fills in ("wall") —
+        //    an empty walkable tile says nothing at all, so the line is just its offset.
         // Visual parity: gate the layout/occupant readout by the tile's fog state so a blind player hears only what a
         // sighted player could perceive on the local map. A never-seen tile reveals nothing but "unexplored"; an
         // explored-but-not-currently-visible tile reveals its static layout (walls / doors / containers) but NOT a
@@ -147,7 +148,12 @@ internal static class InteractableDescriber
                 }
                 catch { /* stage/attackability read is best-effort */ }
             }
-            else sb.Append(Loc.T(node.Walkable ? "tile.clear" : "tile.wall"));
+            // An empty walkable tile now says NOTHING. "clear" was one word carrying no information on the majority
+            // of cursor steps — a tester asked for it to go, and a play session bore it out (it led the tile readout
+            // dozens of times, e.g. "clear, 1 north"). Silence is unambiguous here because the offset that always
+            // follows proves the step registered, and because the informative case still speaks: an unwalkable tile
+            // reads "wall". The locale key is kept, since this is a suppression we may want back behind a setting.
+            else if (!node.Walkable) sb.Append(Loc.T("tile.wall"));
         }
 
         // 1b. Ground hazard / buff zone standing ON this tile — fire, gas, a psychic cloud: the thing a sighted player
