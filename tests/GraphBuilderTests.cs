@@ -175,6 +175,29 @@ namespace RTAccess.Tests
         }
 
         [Fact]
+        public void PositionsRestartAcrossARawBreak()
+        {
+            // A raw block breaks the vertical chain (WireMenuEdges segments there), so "n of m"
+            // must not count across it: two menu items above a grid and two below are two runs of
+            // two, not one list of four the arrows can't traverse.
+            var render = new GraphBuilder()
+                .AddItem(Id("a1"), Vt("A1"))
+                .AddItem(Id("a2"), Vt("A2"))
+                .AddNode(Id("raw"), Vt("Raw"))
+                .AddItem(Id("b1"), Vt("B1"))
+                .AddItem(Id("b2"), Vt("B2"))
+                .Build();
+
+            Assert.Equal(1, render.Nodes[Id("a1")].PositionIndex);
+            Assert.Equal(2, render.Nodes[Id("a1")].PositionCount);
+            Assert.Equal(2, render.Nodes[Id("a2")].PositionIndex);
+            Assert.Equal(1, render.Nodes[Id("b1")].PositionIndex);
+            Assert.Equal(2, render.Nodes[Id("b1")].PositionCount);
+            Assert.Equal(2, render.Nodes[Id("b2")].PositionIndex);
+            Assert.Equal(0, render.Nodes[Id("raw")].PositionCount); // raw nodes get none
+        }
+
+        [Fact]
         public void RegionsAreStamped()
         {
             var render = new GraphBuilder()

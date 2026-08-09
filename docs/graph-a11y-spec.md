@@ -497,9 +497,10 @@ Caveats the numbers depend on:
   exclude-from-positions marker.
 - Child-position suppression (`PushContext(positions: false)`) applies to **single-item rows
   only**; members of a multi-item row are stamped within their row regardless.
-- ⚠ Interleaved raw content breaks the *navigation* chain (§4.1) but the shipped stamping still
-  numbers all single-item rows of a `(parent, stop)` as one list across the break — so "n of m"
-  can span nodes arrows cannot traverse between. Known defect; ports SHOULD segment the count.
+- ⚠ Interleaved raw content breaks the *navigation* chain (§4.1), and the stamping MUST segment
+  its sibling runs at the same breaks — otherwise "n of m" spans nodes arrows cannot traverse
+  between (the upstream still numbers across the break; fixed in the reference as of Draft 2).
+  A multi-item row does not break a run — the vertical chain passes through it.
 
 ### 4.7 Build-time validation
 
@@ -1089,7 +1090,8 @@ here):
    Tab-stops (upstream; fixed in the reference 2026-08-09; §5.3).
 2. `FocusByReference` reads the previous render instead of re-rendering (upstream and the C++
    port that carries it; fixed in the reference 2026-08-09; §5.3).
-3. Position stamping counts across raw-content breaks in the navigation chain (§4.6).
+3. Position stamping counts across raw-content breaks in the navigation chain (upstream; fixed
+   in the reference 2026-08-09; §4.6).
 4. The upstream's type-ahead does not stand down for the *game's* text fields — only its own
    raw-capture entry screen (§7.8, §8).
 5. Tier-1 resolution iterates a hash-ordered map with no tie-break — nondeterministic under

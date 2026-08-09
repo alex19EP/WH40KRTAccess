@@ -363,27 +363,46 @@ namespace RTAccess.UI.Graph
         // none. Announced only when m > 1 (a lone button reads no position).
         private void StampPositions()
         {
-            var groups = new Dictionary<object, List<GraphNode>>();
-            var keys = new List<object>();
+            // Multi-item rows: positioned within their row.
             foreach (var row in _rows)
+                if (row.Items.Count > 1) Stamp(row.Items);
+
+            // Single-item rows: sibling runs sharing (parent, stop) — SEGMENTED at raw-content
+            // breaks, mirroring WireMenuEdges. A raw node breaks its stop's vertical chain, so it
+            // must also end every open sibling run there: "n of m" may only count nodes the arrows
+            // at that list level actually traverse. (A multi-item row does NOT break a run — the
+            // vertical chain passes through it.)
+            var finished = new List<List<GraphNode>>();
+            var open = new Dictionary<KeyValuePair<GraphNode, object>, List<GraphNode>>();
+            var toClose = new List<KeyValuePair<GraphNode, object>>();
+            foreach (var node in _declared)
             {
-                if (row.Items.Count > 1)
+                Row row;
+                if (!_rowOf.TryGetValue(node, out row))
                 {
-                    Stamp(row.Items);
+                    toClose.Clear();
+                    foreach (var kv in open)
+                        if (Equals(kv.Key.Value, node.StopKey)) toClose.Add(kv.Key);
+                    foreach (var key in toClose)
+                    {
+                        finished.Add(open[key]);
+                        open.Remove(key);
+                    }
                     continue;
                 }
-                var node = row.Items[0];
+                if (row.Items.Count > 1) continue;
                 if (node.Parent != null && node.Parent.SuppressChildPositions) continue;
-                var key = new KeyValuePair<GraphNode, object>(node.Parent, node.StopKey);
-                if (!groups.TryGetValue(key, out var list))
+                var groupKey = new KeyValuePair<GraphNode, object>(node.Parent, node.StopKey);
+                List<GraphNode> run;
+                if (!open.TryGetValue(groupKey, out run))
                 {
-                    list = new List<GraphNode>();
-                    groups.Add(key, list);
-                    keys.Add(key);
+                    run = new List<GraphNode>();
+                    open.Add(groupKey, run);
                 }
-                list.Add(node);
+                run.Add(node);
             }
-            foreach (var key in keys) Stamp(groups[key]);
+            foreach (var run in open.Values) finished.Add(run);
+            foreach (var run in finished) Stamp(run);
         }
 
         private static void Stamp(List<GraphNode> siblings)
