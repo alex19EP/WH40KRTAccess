@@ -108,6 +108,30 @@ namespace RTAccess.Tests
         }
 
         [Fact]
+        public void ReconcileTier1PrefersTheStructuralMatchAmongSharers()
+        {
+            var state = new GraphState();
+            var shared = new object(); // one backing object behind two controls (a row primary and its cell)
+            var g = new KeyGraph(() => new GraphBuilder()
+                .AddItem(ControlId.Referenced(shared, "primary"), Vt("Primary"))
+                .AddItem(ControlId.Referenced(shared, "cell"), Vt("Cell"))
+                .Build(), state);
+
+            g.Rerender();
+            g.Focus(Id("cell"));
+            Assert.Equal("cell", state.CurKey.StructuralKey);
+
+            Assert.True(g.Rerender()); // tier 1 sees TWO reference matches — must keep this one
+            Assert.Equal("cell", state.CurKey.StructuralKey); // not bounced to "primary"
+
+            // When the old structural key is gone entirely, the first sharer in DECLARATION order
+            // wins — never a hash-order pick.
+            state.CurKey = ControlId.Referenced(shared, "gone");
+            Assert.True(g.Rerender());
+            Assert.Equal("primary", state.CurKey.StructuralKey);
+        }
+
+        [Fact]
         public void ReconcileFallsBackToNearestSurvivor()
         {
             var state = new GraphState();
@@ -392,6 +416,25 @@ namespace RTAccess.Tests
         }
 
         [Fact]
+        public void SiblingEdgeJumpDoesNotCrossStops()
+        {
+            // Root-level nodes all share the null parent; the (parent, stop) filter keeps Home/End
+            // inside the focused node's Tab-stop — arrows never cross a stop, neither may this.
+            var state = new GraphState();
+            var g = new KeyGraph(() => new GraphBuilder()
+                .AddItem(Id("a1"), Vt("A1"))
+                .AddItem(Id("a2"), Vt("A2"))
+                .BeginStop()
+                .AddItem(Id("b1"), Vt("B1"))
+                .Build(), state);
+
+            g.Rerender(); // on a1
+            var r = g.MoveToSiblingEdge(first: false);
+            Assert.True(r.Moved);
+            Assert.Equal(Id("a2"), state.CurKey); // last sibling in ITS stop, not b1 in the next
+        }
+
+        [Fact]
         public void FocusAndFocusByReferenceWork()
         {
             var state = new GraphState();
@@ -409,6 +452,30 @@ namespace RTAccess.Tests
             Assert.True(g.Focus(Id("a")));
             Assert.Equal(Id("a"), state.CurKey);
             Assert.False(g.Focus(Id("nope")));
+        }
+
+        [Fact]
+        public void FocusByReferenceActsOnCurrentReality()
+        {
+            // The game-driven selection change that triggers this call is exactly what a stale
+            // render misses: the operation must re-render first, like every other operation.
+            var state = new GraphState();
+            var backing = new object();
+            bool present = false;
+            var g = new KeyGraph(() =>
+            {
+                var b = new GraphBuilder().AddItem(Id("top"), Vt("Top"));
+                if (present) b.AddItem(ControlId.Referenced(backing, "thing"), Vt("Thing"));
+                return b.Build();
+            }, state);
+
+            Assert.True(g.Rerender());
+            Assert.Equal(Id("top"), state.CurKey);
+            Assert.False(g.FocusByReference(backing)); // genuinely absent
+
+            present = true; // the game just made it selectable
+            Assert.True(g.FocusByReference(backing));   // found in a FRESH render
+            Assert.Equal("thing", state.CurKey.StructuralKey);
         }
     }
 }

@@ -83,10 +83,20 @@ namespace RTAccess.UI.Graph
             if (old != null)
             {
                 // Tier 1: the same backing object, even if its structural key changed (it moved).
+                // Several nodes can legitimately share one backing object (a row primary and its
+                // cells): prefer the candidate whose structural key ALSO matches, else the first in
+                // declaration order — a hash-order pick pins focus to an arbitrary sharer and every
+                // move away bounces back.
                 if (old.Reference != null)
                 {
-                    foreach (var kv in render.Nodes)
-                        if (kv.Value.Id.ReferenceMatches(old.Reference)) { resolved = kv.Value.Id; break; }
+                    GraphNode byRef = null;
+                    foreach (var n in render.Order)
+                    {
+                        if (!n.Id.ReferenceMatches(old.Reference)) continue;
+                        if (n.Id.Equals(old)) { byRef = n; break; }
+                        if (byRef == null) byRef = n;
+                    }
+                    if (byRef != null) resolved = byRef.Id;
                 }
 
                 // Tier 2: the same structural key, even if the backing object was rebuilt.
@@ -240,7 +250,8 @@ namespace RTAccess.UI.Graph
         }
 
         /// <summary>Cycle to the next/previous Tab-stop (declaration order), landing on the stop's
-        /// remembered position (else its first node). <paramref name="wrap"/> continues past the ends;
+        /// remembered position, else its SELECTED member, else its first node (<see cref="StopLanding(object)"/>).
+        /// <paramref name="wrap"/> continues past the ends;
         /// without it, at the last/first stop the result is not-moved (the caller may blur instead).</summary>
         public MoveResult MoveStop(int dir, bool wrap)
         {
@@ -314,15 +325,17 @@ namespace RTAccess.UI.Graph
         }
 
         /// <summary>Tier-1 focus sync from the game: if a node's backing object is
-        /// <paramref name="reference"/>, move focus there. True if focus changed nodes.</summary>
+        /// <paramref name="reference"/>, move focus there. Re-renders first, like every operation —
+        /// the game-driven selection change that triggers this is exactly what a stale render would
+        /// miss. True if focus changed nodes.</summary>
         public bool FocusByReference(object reference)
         {
-            if (reference == null || _current == null) return false;
-            foreach (var kv in _current.Nodes)
-                if (kv.Value.Id.ReferenceMatches(reference))
+            if (reference == null || !Rerender()) return false;
+            foreach (var n in _current.Order)
+                if (n.Id.ReferenceMatches(reference))
                 {
-                    bool changed = _state.CurKey == null || !_state.CurKey.Equals(kv.Value.Id);
-                    SetCurrent(kv.Value);
+                    bool changed = _state.CurKey == null || !_state.CurKey.Equals(n.Id);
+                    SetCurrent(n);
                     return changed;
                 }
             return false;
@@ -496,6 +509,9 @@ namespace RTAccess.UI.Graph
             foreach (var n in _current.Order)
             {
                 if (!ReferenceEquals(n.Parent, node.Parent)) continue;
+                // Root-level nodes all share the null parent — without the stop filter, Home/End on
+                // a top-level node would scan every stop (arrows never cross a stop; neither may this).
+                if (!Equals(n.StopKey, node.StopKey)) continue;
                 if (first) { target = n; break; }
                 target = n; // last match wins
             }
