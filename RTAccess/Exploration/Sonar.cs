@@ -201,6 +201,10 @@ internal static class Sonar
     }
 
     // ---- per-type recorded stems (WA's assets/audio/interactables/*.wav) ----
+    /// <summary>Whether this taxonomy node has a sonar identity at all — the gate <see cref="ObjectCue"/> shares
+    /// (WA's rule: things with a stem, plus all units, blip on footprint enter/exit; silent scenery doesn't).</summary>
+    internal static bool HasStem(string primary) => StemFor(primary) != null;
+
     // Each taxonomy node maps to WrathAccess's own default stem for that thing, so types are told apart by their
     // recorded timbre. Scenery is silent (matches WA); anything unmapped isn't pinged. RT's taxonomy is flatter
     // than WA's (flat Containers, no door/loot sub-splits), so those collapse to the parent's default stem.

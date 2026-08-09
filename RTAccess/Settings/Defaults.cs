@@ -27,6 +27,29 @@ namespace RTAccess.Settings
             var explCat = ModSettingsRegistry.EnsureCategory("exploration", "Exploration");
             if (explCat.GetByKey("camera_follow") == null)
                 explCat.Add(new BoolSetting("camera_follow", "Camera follows cursor", true, "exploration.camera_follow"));
+            // exploration.cursor_mode — the exploration cursor's movement style (Exploration/CursorGlide.cs):
+            // tiled (default) = arrows step tile-by-tile with a spoken readout each landing; free = holding the
+            // arrows GLIDES a continuous world point at cursor_speed m/s along walkable ground (WrathAccess's
+            // continuous cursor), silent while moving — the audio bed carries the picture and whatever the cursor
+            // rests inside is spoken on release (hover_announce below). Turn-based combat and deployment ALWAYS
+            // use tiles regardless (the grid is the combat substrate); Shift+arrows stay tile steps in both modes.
+            if (explCat.GetByKey("cursor_mode") == null)
+                explCat.Add(new ChoiceSetting("cursor_mode", "Cursor movement", new[]
+                {
+                    new Choice("tiled", "Tile stepping", "exploration.cursor_mode.tiled"),
+                    new Choice("free", "Free glide", "exploration.cursor_mode.free"),
+                }, "tiled", "exploration.cursor_mode"));
+            if (explCat.GetByKey("cursor_speed") == null)
+                explCat.Add(new IntSetting("cursor_speed", "Glide speed (m/s)", 5, 1, 15, 1, "exploration.cursor_speed"));
+            // Object enter/exit earcon (Exploration/ObjectCue.cs) — a one-shot blip as the cursor crosses a unit's
+            // or interactable's footprint (WrathAccess's object cue, same shipped wavs). Fires in BOTH cursor modes.
+            // ON by default per the audio-ON-by-default policy; hover_announce is the free cursor's resting speech.
+            if (explCat.GetByKey("object_cue") == null)
+                explCat.Add(new BoolSetting("object_cue", "Object enter/exit cue", true, "exploration.object_cue"));
+            if (explCat.GetByKey("object_cue_volume") == null)
+                explCat.Add(new IntSetting("object_cue_volume", "Object cue volume", 60, 0, 100, 5, "exploration.object_cue_volume"));
+            if (explCat.GetByKey("hover_announce") == null)
+                explCat.Add(new BoolSetting("hover_announce", "Announce hover when idle", true, "exploration.hover_announce"));
             // Ambient sonar (Exploration/Sonar.cs) — the first spatial-audio system. ON by default (When moving)
             // as of the audio-ON-by-default policy (2026-07-25): the soundscape is a core accessibility feature, so
             // it ships live once ear-tuned rather than gated off. Off / When moving / Continuous; the maintainer runs

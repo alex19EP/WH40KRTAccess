@@ -192,6 +192,16 @@ internal abstract class ScanItem
         return sb.ToString();
     }
 
+    /// <summary>"&lt;name&gt;[, &lt;detail&gt;]" — the in-place readout for a cursor RESTING on the thing (the free
+    /// cursor's idle hover announce, see <see cref="ObjectCue"/>): what it is and its state, with no distance or
+    /// bearing — you are standing on it. Mirrors WrathAccess's <c>DescribeInPlace</c>.</summary>
+    public string DescribeInPlace()
+    {
+        var name = string.IsNullOrWhiteSpace(Name) ? "Unknown" : Name;
+        var detail = Detail;
+        return string.IsNullOrWhiteSpace(detail) ? name : name + ", " + detail;
+    }
+
     /// <summary>Combat-only tactical tail (cover-vs-me / LOS / in-range / threat), appended after the bearing while
     /// the player is in combat and not aiming. Measured relative to the ACTING unit, so — unlike <see cref="Detail"/>
     /// (which only has the scan-origin point) — the override resolves the observer unit itself. Base: nothing.</summary>
