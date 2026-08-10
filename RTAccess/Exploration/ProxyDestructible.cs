@@ -24,7 +24,25 @@ internal sealed class ProxyDestructible : ScanItem
 
     public override object Key => _d;
 
-    public override Vector3 Position => _d.Position;
+    // HEIGHT REPAIR. DestructibleEntity.Position is `View.Bounds.center.To3D()`, and Bounds is an XZ *Rect* — so
+    // To3D maps Vector2(worldX, worldZ) to Vector3(x, 0f, z) and the Y is ALWAYS 0, on every map, by engine
+    // design. The game never trips over it (its own callers take the overtip anchor from View.OvertipPosition and
+    // all grid logic from GetOccupiedNodes), but every spatial lens HERE reads Y, and each one broke:
+    // CursorTarget's level-gap test saw |0 - 25| > 3 and skipped every destructible, so the cursor commit could
+    // never fire on one; Geo.Vertical spoke "down 23 metres" for a barrel standing level with the party; and
+    // Reachability.Classify probed 25 m underground and returned Unknown instead of Walkable.
+    // Keep the entity's own XZ — Bounds.center is the footprint centre the game's SizeRect / occupied-node math is
+    // built on, and is not necessarily the view pivot for a multi-tile wall — and take only the height from the
+    // live view. Read live rather than cached: Geo.Live is two property reads, and its no-view fallback returns
+    // the logical position (Y back to 0), which must not be frozen into a cache.
+    public override Vector3 Position
+    {
+        get
+        {
+            var p = _d.Position;
+            return new Vector3(p.x, Geo.Live(_d).y, p.z);
+        }
+    }
 
     // The view's authored XZ bounds (the same rect DestructibleEntity.Position/SizeRect derive from), as a
     // nearest-edge radius so a multi-tile wall/tank reads by its closest edge. Capped like ProxyMapObject's
