@@ -16,6 +16,7 @@ using Kingmaker.View.Covers;
 using Kingmaker.View.MapObjects;
 using Kingmaker.View.MapObjects.InteractionComponentBase;
 using Kingmaker.View.MapObjects.Traps;           // TrapObjectView (trigger-zone footprint, audit #9)
+using Kingmaker.View.Mechanics.Entities;         // DestructibleEntityView (standard-vs-custom blueprint, dev names)
 using UnityEngine;
 
 namespace RTAccess.Accessibility;
@@ -139,7 +140,11 @@ internal static class InteractableDescriber
             {
                 string dName = null;
                 try { dName = destructible.Name; } catch { /* nameless prop */ }
-                sb.Append(string.IsNullOrWhiteSpace(dName) ? Loc.T("tile.obstacle") : dName);
+                if (string.IsNullOrWhiteSpace(dName)) dName = Loc.T("tile.obstacle");
+                // Same opt-in designer identity the scanner's proxy speaks, so the tile cursor and the browse list
+                // call one barrel by one name (see ProxyDestructible.Name).
+                var dDev = DevSuffix(destructible.View, dName);
+                sb.Append(string.IsNullOrEmpty(dDev) ? dName : dName + " " + dDev);
                 try
                 {
                     if (destructible.CanBeAttackedDirectly
@@ -491,6 +496,12 @@ internal static class InteractableDescriber
             var go = Clean(entity.GameObjectName)?.Replace("(Clone)", "").Trim();
             var bp = (entity.Data as MapObjectEntity)?.Blueprint?.name;
             if (string.Equals(bp, "DefaultMapObject", StringComparison.OrdinalIgnoreCase)) bp = null;
+            // Same "shared asset that distinguishes nothing" rule, for destructible scenery. A destructible's
+            // blueprint is normally one of a handful of toughness presets the engine hands out by enum
+            // (StandardDestructibleObjectType -> ExtremeLowHitPointsAndArmor, LowHitPointsLowArmor, ...), naming a
+            // durability class every destructible listing already speaks as "N of M HP" — not this object. The view
+            // itself draws the line, so honour it: only an authored CUSTOM blueprint identifies anything.
+            if (entity is DestructibleEntityView dv && !dv.UseCustomBlueprint) bp = null;
             if (Repeats(go, name)) go = null;
             if (Repeats(bp, name) || Repeats(bp, go)) bp = null;
             if (string.IsNullOrWhiteSpace(go) && string.IsNullOrWhiteSpace(bp)) return null;
@@ -500,6 +511,13 @@ internal static class InteractableDescriber
         }
         catch (Exception e) { Main.Log?.Error("DevName failed: " + e); return null; }
     }
+
+    /// <summary>The opt-in designer identity suffix ("[SceneObject]" / "[SceneObject / Blueprint]") for a view whose
+    /// name was resolved somewhere other than <see cref="ResolveName"/> — destructible scenery names itself from its
+    /// entity, but earns the same <c>exploration.dev_names</c> readout, and needs it more than most: a whole area's
+    /// covers, barrels and branches share one blueprint display name ("Укрытие"), so with the toggle off nothing in
+    /// the browse list tells them apart. Null/empty when the setting is off or nothing distinguishing survives.</summary>
+    public static string DevSuffix(EntityViewBase entity, string name) => DevName(entity, name);
 
     /// <summary>Would speaking <paramref name="part"/> just repeat <paramref name="spoken"/>?</summary>
     private static bool Repeats(string part, string spoken)
