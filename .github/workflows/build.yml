@@ -32,7 +32,30 @@ jobs:
       contents: read
       packages: read      # lets the automatic GITHUB_TOKEN read our own WH40KRT.GameRefs package
     steps:
+      # core.longpaths: the prism submodule carries a couple of Android test files whose
+      # paths exceed MAX_PATH once nested under the workspace, and checkout fails without it.
+      - name: Allow long paths
+        run: git config --global core.longpaths true
+
       - uses: actions/checkout@v4
+        with:
+          # third_party/prism — prism.dll is compiled from source, not committed.
+          # Non-recursive on purpose: prism's own submodule is only the Godot bindings.
+          submodules: true
+
+      # Cache the compiled prism.dll rather than the CMake tree: the build script stamps the
+      # artifact with the submodule commit it came from, so a cache hit makes it a no-op.
+      # A moved submodule changes the key and the C++ build runs again (~2 min).
+      - name: Prism submodule commit
+        id: prism
+        shell: pwsh
+        run: echo "sha=$(git -C third_party/prism rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+
+      - name: Cache Prism build
+        uses: actions/cache@v4
+        with:
+          path: build/native
+          key: prism-${{ runner.os }}-${{ steps.prism.outputs.sha }}
 
       # Game reference assemblies come from WH40KRT.GameRefs — our own package of
       # Refasmer-stripped (metadata-only) assemblies, published to GitHub Packages

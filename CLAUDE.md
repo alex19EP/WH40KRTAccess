@@ -61,8 +61,8 @@ keyboard layer + (deferred) spatial-audio soundscape. Sibling project to **Wrath
 dotnet build Access.slnx -c Debug
 ```
 Debug build compiles `RTAccess.dll` and the `Deploy` target copies the whole output
-(mod dll + `Info.json` + manifest + `assets/` + `prism.dll` + `nvdaControllerClient64.dll`
-+ `Mono.CSharp.dll` + `NAudio.dll`) into `<GameData>\UnityModManager\RTAccess\` and zips it.
+(mod dll + `Info.json` + manifest + `assets/` + `prism.dll` + `Mono.CSharp.dll` + `NAudio.dll`)
+into `<GameData>\UnityModManager\RTAccess\` and zips it.
 **The game must be closed** or the copy fails on the locked `RTAccess.dll`. Release
 (`-c Release`) is the player build — the DEBUG-only dev harness and `Mono.CSharp` are compiled
 out. Enable the mod once in the UMM in-game UI.
@@ -99,9 +99,26 @@ building it directly works unaided.)
   Give the user manual test steps instead.
 
 ## Speech
-- Primary backend: native **`prism.dll`** (+ `nvdaControllerClient64.dll` for the NVDA client),
-  shipped beside the mod. `Speaker` is the facade; falls back to a stopgap TTS if Prism is absent.
-  (`Prismatoid`, the managed wrapper, is net10 and unusable here — we hand-bind the native dll.)
+- Primary backend: native **`prism.dll`**, shipped beside the mod. `Speaker` is the facade; falls
+  back to a stopgap SAPI TTS if Prism is absent. (`Prismatoid`, the managed wrapper, is net10 and
+  unusable here — we hand-bind the native dll.)
+- **`prism.dll` is BUILT, not vendored.** Upstream is the `third_party/prism` submodule (C++23 /
+  CMake, deps vendored under its own `third_party/` so the build is offline); `build/Prism.targets`
+  runs `scripts/build-prism.ps1` before every `Build`. The script stamps the artifact with the
+  submodule commit, so an unchanged tree costs ~0.15s and only a moved (or dirty) submodule re-runs
+  CMake. `just prism [--force|--clean]` drives it by hand; CI caches `build/native` on the submodule
+  SHA. Needs CMake 3.24+ and VS Build Tools with the C++ workload (the Windows SDK's `midl.exe`).
+  Escape hatch for a machine with no C++ toolchain: `RTACCESS_SKIP_PRISM=1` / `-p:SkipPrismBuild=true`
+  — **Debug warns and carries on, Release hard-errors** (a player zip must never ship mute).
+- We build with a **static CRT** (`/MT`), so the shipped DLL imports OS libraries only. The old
+  committed binary pulled in `MSVCP140`/`VCRUNTIME140`, i.e. it silently needed the VC++ redistributable.
+- **No `nvdaControllerClient64.dll`.** Current Prism generates the NVDA RPC client stubs itself from
+  `idl/nvdaController.idl` via MIDL and links `rpcrt4` — verified: the DLL neither imports nor names
+  that file, and `acquire_best` returns the NVDA backend with it absent.
+- **`PrismConfig` is 48 bytes, not 1** (`version`, `registry`, availability callback/userdata, three
+  poll `uint32`s, an auto-power `bool`) with `PRISM_CONFIG_VERSION = 3`. `PrismSpeech` mirrors it at
+  natural alignment (never `Pack = 1`) and builds it in C# rather than calling `prism_config_init()`,
+  whose by-value 48-byte return would ride Mono's struct-return marshalling for no gain.
 
 ## Logs
 - `Main.Log` (`ModLog`) forwards to UMM's `ModLogger` **and** mirrors to `rtaccess_log.txt` in the

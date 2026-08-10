@@ -409,6 +409,12 @@ FodyWeavers.xsd
 /build/gamerefs/UnityModManager/
 /build/gamerefs/out/
 
+# Native Prism speech library, compiled from the third_party/prism submodule by
+# scripts/build-prism.ps1 (`just prism`). The CMake tree and the collected prism.dll are
+# both build output — the submodule commit is what we version, not the binary.
+/build/prism-build/
+/build/native/
+
 # Local secrets for `just publish` (GH_PACKAGES_TOKEN). Never commit; see .env.example.
 /.env
 

@@ -148,7 +148,8 @@ game's input system" (that was settled adversarially — see `docs/input-system-
   (pattern: `DialogChoiceGate`/`DialogChoiceGuard`).
 
 **Speech:**
-- Primary backend is native **Prism** (`prism.dll` + `nvdaControllerClient64.dll`); the managed
+- Primary backend is native **Prism** (`prism.dll`, compiled from the `third_party/prism`
+  submodule by `scripts/build-prism.ps1`, NOT a committed binary); the managed
   `Prismatoid` wrapper is net10 and unusable — flag any attempt to use it or to add a
   `System.Speech`/managed-COM path. Falls back to the stopgap TTS when Prism is absent.
 - **Interrupt is decided by provenance, not timing:** `Speaker.Speak(text, interrupt)` defaults to
@@ -178,8 +179,8 @@ game's input system" (that was settled adversarially — see `docs/input-system-
 - Harmony is the game's **bundled `0Harmony.dll`** (`Main.HarmonyInstance.PatchAll` on load). Flag
   Harmony API usage beyond what the bundled version supports.
 - The Deploy target copies a specific file set into `<GameData>\UnityModManager\RTAccess\` — flag
-  build/deploy changes that would drop a needed native dll (`prism.dll`,
-  `nvdaControllerClient64.dll`, `NAudio.dll`, `Mono.CSharp.dll`) or omit `assets/`.
+  build/deploy changes that would drop a needed native dll (`prism.dll`, `NAudio.dll`,
+  `Mono.CSharp.dll`) or omit `assets/`.
 - **DEBUG-only surfaces** (dev server on port 8772, `Mono.CSharp` REPL, diagnostics dumps) must stay
   under `#if DEBUG` — flag dev tooling that would ship in a Release/player build.
 

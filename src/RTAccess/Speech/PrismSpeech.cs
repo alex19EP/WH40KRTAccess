@@ -13,22 +13,50 @@ namespace RTAccess.Speech;
 /// are available. Text is marshalled as NUL-terminated UTF-8 (Prism expects UTF-8; ONI's CharSet.Ansi
 /// binding corrupts non-ASCII — RT has plenty, so we follow RimWorld and marshal UTF-8 ourselves).
 ///
-/// Ships <c>prism.dll</c> (+ <c>nvdaControllerClient64.dll</c> for the NVDA backend) in the mod folder.
-/// We <c>LoadLibrary</c> them by full path first (Mono's DllImport search does not include the mod dir),
-/// after which the plain <c>[DllImport("prism")]</c> calls resolve to the loaded module — the ONI pattern.
+/// Ships <c>prism.dll</c> in the mod folder — built from the pinned <c>third_party/prism</c> submodule
+/// by <c>scripts/build-prism.ps1</c>, not vendored as a binary. We <c>LoadLibrary</c> it by full path
+/// first (Mono's DllImport search does not include the mod dir), after which the plain
+/// <c>[DllImport("prism")]</c> calls resolve to the loaded module — the ONI pattern.
+///
+/// No <c>nvdaControllerClient64.dll</c>: Prism generates the NVDA RPC client stubs itself from
+/// <c>idl/nvdaController.idl</c> (MIDL, at build time) and links <c>rpcrt4</c>, so it talks to NVDA
+/// directly. The shipped DLL neither imports nor names that file.
 /// </summary>
 internal sealed class PrismSpeech : ISpeech
 {
     private const string Lib = "prism";
     private const int PRISM_OK = 0;
     private const int PRISM_ERROR_NOT_SPEAKING = 10;
+    // PRISM_CONFIG_VERSION from prism.h. Safe to hardcode: we ship the prism.dll built from the
+    // submodule commit this file is pinned against, so the two never drift. prism_init accepts any
+    // version <= its own, and everything past `version` is optional — a zeroed tail asks for the
+    // global backend registry with no availability-polling thread, which is what we want.
+    private const byte PRISM_CONFIG_VERSION = 3;
 
-    // PrismConfig is a single byte { version }. We get it from prism_config_init() like ONI/RimWorld.
-    [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 1)]
-    private struct PrismConfig { public byte version; }
+    /// <summary>
+    /// Mirror of prism.h's <c>PrismConfig</c>. Natural alignment (NOT <c>Pack = 1</c>) — the native
+    /// struct is 48 bytes on x64 with the pointers 8-aligned. <c>availability_auto_power_manage</c> is
+    /// a <c>byte</c> rather than a <c>bool</c> to keep the struct blittable, so Mono passes it straight
+    /// through instead of marshalling a copy.
+    ///
+    /// We build this ourselves instead of calling <c>prism_config_init()</c>, which returns the struct
+    /// BY VALUE — a 48-byte return goes through the hidden-pointer path of the x64 ABI, and we would
+    /// rather not lean on Mono's struct-return marshalling when zero-init plus a version byte is the
+    /// whole of what that function does.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PrismConfig
+    {
+        public byte version;
+        public IntPtr registry;                     // null => the global backend registry
+        public IntPtr availability_callback;        // null => no availability-polling thread
+        public IntPtr availability_userdata;
+        public uint availability_poll_interval_ms;
+        public uint availability_debounce_samples;
+        public uint availability_backoff_max_ms;
+        public byte availability_auto_power_manage;
+    }
 
-    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
-    private static extern PrismConfig prism_config_init();
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr prism_init(ref PrismConfig cfg);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
@@ -78,16 +106,13 @@ internal sealed class PrismSpeech : ISpeech
 
         try
         {
-            // Preload the NVDA client (best effort) so Prism's NVDA backend can bind; then prism itself.
-            var nvda = FindNative(modDir, "nvdaControllerClient64.dll");
-            if (nvda != null) LoadLibrary(nvda);
             if (LoadLibrary(prismPath) == IntPtr.Zero)
             {
                 Main.Log?.Log("Prism: LoadLibrary failed for " + prismPath);
                 return null;
             }
 
-            var cfg = prism_config_init();
+            var cfg = new PrismConfig { version = PRISM_CONFIG_VERSION };
             var ctx = prism_init(ref cfg);
             if (ctx == IntPtr.Zero)
             {
