@@ -10,7 +10,7 @@
   launch. The dev HTTP server (port 8772) is gated on the marker file this script keeps armed, so it
   comes up automatically on relaunch regardless of how the game is started or whether it inherits env vars.
 
-  Launch runs the WH40KRT.exe directly (resolved from GamePath.props / Player.log / the default Steam
+  Launch runs the WH40KRT.exe directly (resolved from build/GamePath.RT.props / Player.log / the default Steam
   path, or $env:RTGameExe): the `steam://rungameid` URL silently no-ops when the Steam client is idle,
   whereas the exe boots reliably. Steam must still be RUNNING (the game needs the Steam API); if the exe
   can't be resolved we fall back to the steam:// URL, which also cold-starts Steam.
@@ -114,8 +114,8 @@ function Arm-Marker {
 function Resolve-GameExe {
     $candidates = @()
     if ($env:RTGameExe) { $candidates += $env:RTGameExe }
-    # GamePath.props (written by the build's GenerateCustomPropsFile target).
-    $props = Join-Path $Root 'GamePath.props'
+    # build/GamePath.RT.props (written by the build's GenerateCustomPropsFile target).
+    $props = Join-Path $Root 'build\GamePath.RT.props'
     if (Test-Path $props) {
         $m = [regex]::Match((Get-Content $props -Raw), '<RogueTraderInstallDir>(.*?)</RogueTraderInstallDir>')
         if ($m.Success -and $m.Groups[1].Value) { $candidates += (Join-Path $m.Groups[1].Value 'WH40KRT.exe') }
