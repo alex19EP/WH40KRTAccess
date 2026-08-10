@@ -39,15 +39,21 @@ keyboard layer + (deferred) spatial-audio soundscape. Sibling project to **Wrath
   (BepInEx.AssemblyPublicizer) so we can touch non-public game members directly.
 
 ## Decompiled reference (not in this repo)
-- `decompiled/` — per-assembly ilspycmd output. **Git-ignored** (regenerable from the install),
+- `decompiled/<game>/` — per-assembly ilspycmd output. **Git-ignored** (regenerable from the install),
   so the `justfile` is the source of truth for how to rebuild it.
   - `just support` — the libs the mod actually needs (UI/focus, reactive core, UniRx, Visual
     for the fog mask, SharedTypes, ModInitializer). The common case.
   - `just all` — **every game/dependency assembly the solution references** (mirrors the
     `RTAccess.csproj` `<Reference>` globs, minus the native-stub Unity engine modules); includes
     `Code.dll` / `RogueTrader.GameCore.dll`, so it's slow but makes all referenceable code available.
-  - `just decompile <Name>` — a single assembly (into `decompiled/<Name>/`); `just decompile-glob
+  - `just decompile <Name>` — a single assembly (into `decompiled/<game>/<Name>/`); `just decompile-glob
     '<pattern>'` for a wildcard; `just list` / `just check` for the Managed dir.
+  - **Two games are configured**, selected with `game=` (default `rt`): `rt` = Rogue Trader,
+    `dh` = Dark Heresy (Owlcat's next 40K CRPG — same framework lineage, **recon only**, see
+    `.claude/memory/dh-framework-recon.md`). Every recipe above takes it: `just game=dh support`.
+    Output is namespaced per game because both builds ship `Code.dll` / `Kingmaker.*` /
+    `Owlcat.Runtime.Core` / `RogueTrader.SharedTypes` with different contents. `just games`
+    lists both Managed dirs and whether they're present.
   - Requires `ilspycmd` (`dotnet tool install --global ilspycmd`) and `just` on PATH.
 
 ## Build & deploy
