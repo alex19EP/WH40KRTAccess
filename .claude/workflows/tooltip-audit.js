@@ -19,58 +19,58 @@ const AREAS = [
   {
     key: 'charsheet',
     title: 'Character sheet & progression',
-    mod: 'RTAccess/Screens/CharacterInfoScreen.cs, RTAccess/UI/CareerNodes.cs, RTAccess/Screens/LevelUp*.cs, RTAccess/Screens/RespecScreen.cs',
+    mod: 'src/RTAccess/Screens/CharacterInfoScreen.cs, src/RTAccess/UI/CareerNodes.cs, src/RTAccess/Screens/LevelUp*.cs, src/RTAccess/Screens/RespecScreen.cs',
     game: 'Kingmaker.Code.UI.MVVM.View.ServiceWindows.CharacterInfo.* (the Sections views), CharInfoStatVM/CharInfoHitPointsVM/CharInfoFeatureVM, the CareerPath / RankEntry views',
   },
   {
     key: 'inventory',
     title: 'Inventory, items, vendor, cargo',
-    mod: 'RTAccess/UI/ItemNodes.cs, RTAccess/Screens/InventoryScreen.cs, RTAccess/Screens/VendorScreen.cs, RTAccess/Screens/CargoScreen.cs, RTAccess/Screens/LootScreen*.cs',
+    mod: 'src/RTAccess/UI/ItemNodes.cs, src/RTAccess/Screens/InventoryScreen.cs, src/RTAccess/Screens/VendorScreen.cs, src/RTAccess/Screens/CargoScreen.cs, src/RTAccess/Screens/LootScreen*.cs',
     game: 'Kingmaker.Code.UI.MVVM.View.ServiceWindows.Inventory.*, the ItemSlot / EquipSlot views, VendorView, CargoView, LootView',
   },
   {
     key: 'chargen',
     title: 'Character generation',
-    mod: 'RTAccess/Screens/CharGen/**, RTAccess/UI/CharGenNodes.cs, RTAccess/Accessibility/CharGenAnnounce.cs',
+    mod: 'src/RTAccess/Screens/CharGen/**, src/RTAccess/UI/CharGenNodes.cs, src/RTAccess/Accessibility/CharGenAnnounce.cs',
     game: 'Kingmaker.UI.MVVM.View.CharGen.**, the phase VMs under Kingmaker.UI.MVVM.VM.CharGen.Phases.*, TooltipTemplateChargenBackground',
   },
   {
     key: 'dialogue',
     title: 'Dialogue, book events, log, encyclopedia (the TEXT-LINK surfaces)',
-    mod: 'RTAccess/Screens/DialogueScreen.cs, RTAccess/Screens/BookEventScreen.cs, RTAccess/UI/DialogNodes.cs, RTAccess/Screens/LogReviewScreen.cs, RTAccess/Screens/EncyclopediaScreen.cs',
+    mod: 'src/RTAccess/Screens/DialogueScreen.cs, src/RTAccess/Screens/BookEventScreen.cs, src/RTAccess/UI/DialogNodes.cs, src/RTAccess/Screens/LogReviewScreen.cs, src/RTAccess/Screens/EncyclopediaScreen.cs',
     game: 'DialogCuePCView, DialogAnswerBaseView, BookEventCueView, BookEventAnswerView, the combat-log views, the Encyclopedia views — every call site of SetLinkTooltip is a link surface the mod must mirror',
   },
   {
     key: 'combat',
     title: 'Combat, action bar, HUD',
-    mod: 'RTAccess/UI/ActionBarNodes.cs, RTAccess/Combat/**, RTAccess/Screens/*Combat*.cs, the HUD gauge readouts',
+    mod: 'src/RTAccess/UI/ActionBarNodes.cs, src/RTAccess/Combat/**, src/RTAccess/Screens/*Combat*.cs, the HUD gauge readouts',
     game: 'the ActionBar slot views, the surface HUD views, TooltipTemplateAbility/…Buff and the initiative/turn views',
   },
   {
     key: 'ship',
     title: 'Ship customization & space',
-    mod: 'RTAccess/Screens/ShipCustomizationScreen.cs, RTAccess/Screens/ShipItemSelectorScreen.cs, RTAccess/Screens/SectorSystemInfoScreen.cs, RTAccess/Screens/AllSystemsInfoScreen.cs',
+    mod: 'src/RTAccess/Screens/ShipCustomizationScreen.cs, src/RTAccess/Screens/ShipItemSelectorScreen.cs, src/RTAccess/Screens/SectorSystemInfoScreen.cs, src/RTAccess/Screens/AllSystemsInfoScreen.cs',
     game: 'the ShipCustomization views, the starship post/ability views, the sector/system map views',
   },
 ]
 
 const CONTRACT = `The mod's tooltip contract lives in:
-  RTAccess/UI/TooltipChooser.cs        — the single Space funnel: OpenTemplate(title, tpl) / Open(title, body, sections, links)
-  RTAccess/Accessibility/GlossaryLinks.cs  — mines inline <link> anchors from RAW text; keeps whatever the game's
+  src/RTAccess/UI/TooltipChooser.cs        — the single Space funnel: OpenTemplate(title, tpl) / Open(title, body, sections, links)
+  src/RTAccess/Accessibility/GlossaryLinks.cs  — mines inline <link> anchors from RAW text; keeps whatever the game's
                                         TooltipHelper.GetLinkTooltipTemplate returns (HasContent drops only a glossary
                                         template that found no entry)
-  RTAccess/Accessibility/NestedTooltips.cs — harvests the nested TooltipBaseTemplate a rendered row hangs off itself
-  RTAccess/Accessibility/SkillCheckLinks.cs — resolvers for the two link kinds that need caller context
-  RTAccess/Accessibility/TooltipRef.cs      — a drill-in target: label + LAZY template factory (this is what makes pages recurse)
-  RTAccess/Accessibility/TooltipReader.cs / TooltipViewScraper.cs — renders a template to text via the game's OWN brick-view factory
-  RTAccess/Screens/TooltipScreen.cs / DrillMenuScreen.cs — the reader pages; Enter on a reference re-enters TooltipChooser
+  src/RTAccess/Accessibility/NestedTooltips.cs — harvests the nested TooltipBaseTemplate a rendered row hangs off itself
+  src/RTAccess/Accessibility/SkillCheckLinks.cs — resolvers for the two link kinds that need caller context
+  src/RTAccess/Accessibility/TooltipRef.cs      — a drill-in target: label + LAZY template factory (this is what makes pages recurse)
+  src/RTAccess/Accessibility/TooltipReader.cs / TooltipViewScraper.cs — renders a template to text via the game's OWN brick-view factory
+  src/RTAccess/Screens/TooltipScreen.cs / DrillMenuScreen.cs — the reader pages; Enter on a reference re-enters TooltipChooser
 
 Project laws that decide whether something is a defect:
   * A control's spoken browse-label MIRRORS WHAT THE CARD SHOWS VISUALLY; tooltip-only detail belongs on Space.
   * Drive the GAME's own method/template for an action — never reimplement a flow or re-derive a tooltip's text by hand.
   * Never reveal what a sighted player cannot currently see (fog / visibility gates).
   * Every mod-authored string is localized through Localization.LocalizationManager with an entry in
-    RTAccess/assets/locale/enGB/{ui,settings}.json. Game content passes through untranslated.
+    src/RTAccess/assets/locale/enGB/{ui,settings}.json. Game content passes through untranslated.
   * Decompiled game source is at decompiled/ (regenerable; Code/ holds Kingmaker.*). It is GROUND TRUTH for what the
     sighted UI binds — grep it, do not guess.`
 
@@ -91,7 +91,7 @@ const FINDINGS_SCHEMA = {
             type: 'string',
             enum: ['missing-tooltip', 'dropped-links', 'wrong-template', 'text-fidelity', 'label-mirror', 'localization', 'visibility-leak', 'other'],
           },
-          modSite: { type: 'string', description: 'file:line in RTAccess/ where the defect is' },
+          modSite: { type: 'string', description: 'file:line in src/RTAccess/ where the defect is' },
           gameEvidence: { type: 'string', description: 'file:line under decompiled/ proving what the sighted UI binds here. Required — a finding without it is a guess.' },
           impact: { type: 'string', description: 'What a blind player cannot learn because of this' },
           fix: { type: 'string', description: 'The concrete change, naming the game API to drive' },

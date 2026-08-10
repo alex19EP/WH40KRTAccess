@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="Repository.json" />
+    <File Path="Thumbnail.jpg" />
+    <File Path="Workshop-description.txt" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Access.Core/Access.Core.csproj" />
+    <Project Path="src/RTAccess/RTAccess.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Access.Core.Tests/Access.Core.Tests.csproj" />
+  </Folder>
+</Solution>

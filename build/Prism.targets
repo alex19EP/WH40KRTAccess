@@ -1,0 +1,64 @@
+<Project>
+
+	<!--
+	  Builds the native Prism speech library from the third_party/prism submodule and drops
+	  prism.dll into $(TargetDir), where the wildcard Deploy target carries it into the UMM
+	  mod folder and the release zip.
+
+	  prism.dll used to be a committed binary. It is built from source now so that the
+	  pinned submodule commit is the provenance record, and so the DLL can link the CRT
+	  statically (/MT) — the old committed build imported MSVCP140 / VCRUNTIME140 and thus
+	  silently required the VC++ redistributable on the player's machine.
+
+	  Cost: the script short-circuits on a stamp file recording the submodule commit it
+	  built from, so an unchanged tree costs ~0.15s. Only a moved submodule (or a dirty
+	  submodule worktree) re-runs CMake.
+
+	  Opting out — for a machine with no C++ toolchain:
+	      set RTACCESS_SKIP_PRISM=1          (environment)
+	      dotnet build -p:SkipPrismBuild=true
+	  A Release build still fails if prism.dll is missing: a player zip without it is a mute
+	  mod. A Debug build only warns, because a compile-check does not need speech and
+	  Speaker falls back to the SAPI stopgap backend anyway.
+	-->
+
+	<PropertyGroup>
+		<PrismBuildScript>$(RepoRoot)scripts\build-prism.ps1</PrismBuildScript>
+		<PrismDll>$(RepoRoot)build\native\prism.dll</PrismDll>
+		<!-- The env var is the machine-wide opt-out; -p:SkipPrismBuild=true is the per-build one. -->
+		<SkipPrismBuild Condition="'$(SkipPrismBuild)' == '' And '$(RTACCESS_SKIP_PRISM)' != '' And '$(RTACCESS_SKIP_PRISM)' != '0'">true</SkipPrismBuild>
+		<SkipPrismBuild Condition="'$(SkipPrismBuild)' == ''">false</SkipPrismBuild>
+	</PropertyGroup>
+
+	<Target Name="BuildPrism" BeforeTargets="Build">
+
+		<Message Importance="normal" Text="Prism: skipped (SkipPrismBuild / RTACCESS_SKIP_PRISM)." Condition="'$(SkipPrismBuild)' == 'true'" />
+
+		<!-- ContinueOnError so we can turn a toolchain failure into the right severity below
+		     rather than a raw MSB3073 that says nothing about what to install. -->
+		<Exec Command="powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(PrismBuildScript)&quot;"
+		      Condition="'$(SkipPrismBuild)' != 'true'"
+		      ContinueOnError="true"
+		      WorkingDirectory="$(RepoRoot)">
+			<Output TaskParameter="ExitCode" PropertyName="PrismExitCode" />
+		</Exec>
+
+		<PropertyGroup>
+			<PrismOk Condition="Exists('$(PrismDll)') And ('$(SkipPrismBuild)' == 'true' Or '$(PrismExitCode)' == '0')">true</PrismOk>
+			<PrismOk Condition="'$(PrismOk)' == ''">false</PrismOk>
+			<PrismHint>Run: git submodule update --init third_party/prism, then scripts/build-prism.ps1 (needs CMake 3.24+ and VS Build Tools with the C++ workload). To build without it: -p:SkipPrismBuild=true</PrismHint>
+		</PropertyGroup>
+
+		<Error Condition="'$(PrismOk)' != 'true' And '$(Configuration)' == 'Release'"
+		       Text="Prism build failed and $(PrismDll) is missing — a Release build must not ship without speech. $(PrismHint)" />
+
+		<Warning Condition="'$(PrismOk)' != 'true' And '$(Configuration)' != 'Release'"
+		         Text="Prism is unavailable, so this build has no screen-reader speech (Speaker falls back to the SAPI stopgap). $(PrismHint)" />
+
+		<Copy SourceFiles="$(PrismDll)"
+		      DestinationFolder="$(TargetDir)"
+		      SkipUnchangedFiles="true"
+		      Condition="'$(PrismOk)' == 'true'" />
+	</Target>
+
+</Project>

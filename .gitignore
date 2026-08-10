@@ -399,12 +399,21 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
-/GamePath.props
+
+# Per-game install paths, derived at build time from each game's Player.log (see the
+# GenerateCustomPropsFile target). One file per title, so the games stay independent.
+/build/GamePath.*.props
 
 # Generated game reference assemblies + packed output (regenerate with `just refs`).
 /build/gamerefs/assemblies/
 /build/gamerefs/UnityModManager/
 /build/gamerefs/out/
+
+# Native Prism speech library, compiled from the third_party/prism submodule by
+# scripts/build-prism.ps1 (`just prism`). The CMake tree and the collected prism.dll are
+# both build output — the submodule commit is what we version, not the binary.
+/build/prism-build/
+/build/native/
 
 # Local secrets for `just publish` (GH_PACKAGES_TOKEN). Never commit; see .env.example.
 /.env

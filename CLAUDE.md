@@ -44,7 +44,7 @@ keyboard layer + (deferred) spatial-audio soundscape. Sibling project to **Wrath
   - `just support` — the libs the mod actually needs (UI/focus, reactive core, UniRx, Visual
     for the fog mask, SharedTypes, ModInitializer). The common case.
   - `just all` — **every game/dependency assembly the solution references** (mirrors the
-    `RTAccess.csproj` `<Reference>` globs, minus the native-stub Unity engine modules); includes
+    `src/RTAccess/RTAccess.csproj` `<Reference>` globs, minus the native-stub Unity engine modules); includes
     `Code.dll` / `RogueTrader.GameCore.dll`, so it's slow but makes all referenceable code available.
   - `just decompile <Name>` — a single assembly (into `decompiled/<game>/<Name>/`); `just decompile-glob
     '<pattern>'` for a wildcard; `just list` / `just check` for the Managed dir.
@@ -58,27 +58,29 @@ keyboard layer + (deferred) spatial-audio soundscape. Sibling project to **Wrath
 
 ## Build & deploy
 ```
-dotnet build RTAccess.slnx -c Debug
+dotnet build Access.slnx -c Debug
 ```
 Debug build compiles `RTAccess.dll` and the `Deploy` target copies the whole output
-(mod dll + `Info.json` + manifest + `assets/` + `prism.dll` + `nvdaControllerClient64.dll`
-+ `Mono.CSharp.dll` + `NAudio.dll`) into `<GameData>\UnityModManager\RTAccess\` and zips it.
+(mod dll + `Info.json` + manifest + `assets/` + `prism.dll` + `Mono.CSharp.dll` + `NAudio.dll`)
+into `<GameData>\UnityModManager\RTAccess\` and zips it.
 **The game must be closed** or the copy fails on the locked `RTAccess.dll`. Release
 (`-c Release`) is the player build — the DEBUG-only dev harness and `Mono.CSharp` are compiled
 out. Enable the mod once in the UMM in-game UI.
 
 **Compile-only check (safe while the game is running)** — skips the `Deploy` target so it
-never touches the UMM-locked DLL, and pins `SolutionDir` (the trailing `\` matters):
+never touches the UMM-locked DLL:
 ```
-dotnet msbuild RTAccess.csproj -t:Compile -p:Configuration=Debug -p:SolutionDir=<repo-root>\
+dotnet msbuild src/RTAccess/RTAccess.csproj -t:Compile -p:Configuration=Debug
 ```
+(No `-p:SolutionDir=` any more: the csproj derives `$(RepoRoot)` from its own location, so
+building it directly works unaided.)
 
 ## Dev harness (Debug only)
 - A **loopback HTTP dev server on port 8772** (all under `#if DEBUG`), gated on a marker file
   `<GameData>\RTAccess\devserver.enable` (survives Steam relaunches; an env var would not).
 - Endpoints: `POST /eval` (Mono.CSharp C# REPL on the main thread), `GET /speech?since=`,
   `GET /screenshot`, `POST /loadsave`, `GET /health`. `/gui` + `/input` land in Phase 2.
-- **Game console/cheat surface** (`RTAccess/Dev/GameConsole.cs`) mirrors the game's own retail-gated
+- **Game console/cheat surface** (`src/RTAccess/Dev/GameConsole.cs`) mirrors the game's own retail-gated
   cheat REST plugins in-process (no `CheatsEnabled`/`startup.json` needed — the game builds
   `CheatsManagerHolder.System` + registers `ConsoleLogSink` unconditionally at boot): `POST /cheat`
   (raw command line via the game's parser — `@cursor`/`@mouseover`/`@selectedUnits` preprocessing),
@@ -97,9 +99,26 @@ dotnet msbuild RTAccess.csproj -t:Compile -p:Configuration=Debug -p:SolutionDir=
   Give the user manual test steps instead.
 
 ## Speech
-- Primary backend: native **`prism.dll`** (+ `nvdaControllerClient64.dll` for the NVDA client),
-  shipped beside the mod. `Speaker` is the facade; falls back to a stopgap TTS if Prism is absent.
-  (`Prismatoid`, the managed wrapper, is net10 and unusable here — we hand-bind the native dll.)
+- Primary backend: native **`prism.dll`**, shipped beside the mod. `Speaker` is the facade; falls
+  back to a stopgap SAPI TTS if Prism is absent. (`Prismatoid`, the managed wrapper, is net10 and
+  unusable here — we hand-bind the native dll.)
+- **`prism.dll` is BUILT, not vendored.** Upstream is the `third_party/prism` submodule (C++23 /
+  CMake, deps vendored under its own `third_party/` so the build is offline); `build/Prism.targets`
+  runs `scripts/build-prism.ps1` before every `Build`. The script stamps the artifact with the
+  submodule commit, so an unchanged tree costs ~0.15s and only a moved (or dirty) submodule re-runs
+  CMake. `just prism [--force|--clean]` drives it by hand; CI caches `build/native` on the submodule
+  SHA. Needs CMake 3.24+ and VS Build Tools with the C++ workload (the Windows SDK's `midl.exe`).
+  Escape hatch for a machine with no C++ toolchain: `RTACCESS_SKIP_PRISM=1` / `-p:SkipPrismBuild=true`
+  — **Debug warns and carries on, Release hard-errors** (a player zip must never ship mute).
+- We build with a **static CRT** (`/MT`), so the shipped DLL imports OS libraries only. The old
+  committed binary pulled in `MSVCP140`/`VCRUNTIME140`, i.e. it silently needed the VC++ redistributable.
+- **No `nvdaControllerClient64.dll`.** Current Prism generates the NVDA RPC client stubs itself from
+  `idl/nvdaController.idl` via MIDL and links `rpcrt4` — verified: the DLL neither imports nor names
+  that file, and `acquire_best` returns the NVDA backend with it absent.
+- **`PrismConfig` is 48 bytes, not 1** (`version`, `registry`, availability callback/userdata, three
+  poll `uint32`s, an auto-power `bool`) with `PRISM_CONFIG_VERSION = 3`. `PrismSpeech` mirrors it at
+  natural alignment (never `Pack = 1`) and builds it in C# rather than calling `prism_config_init()`,
+  whose by-value 48-byte return would ride Mono's struct-return marshalling for no gain.
 
 ## Logs
 - `Main.Log` (`ModLog`) forwards to UMM's `ModLogger` **and** mirrors to `rtaccess_log.txt` in the
@@ -115,7 +134,7 @@ We build a **mod-owned parallel accessible-UI tree**, NOT a ride on the game's c
 gamepad focus ring (that pivot is committed; earlier console-nav experiments are retired).
 `Screens.ScreenManager` resolves the active screen stack over `RootUiContext` each frame and
 attaches the **`GraphNavigator`** — the pull-based key-graph core ported from WrathAccess
-(`UI/Graph/`, BCL-only, unit-tested): the graph rebuilds per operation/frame, focus reconciles
+(`src/Access.Core/Graph/`, BCL-only, unit-tested): the graph rebuilds per operation/frame, focus reconciles
 by `ControlId` identity, and a focus change is **announced exactly once no matter what caused
 it** (input, screen-moved focus, VM swap/rebuild). Never hand-write announce calls around
 focus mutations — the frame differ owns that.
@@ -132,7 +151,7 @@ only `DialogChoiceGate` (an EventSystem ownership gate, not a widget). Migration
 We read/activate by driving the game's own VMs and handlers, and a spoken browse-label
 **mirrors what the card shows visually** (tooltip-only detail stays on Space).
 Upstream sync rule: track WrathAccess **`main`** (graph-nav merged into it; the old adapter-era
-pin is history) — take core `Graph/*` fixes, tests, and screen recipes.
+pin is history) — take core `Access.Core/Graph/*` fixes, tests, and screen recipes.
 
 **Keyboard ownership** is per-chord arbitration, not a blanket mute: `FocusMode` +
 `KeyboardArbitration` suppress only the chords the mod claims each frame, and `GameKeybinds`
@@ -171,15 +190,33 @@ Load-bearing knowledge about how the game world works (all verified in-harness):
   (bare L) reviews the history. Conviction (soul-mark) shifts are the one thing the game never logs, so they
   ride `ConvictionEvents` instead.
 
-## Source layout (`RTAccess/`)
+## Repo layout (multi-project)
+The repo hosts accessibility mods for **several Owlcat Warhammer titles**, over one shared core:
+- `src/Access.Core/` — **the game-agnostic core**, `netstandard2.0`, **BCL-only by contract** (no Unity,
+  no Kingmaker/Owlcat refs — the TFM enforces it, and the test project goes red if anything sneaks in).
+  Holds `Graph/` (the key-graph nav core: KeyGraph, GraphBuilder, differ/announcer), `TextUtil.cs`
+  (speech text cleanup), `Rooms/RoomSegmenter.cs` (the watershed room-segmentation arithmetic).
+  Namespaces are `Access.Core.*` — deliberately game-neutral so a second title's mod never has to
+  write `using RTAccess…`.
+- `src/RTAccess/` — the Rogue Trader mod (net481, UMM). Everything engine-facing lives here.
+- `tests/Access.Core.Tests/` — xunit over `Access.Core` via a normal `ProjectReference`.
+- `build/GamePath.<Game>.props` — per-title install paths, generated at build time, git-ignored.
+- `Directory.Build.props` — settings true for every project. Game refs / publicizer / Deploy are
+  per-game and must NOT be hoisted there.
+
+When adding a second game's mod: new `src/<Name>Access/`, its own `GamePath.<Name>.props`, and it
+consumes `Access.Core` by `ProjectReference`. Hoist code into `Access.Core` only once a **second real
+consumer** needs it — the seam gets discovered by porting, not designed up front.
+
+## Source layout (`src/RTAccess/`)
 - `Main.cs` — UMM entry (`Load`), the per-frame `OnUpdate` tick, enable/disable/unload.
 - `Speech/` — `Speaker` facade + Prism/stopgap backends. `Localization/` — mod-string tables.
 - `Input/` — `InputManager` (registry + per-frame poll), `InputBindings` (the action set),
   `GameKeybinds` (the Ctrl+letter rebind), keyboard arbitration glue.
 - `Screens/` (+ `Screens/CharGen/`) — the mod-owned screen tree resolved by `ScreenManager`.
-- `UI/` — `Navigation` facade + `GraphNavigator`, `UI/Graph/` (the BCL-only key-graph core:
-  KeyGraph, GraphBuilder, differ/announcer — pinned to upstream, tested by link from `tests/`;
-  run `just test` or `dotnet test tests/RTAccess.Tests.csproj`, never the slnx),
+- `UI/` — `Navigation` facade + `GraphNavigator` (the engine-facing driver over the key-graph core,
+  which itself lives in `src/Access.Core/Graph/` — pinned to the WrathAccess upstream; run
+  `just test` or `dotnet test tests/Access.Core.Tests/Access.Core.Tests.csproj`, never the slnx),
   the node factories (`GraphNodes`, `ItemNodes`, `DialogNodes`, `CharGenNodes`, `ActionBarNodes`,
   `GraphSheet`), `UI/Proxies/` (only `DialogChoiceGate` — the dialogue EventSystem ownership
   gate), `UI/Announcements/` (settings-marker kinds + the control-type override registry).
@@ -194,7 +231,7 @@ Load-bearing knowledge about how the game world works (all verified in-harness):
 ## Hard rules
 - **Localize every string the mod speaks or displays** — no hardcoded English in `Speak` calls or
   labels. Mod text goes through `Localization.LocalizationManager` with an entry in
-  `RTAccess/assets/locale/enGB/{ui,settings}.json` (enGB is the complete manifest; other languages
+  `src/RTAccess/assets/locale/enGB/{ui,settings}.json` (enGB is the complete manifest; other languages
   are a dropped-in folder). Sole exception: debug-only tooling. Game content (names, log lines,
   tooltips) is already localized by the game — pass it through, never re-translate.
 - **Drive the game's own method/handler for an action** — even when that spawns a dialog to make it

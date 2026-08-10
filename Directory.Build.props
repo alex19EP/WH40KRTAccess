@@ -1,0 +1,16 @@
+<Project>
+
+	<!-- Settings shared by EVERY project in the repo (Access.Core, the per-game mods, the tests).
+	     Keep this file boring: only things that are true regardless of target framework or game.
+
+	     Do NOT hoist here: game reference globs, the assembly publicizer, Harmony analyzers, the
+	     Deploy target, or Version. Those are per-game (or per-project) by nature, and putting them
+	     here would push game-specific machinery onto Access.Core and the test project, which must
+	     stay free of it. -->
+
+	<PropertyGroup>
+		<LangVersion>latest</LangVersion>
+		<Nullable>disable</Nullable>
+	</PropertyGroup>
+
+</Project>

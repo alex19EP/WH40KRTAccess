@@ -71,7 +71,7 @@ support_libs := if game == "dh" { dh_support } else { rt_support }
 
 # The full assembly set per game, as filename globs.
 #
-# The RT list mirrors the <Reference> set in RTAccess/RTAccess.csproj (minus the Unity engine
+# The RT list mirrors the <Reference> set in src/RTAccess/RTAccess.csproj (minus the Unity engine
 # modules, which are native stubs) — keep the two in sync when references are added/removed.
 # The DH list has no csproj to mirror; it is the same framework families as observed in the
 # playtest build, with the substituted layers (R3/ObservableCollections instead of UniRx,
@@ -125,7 +125,17 @@ games:
 # Run the graph-core unit tests. Invokes the tests csproj DIRECTLY — never the slnx,
 # whose Deploy target (AfterTargets=Build) would fight the UMM-locked RTAccess.dll.
 test:
-    dotnet test tests/RTAccess.Tests.csproj
+    dotnet test tests/Access.Core.Tests/Access.Core.Tests.csproj
+
+# Build the native Prism speech library from the third_party/prism submodule into
+# build/native/prism.dll. `dotnet build` runs this automatically (it short-circuits in ~0.15s
+# when the submodule has not moved), so you only need it to force a rebuild by hand.
+# Requires CMake 3.24+ and VS Build Tools with the C++ workload.
+#   just prism                   # build if the submodule moved
+#   just prism --force           # rebuild regardless
+#   just prism --clean           # drop the CMake tree and the built DLL
+prism *args:
+    pwsh -NoProfile -File scripts/build-prism.ps1 {{args}}
 
 # Rebuild the WH40KRT.GameRefs NuGet package (Refasmer-stripped game assemblies for CI).
 # Version auto-detected from WH40KRT_Data/StreamingAssets/Version.info. Use `just publish` to push.

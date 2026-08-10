@@ -13,7 +13,7 @@ Four catalogues were crossed, because no single one is complete:
 2. `Kingmaker.Code.UI.MVVM.VM.ServiceWindows.ServiceWindowsType` (10) — the service windows.
 3. `RootUIContext`'s `Is*Shown` predicates — the states the engine itself considers distinct.
 4. Every VM class under the `*.UI.MVVM.VM.*` namespaces (1087 files), diffed against every
-   `…VM` identifier appearing anywhere in `RTAccess/` (332 distinct).
+   `…VM` identifier appearing anywhere in `src/RTAccess/` (332 distinct).
 
 **The name diff over-reports and must not be trusted alone.** Several VMs the mod never names are
 nonetheless fully driven — `SpaceSystemNavigatorPopupVM` is the warp route create/upgrade popup
@@ -21,8 +21,8 @@ nonetheless fully driven — `SpaceSystemNavigatorPopupVM` is the warp route cre
 `GroupChangerScreen` binds. Every item below was re-checked functionally.
 
 Two suspicions were investigated and **dismissed**: `CombatStartWindowVM.CannotStartCombatReason` is
-read (`RTAccess/Exploration/DeploymentMode.cs:65`), and the conviction / soul-mark sheet page is built
-(`RTAccess/Screens/CharacterInfoScreen.cs:301-355`).
+read (`src/RTAccess/Exploration/DeploymentMode.cs:65`), and the conviction / soul-mark sheet page is built
+(`src/RTAccess/Screens/CharacterInfoScreen.cs:301-355`).
 
 ## Status
 
@@ -78,11 +78,11 @@ implemented** — each entry keeps its original teardown, with the screen that c
 
 ### Local Map service window
 `LocalMapVM` (`ServiceWindowsType.LocalMap`, `FullScreenUIType.LocalMap`). There is no `LocalMapScreen`,
-yet the mod's own HUD windows list offers it as an opener (`RTAccess/Screens/InGameScreen.cs:166`), and
+yet the mod's own HUD windows list offers it as an opener (`src/RTAccess/Screens/InGameScreen.cs:166`), and
 the game's `"OpenMap"` keybind reaches it independently (`ServiceWindowsVM.cs:148`). Activating it calls
 `HandleOpenWindowOfType(LocalMap)` and leaves the mod parked on `ctx.ingame` with a full-screen modal open.
 
-The design intent is that the scanner replaces the map — `RTAccess/Exploration/ProxyMarker.cs` browses
+The design intent is that the scanner replaces the map — `src/RTAccess/Exploration/ProxyMarker.cs` browses
 the very same `LocalMapModel.Markers` set. But the current state is the worst of both: we advertise the
 door and don't furnish the room. See `docs/local-map-ui-exploration.md` for the full teardown.
 
@@ -91,7 +91,7 @@ door and don't furnish the room. See `docs/local-map-ui-exploration.md` for the 
 `FirstLaunchSafeZonePageVM`, `FirstLaunchAccessiabilityPageVM` (the game's spelling). Shown by
 `MainMenuVM`'s constructor when `!FirstLaunchSettingsVM.HasShown` — i.e. it is the **first UI a fresh
 install presents, before the main menu exists**, and `MainMenuScreen.IsActive()` returns false while it
-is up (`RTAccess/Screens/MainMenuScreen.cs:45`).
+is up (`src/RTAccess/Screens/MainMenuScreen.cs:45`).
 
 Highest impact gap in this document: a blind player on a new install cannot get past it unaided, and the
 page they most need is the accessibility one.
@@ -327,7 +327,7 @@ The underlying content is reachable — `ColonyManagementScreen` builds `ColonyE
 `EncyclopediaScreen` can be opened manually — so this is a *prompting* gap, not a dead end: the player is
 never told to go look.
 
-**Shipped 2026-07-25** as `RTAccess/Accessibility/SpaceNotifications.cs` — one long-lived `EventBus`
+**Shipped 2026-07-25** as `src/RTAccess/Accessibility/SpaceNotifications.cs` — one long-lived `EventBus`
 subscriber alongside `SpaceEvents` / `WarpEvents` implementing `IMiningUIHandler`,
 `IEncyclopediaNotificationUIHandler` and `IColonyNotificationUIHandler`. Each card is spoken the way it
 reads (`{status}: {text}`), with the text taken from the game's own `UIStrings` so it follows the player's

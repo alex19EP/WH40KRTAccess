@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!-- The game-agnostic accessibility core, shared by every Owlcat-title mod in this repo.
+	     BCL-ONLY BY CONTRACT: no Unity, no Kingmaker/Owlcat, no game references of any kind.
+	     That is not a style preference — it is what lets the same code serve Rogue Trader
+	     (net481 / Unity 6000.0 / UniRx) and future titles built on the refactored Owlcat
+	     stack (Unity 6000.3 / R3 / Owlcat.UI) without a per-game fork.
+
+	     netstandard2.0 is the deliberate floor: consumable from net481 (the UMM mod
+	     assemblies) AND from modern net8.0+ (the test project), with no shims.
+
+	     Anything that needs the engine belongs in the per-game project, not here. If you find
+	     yourself wanting a game reference in this csproj, the type you are writing is a
+	     per-game type. -->
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<AssemblyName>Access.Core</AssemblyName>
+		<RootNamespace>Access.Core</RootNamespace>
+		<!-- Explicit usings only: these sources are compiled by three different SDKs/TFMs and
+		     must not silently depend on one framework's implicit using set. -->
+		<ImplicitUsings>disable</ImplicitUsings>
+	</PropertyGroup>
+
+</Project>

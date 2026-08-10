@@ -70,7 +70,7 @@ game first**, then:
 
 1. Get the RTAccess build — either a release zip, or one you build yourself (see
    [Building](#building-developers)). It is a folder named `RTAccess` containing `RTAccess.dll`,
-   `Info.json`, the `assets/` folder, and the bundled `prism.dll` / `nvdaControllerClient64.dll`.
+   `Info.json`, the `assets/` folder, and the bundled `prism.dll`.
 2. Extract the `RTAccess` folder into the game's mod folder:
    `%USERPROFILE%\AppData\LocalLow\Owlcat Games\Warhammer 40000 Rogue Trader\UnityModManager\`
    (so you end up with `…\UnityModManager\RTAccess\RTAccess.dll`).
@@ -335,21 +335,36 @@ read past messages by channel. Tutorial popups are read out as they appear.
 
 ## Building (developers)
 
-The mod targets `net481` (.NET Framework 4.8.1) and builds against the game's own assemblies. With
-the .NET SDK and the 4.8.1 targeting pack:
+The mod targets `net481` (.NET Framework 4.8.1) and builds against the game's own assemblies. Clone
+with submodules — the native speech library is built from source, not committed:
 
 ```
-dotnet build RTAccess.slnx -c Debug
+git clone --recurse-submodules https://github.com/<owner>/WH40KRTAccess.git
+# already cloned? git submodule update --init third_party/prism
+```
+
+Then, with the .NET SDK and the 4.8.1 targeting pack:
+
+```
+dotnet build Access.slnx -c Debug
 ```
 
 A Debug build compiles `RTAccess.dll` and the `Deploy` target copies the whole mod folder (dll +
-`Info.json` + manifest + `assets/` + `prism.dll` + `nvdaControllerClient64.dll` + `Mono.CSharp.dll`
-+ `NAudio.dll`) into the UMM mods folder and zips it — **the game must be closed** or the copy fails
-on the locked DLL. `dotnet build -c Release` produces the player build (the dev harness is compiled
-out). To compile without touching the deployed DLL while the game is running:
+`Info.json` + manifest + `assets/` + `prism.dll` + `Mono.CSharp.dll` + `NAudio.dll`) into the UMM
+mods folder and zips it — **the game must be closed** or the copy fails on the locked DLL.
+
+`prism.dll` is compiled from the `third_party/prism` submodule as part of the build. That needs
+**CMake 3.24+** and **Visual Studio Build Tools with the C++ workload** (the Windows SDK's `midl.exe`
+generates Prism's NVDA RPC stubs). The step short-circuits in about 0.15s once built, and only re-runs
+when the submodule moves; `just prism --force` rebuilds on demand. On a machine without the C++
+toolchain, set `RTACCESS_SKIP_PRISM=1` (or `-p:SkipPrismBuild=true`) — a Debug build then warns and
+falls back to the SAPI stopgap voice, while a Release build refuses to produce a speechless zip.
+
+`dotnet build -c Release` produces the player build (the dev harness is compiled out). To compile
+without touching the deployed DLL while the game is running:
 
 ```
-dotnet msbuild RTAccess.csproj -t:Compile -p:Configuration=Debug -p:SolutionDir=<repo-root>\
+dotnet msbuild src/RTAccess/RTAccess.csproj -t:Compile -p:Configuration=Debug
 ```
 
 `scripts/dev-game.ps1` (and the `/dev-game` workflow) wrap the close → build → launch → verify cycle.
@@ -360,11 +375,10 @@ See [`CLAUDE.md`](CLAUDE.md) for the full architecture, game facts, and conventi
 - **[Wrath Access](https://github.com/bradjrenshaw/wotr-access)** — the sibling Pathfinder mod and
   the authoritative prior art for nearly every subsystem here.
 - **SpeechMod** (Osmodium, MIT) — the prior-art Rogue Trader TTS mod the hook map was built from.
-- Bundled third-party components: **Prism** (`prism.dll`, screen-reader speech), the **NVDA
-  Controller Client**, and **NAudio**, each redistributed under its own license.
+- Bundled third-party components: **Prism** (`prism.dll`, screen-reader speech) and **NAudio**,
+  each redistributed under its own license.
 
 ## License
 
-RTAccess is released under the **MIT License** — see [`LICENSE`](LICENSE). The bundled `prism.dll`,
-`nvdaControllerClient64.dll`, and `NAudio.dll` are third-party components, redistributed under their
-own respective licenses.
+RTAccess is released under the **MIT License** — see [`LICENSE`](LICENSE). The bundled `prism.dll`
+and `NAudio.dll` are third-party components, redistributed under their own respective licenses.

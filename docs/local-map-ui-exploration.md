@@ -15,7 +15,7 @@ Common.Markers.*}`, `Kingmaker.Visual.LocalMap.WarhammerLocalMapRenderer`,
 - The game's `"OpenMap"` keybind → `ServiceWindowsVM.HandleOpenLocalMap` (`ServiceWindowsVM.cs:148,273`).
   Bare `M` in the stock keymap, so `GameKeybinds` relocates it to `Ctrl+M`.
 - `ServiceWindowsVM.HandleOpenWindowOfType(ServiceWindowsType.LocalMap)` — what the HUD button and the
-  mod's own windows list (`RTAccess/Screens/InGameScreen.cs:166`) call.
+  mod's own windows list (`src/RTAccess/Screens/InGameScreen.cs:166`) call.
 - Raises `FullScreenUIType.LocalMap` and `IFullScreenLocalMapUIHandler` (which only the party views
   listen to, to hide portraits).
 
@@ -60,7 +60,7 @@ authored in `BlueprintUILocalMapLegend.LocalMapLegendBlockItemInfo`, i.e. "this 
 
 Note the markers themselves are **not** clickable targets — `LocalMapMarkerPCView` handles no click; the
 click is read off the map surface and the marker only contributes its `Entity` for the co-op ping. That
-matches the note already in `RTAccess/Exploration/ProxyMarker.cs`.
+matches the note already in `src/RTAccess/Exploration/ProxyMarker.cs`.
 
 ## The marker model (the part worth mirroring)
 
@@ -101,7 +101,7 @@ no extra `FogProbe` gating needed for the marker list itself.
 
 ## What RTAccess already covers
 
-`ProxyMarker` (`RTAccess/Exploration/ProxyMarker.cs`) wraps `ILocalMapMarker` into the scanner's "points
+`ProxyMarker` (`src/RTAccess/Exploration/ProxyMarker.cs`) wraps `ILocalMapMarker` into the scanner's "points
 of interest" category, reading the same set, filtered in `ScannerDump` to `Poi` / `Loot` /
 `DestinationMark` / `VeryImportantThing`, sorted from the cursor, with travel-to on the scanner's
 `I` key. `InteractableDescriber.DescribeMarker` already produces
@@ -118,7 +118,7 @@ So what the window adds over the scanner is: the area title, pending move destin
 
 ## What was built (2026-07-24)
 
-**`RTAccess/Screens/LocalMapScreen.cs`** — service window, layer 10, registered in `ScreenManager`.
+**`src/RTAccess/Screens/LocalMapScreen.cs`** — service window, layer 10, registered in `ScreenManager`.
 Reads `LocalMapVM.MarkersVm` directly rather than re-deriving from `LocalMapModel.Markers`, which is
 both the "read the game's own VM" law and free visual parity (all the gates above are already applied
 to that collection). Six Tab-stop zones per [[prefer-tab-stops-per-zone]]: overview (area title +

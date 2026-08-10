@@ -1,6 +1,6 @@
 # Decision Memo: Keep, Migrate, or Hybrid the Keyboard-Input Framework
 
-**Question under review:** RTAccess ships a ported custom keyboard-input framework (`RTAccess/Input/*`)
+**Question under review:** RTAccess ships a ported custom keyboard-input framework (`src/RTAccess/Input/*`)
 that polls raw `UnityEngine.Input` every frame. The author dislikes the ported approach and wants to use
 the in-game input system. This memo decides keep vs. migrate vs. hybrid, with the real rationale and an
 honest feature-by-feature analysis.
@@ -10,10 +10,10 @@ honest feature-by-feature analysis.
 > and by reflecting the shipped `Rewired_Core.dll`. See the verdicts section at the end.
 >
 > **UPDATE (2026-07-01, implemented):** rather than the pure keep+cleanup below, the author chose a **"merge,
-> don't own"** model and it shipped + was verified in-game. Two pieces: (1) `RTAccess/Input/GameKeybinds.cs`
+> don't own"** model and it shipped + was verified in-game. Two pieces: (1) `src/RTAccess/Input/GameKeybinds.cs`
 > moves the game's bare-letter service-window openers (C/I/J/M/L/Y/V/B/N) to **Ctrl+letter** via the game's own
 > keybinding settings — freeing the bare letters for the mod and auto-updating in-game/tutorial key-hints
-> (`IKeybindChanged`); (2) `RTAccess/Accessibility/KeyboardArbitration.cs` replaces the blanket
+> (`IKeybindChanged`); (2) `src/RTAccess/Accessibility/KeyboardArbitration.cs` replaces the blanket
 > `KeyboardAccess.Disabled` mute with a per-chord Harmony prefix that suppresses a game key only when the mod
 > claims that exact chord this frame (`InputManager.ClaimsChord`), so every un-overridden game key (action bar,
 > save/load, Space=End-turn, the Ctrl+letter windows) stays live. `FocusMode` is now just a flag; Space is a
