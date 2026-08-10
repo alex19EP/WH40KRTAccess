@@ -92,6 +92,10 @@ internal sealed class ExplorationEvents :
             _lastChosen = null; // new area — drop the stale pick + throttle state
             _lastSpoken = null;
             TileExplorer.Reset(); // the tile cursor pointed at a node in the old area's grid — clear it
+            // Insurance, not routine: the local map screen hands the soundscape back on its own OnPop. But a
+            // listening frame left pointing at the old area's map cursor would misplace every sound for the rest
+            // of the session, so an area change takes it back unconditionally.
+            RTAccess.Exploration.MapCursor.ClearListenOverride();
             RTAccess.Exploration.WallTones.Reset(); // release the wall-tone voices; they rebuild against the new grid
             RTAccess.Audio.SpatialSources.Clear(); // stop tracking sonar pings anchored to the old grid's points
             RTAccess.Exploration.RoomMap.Invalidate(); // the room map was built for the old area's grid

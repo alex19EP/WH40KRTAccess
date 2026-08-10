@@ -75,6 +75,47 @@ internal static class MapCursor
 
     public static void Clear() { _node = null; _point = null; }
 
+    // ---- the listening frame: where the SOUNDSCAPE is standing ----
+
+    private static Func<Vector3> _listen;
+
+    /// <summary>
+    /// Redirect the soundscape's point of view at another point — the local map window's free cursor, so sonar,
+    /// wall tones and the fog cue all describe the place you are peeking at instead of the place you left the
+    /// party standing (see <see cref="LocalMapCursor"/>). Set on the map window opening, cleared on its close.
+    ///
+    /// Deliberately a SEPARATE frame rather than an override of <see cref="Position"/>/<see cref="Node"/> the way
+    /// WrathAccess does it: over there the shared cursor is a bare point, but here it is also what aiming
+    /// (<c>AimPointerDriver</c> drives the game's own pointer from it every frame, screen or no screen),
+    /// deployment, the holo-sim and move-to all read. Hijacking those for a map peek would aim the game at the
+    /// map. Only the ambient-audio readers opt in, and they are the only callers of the Listen* members.
+    /// </summary>
+    public static void SetListenOverride(Func<Vector3> provider) => _listen = provider;
+
+    public static void ClearListenOverride() => _listen = null;
+
+    /// <summary>True while another surface is driving the soundscape — also the signal that the ambient audio
+    /// should keep running with the in-game screen no longer on top (see <c>InGameScreen.SoundscapeActive</c>).</summary>
+    public static bool ListenOverridden => _listen != null;
+
+    /// <summary>Is there a point to listen from at all — the override, else a planted cursor.</summary>
+    public static bool HasListen => _listen != null || Has;
+
+    /// <summary>The point the soundscape is centred on.</summary>
+    public static Vector3 ListenPosition => _listen != null ? _listen() : Position;
+
+    /// <summary>The grid node under the listening point, for the systems that need cells rather than a point
+    /// (the wall-tone raycast). Null when the override is off the mesh — a map cursor out over a void has no
+    /// walls around it to sound, so the bed correctly fades to silence there.</summary>
+    public static CustomGridNodeBase ListenNode
+    {
+        get
+        {
+            if (_listen == null) return _node ?? NavmeshProbe.NodeAt(Position);
+            return NavmeshProbe.OnMesh(_listen(), out var n) ? n : null;
+        }
+    }
+
     /// <summary>The unit every cursor-relative readout measures from: the selected (in combat, current-turn) unit,
     /// else the main character; null mid-transition. Internal so <see cref="Reachability"/> can classify against the
     /// SAME unit the distances in a spoken line are measured from — anchoring the two on different characters made

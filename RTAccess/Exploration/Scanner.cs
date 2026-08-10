@@ -688,22 +688,10 @@ internal static class Scanner
         return list;
     }
 
-    // The full sighted-map gate for one pin: the game's own perception check (LocalMapCommonMarkerVM feeds
-    // IsVisible() to the view's SetActive) plus the Suppressed-entity filter from LocalMapVM.SetMarkers.
-    private static bool MarkerHidden(ILocalMapMarker m)
-    {
-        if (!SafeMarkerVisible(m)) return true;
-        try { return m.GetEntity()?.Suppressed == true; }
-        catch { return true; } // unreadable owner → treat as hidden, the safe side
-    }
-
-    // marker.IsVisible() is a perception check; guard it so a marker whose check throws doesn't sink the whole list
-    // (best-effort — treat an unreadable marker as hidden, the safe side for a spoiler-sensitive loot pin).
-    private static bool SafeMarkerVisible(ILocalMapMarker m)
-    {
-        try { return m.IsVisible(); }
-        catch { return false; }
-    }
+    // The full sighted-map gate for one pin — the game's own perception check (LocalMapCommonMarkerVM feeds
+    // IsVisible() to the view's SetActive) plus the Suppressed-entity filter from LocalMapVM.SetMarkers — now
+    // owned by ProxyMarker so the local map's marker/exit cycles gate identically (see ProxyMarker.Listable).
+    private static bool MarkerHidden(ILocalMapMarker m) => !ProxyMarker.Listable(m);
 
     private static bool InGroup(ScanItem it, Group group)
     {

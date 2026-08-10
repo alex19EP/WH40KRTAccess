@@ -140,8 +140,22 @@ namespace RTAccess.Screens
         /// Reads the mode through <see cref="ControlState.EffectiveMode"/>, NOT <c>Game.CurrentMode</c>: pause is
         /// a mode pushed on top of Default, so a raw comparison went false the instant the player paused and took
         /// the whole exploration layer — scanner, tile cursor, party selection — down with it.</summary>
-        public static bool ExplorationActive =>
-            ScreenManager.Current?.Key == "ctx.ingame"
+        public static bool ExplorationActive => LiveUnder("ctx.ingame");
+
+        /// <summary>The wider gate the AMBIENT SOUNDSCAPE rides — sonar, wall tones, the fog cue. Everything
+        /// <see cref="ExplorationActive"/> covers, PLUS the local map window, which is a place you sweep rather
+        /// than a menu you read: closing the soundscape down the moment it opens would mute exactly the layer that
+        /// makes the sweep feel like moving through the level. Those systems listen from
+        /// <c>MapCursor.ListenPosition</c>, which the map screen points at its own cursor, so while this is true
+        /// for the map they are describing the map cursor's surroundings and not the party's.
+        ///
+        /// SPEECH deliberately does not ride this — <c>RoomMap</c>'s announce-on-room-change stays on the narrow
+        /// <see cref="ExplorationActive"/> gate, because the map cursor narrates its own room crossings as it
+        /// sweeps and widening that one would say everything twice.</summary>
+        public static bool SoundscapeActive => ExplorationActive || LiveUnder(LocalMapScreen.ScreenKey);
+
+        private static bool LiveUnder(string screenKey) =>
+            ScreenManager.Current?.Key == screenKey
             && Game.Instance != null
             && ControlState.EffectiveMode == GameModeType.Default;
 
