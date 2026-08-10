@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Access.Core.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Access.Core is BCL-only by design (no Unity/game references), so the tests reference it as a
+       normal project — no file links, no dependency on any net48 mod assembly or game install.
+       This reference is also the enforcement mechanism for the BCL-purity rule: if anything added
+       under src/Access.Core reaches for Unity or Kingmaker, netstandard2.0 refuses to compile it
+       and this project goes red. That's a feature. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Access.Core\Access.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.6.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.4" />
+  </ItemGroup>
+
+</Project>

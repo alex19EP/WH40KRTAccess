@@ -10,7 +10,7 @@ hosts (two of them C++) needed that Draft 1 never mentioned.
 
 | Project | Game | Stack | Kernel | Status |
 |---|---|---|---|---|
-| **RTAccess** (reference) | WH40K: Rogue Trader | C# / Unity Mono / UMM | `RTAccess/UI/Graph/`, 1,623 lines, BCL-only | shipping, 62 screens |
+| **RTAccess** (reference) | WH40K: Rogue Trader | C# / Unity Mono / UMM | `src/Access.Core/Graph/`, 1,623 lines, BCL-only | shipping, 62 screens |
 | **WrathAccess** (upstream) | Pathfinder: WotR | C# / Unity Mono / Owlcat native | shared lineage, see Appendix A | shipping, ~30k LOC |
 | **CyberAccess** | Cyberpunk 2077 | C++ / RED4ext | 2,362 lines, 92 tests | shipping, 36 screen registrations |
 | **Stellaris port** | Stellaris | C++ / DLL injection, closed engine, no modding API | 2,061 lines | in progress, 10 kernel screens |

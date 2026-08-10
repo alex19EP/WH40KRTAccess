@@ -339,7 +339,7 @@ The mod targets `net481` (.NET Framework 4.8.1) and builds against the game's ow
 the .NET SDK and the 4.8.1 targeting pack:
 
 ```
-dotnet build RTAccess.slnx -c Debug
+dotnet build Access.slnx -c Debug
 ```
 
 A Debug build compiles `RTAccess.dll` and the `Deploy` target copies the whole mod folder (dll +

@@ -26,7 +26,7 @@
   dump    dump live state by dotted path (-Arg "Game.Instance.Player") via StateCrawler.
   log     drain + print the game's Console log channel (cheat output/errors).
 
-  cheat/dump/log wrap the in-process game-console surface (RTAccess/Dev/GameConsole.cs); they need the
+  cheat/dump/log wrap the in-process game-console surface (src/RTAccess/Dev/GameConsole.cs); they need the
   dev server up but NOT the game's own cheats enabled.
 
 .PARAMETER Config   Build configuration. Default Debug (the only one with the dev harness).
@@ -62,7 +62,7 @@ $ErrorActionPreference = 'Stop'
 $AppId    = 2186680  # Steam appid — used only for the steam:// launch fallback.
 $ProcName = 'WH40KRT'
 $Root     = Split-Path $PSScriptRoot -Parent
-$Solution = Join-Path $Root 'RTAccess.slnx'
+$Solution = Join-Path $Root 'Access.slnx'
 $Marker   = Join-Path $env:USERPROFILE 'AppData\LocalLow\Owlcat Games\Warhammer 40000 Rogue Trader\RTAccess\devserver.enable'
 $PlayerLog = Join-Path $env:USERPROFILE 'AppData\LocalLow\Owlcat Games\Warhammer 40000 Rogue Trader\Player.log'
 $DefaultInstall = 'C:\Program Files (x86)\Steam\steamapps\common\Warhammer 40,000 Rogue Trader'
@@ -82,7 +82,7 @@ function Eval([string]$code, [int]$timeout = 30) {
     try { return (curl.exe -s --max-time $timeout --data $code "$Base/eval" 2>$null) } catch { return $null }
 }
 
-# In-process game-console surface (RTAccess/Dev/GameConsole.cs). --data-raw so payloads with @/&/spaces
+# In-process game-console surface (src/RTAccess/Dev/GameConsole.cs). --data-raw so payloads with @/&/spaces
 # reach the body verbatim (a leading @ would otherwise make curl read a file).
 function Post([string]$path, [string]$payload, [int]$timeout = 15) {
     try { return (curl.exe -s --max-time $timeout --data-raw $payload "$Base$path" 2>$null) } catch { return $null }

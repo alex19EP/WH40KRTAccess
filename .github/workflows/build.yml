@@ -23,7 +23,7 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Run tests
-        run: dotnet test tests/RTAccess.Tests.csproj
+        run: dotnet test tests/Access.Core.Tests/Access.Core.Tests.csproj
 
   build:
     name: Build mod (Release)
@@ -63,19 +63,18 @@ jobs:
             "-p:RogueTraderManagedDir=$env:GAME_DIR\assemblies",
             "-p:RogueTraderData=$env:GAME_DIR",
             # InstallDir: any non-empty value skips the Player.log-derived GamePath.props generation.
-            "-p:RogueTraderInstallDir=$env:GAME_DIR",
-            "-p:SolutionDir=$env:GITHUB_WORKSPACE\"
+            "-p:RogueTraderInstallDir=$env:GAME_DIR"
           )
           if ("${{ github.ref }}" -like "refs/tags/v*") {
             $props += "-p:Version=" + "${{ github.ref_name }}".TrimStart("v")
           }
-          dotnet build RTAccess/RTAccess.csproj @props
+          dotnet build src/RTAccess/RTAccess.csproj @props
 
       - name: Upload zip
         uses: actions/upload-artifact@v4
         with:
           name: mod-zip
-          path: RTAccess/bin/RTAccess-*.zip
+          path: src/RTAccess/bin/RTAccess-*.zip
           if-no-files-found: error
 
   dev-release:

@@ -14,8 +14,11 @@ invariant below is RTAccess-correct (UMM, parallel mod-owned UI tree, Prism/stop
 
 1. Read `CLAUDE.md` for project context and invariants (the **Hard rules**, **Conventions &
    gotchas**, and **Engine & domain facts** sections are the source of truth for what follows).
-2. Scan all `.cs` files under `RTAccess/` with Glob and Grep, plus the locale JSON under
-   `RTAccess/assets/locale/enGB/` (`ui.json`, `settings.json`).
+2. Scan all `.cs` files under `src/RTAccess/` and `src/Access.Core/` with Glob and Grep, plus the
+   locale JSON under `src/RTAccess/assets/locale/enGB/` (`ui.json`, `settings.json`).
+   `src/Access.Core/` is the shared, game-agnostic core: audit it for BCL purity (any Unity or
+   Kingmaker/Owlcat reference there is a defect) and for API surface that leaked public only to
+   satisfy one caller.
 3. Analyze each area below and report findings in the output format at the end.
 
 ## Audit Areas
@@ -84,7 +87,7 @@ Each violation is a bug waiting to surface.
 ### Localization & Message Usage
 
 **The hard rule:** every string the mod **speaks or displays** must come from the locale tables —
-`Localization.LocalizationManager` with an entry in `RTAccess/assets/locale/enGB/{ui,settings}.json`
+`Localization.LocalizationManager` with an entry in `src/RTAccess/assets/locale/enGB/{ui,settings}.json`
 (enGB is the complete manifest). Sole exception: **debug-only tooling** (`Player.log`/`rtaccess_log`
 output, dev hotkeys, the dev server). Game content (names, log lines, tooltips) passes through —
 never re-translate.
@@ -100,8 +103,8 @@ never re-translate.
 ### Code Reuse
 
 **Duplicated logic across files** — search these hot directories for similar blocks:
-- `RTAccess/UI/Proxies/`, `RTAccess/Screens/` (+ `Screens/CharGen/`), `RTAccess/Exploration/`,
-  `RTAccess/Accessibility/`, `RTAccess/Audio/`, `RTAccess/Buffers/`.
+- `src/RTAccess/UI/Proxies/`, `src/RTAccess/Screens/` (+ `Screens/CharGen/`), `src/RTAccess/Exploration/`,
+  `src/RTAccess/Accessibility/`, `src/RTAccess/Audio/`, `src/RTAccess/Buffers/`.
 - Focus on: announcement assembly, VM unwrapping (`.Value` chains), `EventBus`
   subscribe/unsubscribe, distance/bearing math (`Exploration/Geo`), settings-tree building
   (`Settings/ModSettingsRegistry`), tooltip brick reads.
@@ -184,11 +187,11 @@ game's input system" (that was settled adversarially — see `docs/input-system-
 - Compile and check for warnings. The build should be **0 warnings, 0 errors**. Do NOT suppress with
   `#pragma`/`[SuppressMessage]` — fix the underlying issue.
 - **Safe while the game is running**, use the compile-only check (skips the Deploy target so it never
-  touches the UMM-locked DLL; the trailing `\` on `SolutionDir` matters):
+  touches the UMM-locked DLL):
   ```
-  dotnet msbuild RTAccess.csproj -t:Compile -p:Configuration=Debug -p:SolutionDir=<repo-root>\
+  dotnet msbuild src/RTAccess/RTAccess.csproj -t:Compile -p:Configuration=Debug
   ```
-  A full `dotnet build RTAccess.slnx -c Debug` deploys but requires the game to be closed.
+  A full `dotnet build Access.slnx -c Debug` deploys but requires the game to be closed.
 
 **Technical debt:**
 - TODO comments and known workarounds.

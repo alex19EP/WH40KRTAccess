@@ -12,7 +12,7 @@ RTAccess is a port of the accessibility approach pioneered by **WrathAccess**, t
 screen-reader mod for *Pathfinder: Wrath of the Righteous* (another Owlcat CRPG).
 WrathAccess was the primary design reference for this project, and portions of
 RTAccess are directly ported or adapted from its source — for example, the NAudio
-audio mixer in `RTAccess/Audio/AudioMixer.cs` is ported from WrathAccess's
+audio mixer in `src/RTAccess/Audio/AudioMixer.cs` is ported from WrathAccess's
 `NAudioEngine`. Other framework-level patterns (speech backend, settings, and
 exploration/cursor design) are adapted from it as well.
 

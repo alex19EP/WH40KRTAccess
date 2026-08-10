@@ -30,7 +30,7 @@ holes, and (d) copy-paste growth of the two core idioms.
 ## Critical findings
 
 ### C1. Build was broken: 2 errors + 1 warning (FIXED during audit)
-**Area:** compiler check · **Files:** `RTAccess/UI/Proxies/ProxyActionBarSlot.cs:206,218`, `RTAccess/UI/Proxies/ProxyEquipCandidate.cs:42`
+**Area:** compiler check · **Files:** `src/RTAccess/UI/Proxies/ProxyActionBarSlot.cs:206,218`, `src/RTAccess/UI/Proxies/ProxyEquipCandidate.cs:42`
 `bp.GetComponent<T>()` on `BlueprintAbility` failed to resolve — the game's
 `BlueprintExtenstions.GetComponent<T>` extension lives in `Kingmaker.Blueprints`, which the
 file didn't import (CS1061 ×2). `ProxyEquipCandidate` declared a private `Label()` method

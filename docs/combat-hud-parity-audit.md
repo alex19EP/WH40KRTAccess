@@ -19,13 +19,13 @@ The mod is **broadly at parity** for turn-based combat: the large majority of th
 #### 1. Ability "ends turn" / "spends all movement points" cue is missing from the slot focus readout
 Missing the cue risks an unintended full-turn loss in turn-based combat.
 - **Sighted reads it at:** `SurfaceActionBarVM.cs:276-282` (`EndTurnText` on hover) / `GetEndTurn` `:327-335` (returns `Tooltips.EndsTurn` / `SpendAllMovementPoints` when the blueprint has `WarhammerEndTurn`).
-- **Mod status:** *partial* — surfaced only in the Space full-tooltip scrape (`TooltipTemplateAbility.cs:432-439`, brick render `:827-831`); absent from `RTAccess/UI/Proxies/ProxyActionBarSlot.cs:82-115` `State()` which reads AP/range/target/uses/ammo/cooldown but never `EndTurnText`/`WarhammerEndTurn`.
+- **Mod status:** *partial* — surfaced only in the Space full-tooltip scrape (`TooltipTemplateAbility.cs:432-439`, brick render `:827-831`); absent from `src/RTAccess/UI/Proxies/ProxyActionBarSlot.cs:82-115` `State()` which reads AP/range/target/uses/ammo/cooldown but never `EndTurnText`/`WarhammerEndTurn`.
 - **Fix:** In `ProxyActionBarSlot.State()`, when `ab != null`, replicate `GetEndTurn`: read `ab.Blueprint.GetComponent<WarhammerEndTurn>()` (honor `CheckBuffForMPSpendTooltip`) and append the game-localized `UIStrings.Instance.Tooltips.EndsTurn` / `SpendAllMovementPoints` (pass-through) so the flag fires the moment the slot is focused.
 
 #### 2. "Possible to kill" death-mark (lethal-shot skull) not surfaced
 A decisive at-a-glance targeting cue, and the data is already in hand.
 - **Sighted reads it at:** `OvertipHitChanceBlockVM.cs:52,144` (`CanDie = MaxDamage >= HitPointsLeft + TemporaryHitPoints`, gated `IsVisibleForPlayer` `:80`) and `OvertipHealthBlockVM.cs:26,146` (suppressed under `HideRealHealthInUI` `:111`).
-- **Mod status:** *missing* — `RTAccess/Accessibility/HitPredictor.cs:100-133` `Compose` emits hit%/crit/cover and (verbose only) damage but no lethal comparison; whole-mod grep for `CanDie|PossibleToKill|CanKill` = 0.
+- **Mod status:** *missing* — `src/RTAccess/Accessibility/HitPredictor.cs:100-133` `Compose` emits hit%/crit/cover and (verbose only) damage but no lethal comparison; whole-mod grep for `CanDie|PossibleToKill|CanKill` = 0.
 - **Fix:** In `HitPredictor.Describe` compute `canDie = ui.MaxDamage > 0 && ui.MaxDamage >= target.Health.HitPointsLeft + target.Health.TemporaryHitPoints`, pass into `Compose`, and append a new localized `predict.can_kill` clause in **both** terse and verbose output. Suppress when `target.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)` to mirror the overtip.
 
 #### 3. Overpenetration chain preview (reduced hit/damage on each pierced in-line target) — plus a correctness bug
@@ -35,7 +35,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 
 #### 4. AoE caught units — per-unit hit chance / damage / kill for each unit in the template
 - **Sighted reads it at:** `OvertipHitChanceBlockVM.cs:99-106` (`HandleCellAbility` sets each caught unit's `AbilityTargetUIData` = hit%/damage/burst), fed by `AbilityPatternRange.cs:133-162` (`GatherAffectedTargetsData`).
-- **Mod status:** *missing per-unit* — `RTAccess/Exploration/AoEPreview.cs:95-114` emits only aggregate enemy/ally counts + friendly-fire names; the single-target predictor (`Targeting.cs:62`) returns null unless `ability.CanTargetEnemies` and computes odds for *centering* on a unit, not collateral odds at the current aim center.
+- **Mod status:** *missing per-unit* — `src/RTAccess/Exploration/AoEPreview.cs:95-114` emits only aggregate enemy/ally counts + friendly-fire names; the single-target predictor (`Targeting.cs:62`) returns null unless `ability.CanTargetEnemies` and computes odds for *centering* on a unit, not collateral odds at the current aim center.
 - **Fix:** In `AoEPreview.CursorTail`, after computing `pattern`, call `ability.GatherAffectedTargetsData(...)` (same API `LineOfSightVM`/`AbilityPatternRange` use). For each caught unit passing the existing `IsVisibleForPlayer`/awake/in-combat gate, append a terse name + rounded `HitWithAvoidanceChance`% (+ kill flag when `MaxDamage ≥ HP`); full damage range on verbose Space.
 
 #### 5. Ricochet-target uncertainty ("???" hit chance)
@@ -45,7 +45,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 
 #### 6. Buff DOT damage-per-tick number on the buff icon
 - **Sighted reads it at:** `BuffPCView.cs:51-59` (for `IsDamage` buffs hides rank, shows `m_Damage` = DOT AverageValue); `BuffVM.cs:186-193` `CalculateDamage` = `DOTLogicUIExtensions.CalculateDOTDamage(Buff).AverageValue`.
-- **Mod status:** *missing* — `RTAccess/Buffers/UnitBuffer.cs:82-89` `BuffLine` reads only `buff.Rank` + duration; grep `DOTLogic|CalculateDOTDamage|AverageValue` = 0.
+- **Mod status:** *missing* — `src/RTAccess/Buffers/UnitBuffer.cs:82-89` `BuffLine` reads only `buff.Rank` + duration; grep `DOTLogic|CalculateDOTDamage|AverageValue` = 0.
 - **Fix:** In `UnitBuffer.BuffLine`, detect DOT via `buff.Blueprint.IsDOTVisual` (or `GetComponent<DOTLogicVisual>()`); replace the rank annotation with `DOTLogicUIExtensions.CalculateDOTDamage(buff).AverageValue` under a new `buffer.dot_damage` key. Keep rank display for non-DOT buffs.
 
 #### 7. Per-card status markers: will-lose-turn / control-loss / unable-to-act
@@ -55,7 +55,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 
 #### 8. Faction (enemy/companion/friend) tag on the initiative review list
 - **Sighted reads it at:** `SurfaceCombatUnitView.cs:181-193` sets `m_FractionViewMode` from `IsEnemy.Value`/`IsPlayer.Value`; fields ready on `SurfaceCombatUnitVM.cs:36-42,273-275`.
-- **Mod status:** *partial* — `RTAccess/Screens/InGameScreen.cs:500-510` `InitiativeLabel` = name + optional "current" only; grep `enemy/faction/ally/hostile` in file = 0. The only faction cue (`combat.turn_enemy` `:444-448`) fires live at turn-start, not while scanning the queue.
+- **Mod status:** *partial* — `src/RTAccess/Screens/InGameScreen.cs:500-510` `InitiativeLabel` = name + optional "current" only; grep `enemy/faction/ally/hostile` in file = 0. The only faction cue (`combat.turn_enemy` `:444-448`) fires live at turn-start, not while scanning the queue.
 - **Fix:** In `InitiativeLabel` append a localized allegiance tag: `vm.IsEnemy.Value` → `combat.faction_enemy`, else `vm.IsPlayer.Value` → `combat.faction_ally`, else `combat.faction_neutral`. Parity-safe (the tracker lists only shown participants — no fog gating needed).
 
 #### 9. Per-card HP on the initiative review list
@@ -70,7 +70,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 
 #### 11. Awareness log line — trap / door spotted (voiced live)
 - **Sighted reads it at:** `AwarenessLogThread.HandleEvent(GameLogEventAwareness)` emits only `TrapSpotted`/`DoorSpotted` — a discrete reveal event, not a frequent stream.
-- **Mod status:** *partial* — `RTAccess/Accessibility/LogTap.cs:53` places `"AwarenessLogThread"` in the Noise set (captured for L review, never spoken live) with an incorrect "frequent" rationale. Only other coverage is discovery-via-scan (`ProxyMapObject.cs:151-152`).
+- **Mod status:** *partial* — `src/RTAccess/Accessibility/LogTap.cs:53` places `"AwarenessLogThread"` in the Noise set (captured for L review, never spoken live) with an incorrect "frequent" rationale. Only other coverage is discovery-via-scan (`ProxyMapObject.cs:151-152`).
 - **Fix:** Remove `"AwarenessLogThread"` from `LogTap.Noise` (`LogTap.cs:49-54`) so `TrapSpotted`/`DoorSpotted` voice live. It is low-frequency and engine-gated on the awareness check, so it is neither chatty nor a leak.
 
 #### 12. Veil predicted (after-cast) value when aiming a warp ability
@@ -143,7 +143,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 > `unit.shields` from `ShieldsSum`/`ShieldsMaxSum`, visibility-gated); the predicted-shield-damage half needs
 > the armed starship weapon and belongs to the starship aim path.
 - **Sighted reads it at:** `OvertipHealthBlockVM.cs:38-44,160-183` (`UpdateEnemyShields`, gated `IsPlayerEnemy`) populates current/max shield + predicted min/max shield damage via `AbilityDataHelper.GetStarshipDamagePrediction`.
-- **Mod status:** *missing* — grep `[Ss]hield` across `RTAccess/` = 0 files; the only `Starship` hits are unrelated inventory access.
+- **Mod status:** *missing* — grep `[Ss]hield` across `src/RTAccess/` = 0 files; the only `Starship` hits are unrelated inventory access.
 - **Fix:** In the enemy HP/prediction readout (`HitPredictor` + `ProxyUnit`/`Inspect`), detect `StarshipEntity` targets and append a shield line mirroring the overtip — current/max shield + predicted min-max shield damage from `AbilityDataHelper.GetStarshipDamagePrediction(...).resultShields`, gated identically on `IsPlayerEnemy`/visibility. New localized "shield" string.
 
 ---
@@ -157,7 +157,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 ### High severity
 
 #### L1. Alt+arrow "Target" buffer speaks an enemy's exact HP, defenses, and buffs with NO visibility gate
-- **The leak:** `RTAccess/Buffers/UnitBuffer.cs:27-89` `Populate()` has no visibility check — `:30` name; `:32-34` reads `HitPointsLeft`/`MaxHitPoints` unconditionally; `:41` `DefenseLine()` triggers exact armor/dodge/parry rules; `:45-49` adds every `!buff.Hidden` with rank/duration. `BufferManager.cs:85-90` `TargetUnit()` = `SelectedUnit().CombatState.ManualTarget ?? TurnController.CurrentUnit` — on an enemy's turn `CurrentUnit` **is** that enemy regardless of visibility, and `ManualTarget` is never cleared when the target walks into fog (`PartUnitCommands.cs:190-201`). Reachable in one keypress.
+- **The leak:** `src/RTAccess/Buffers/UnitBuffer.cs:27-89` `Populate()` has no visibility check — `:30` name; `:32-34` reads `HitPointsLeft`/`MaxHitPoints` unconditionally; `:41` `DefenseLine()` triggers exact armor/dodge/parry rules; `:45-49` adds every `!buff.Hidden` with rank/duration. `BufferManager.cs:85-90` `TargetUnit()` = `SelectedUnit().CombatState.ManualTarget ?? TurnController.CurrentUnit` — on an enemy's turn `CurrentUnit` **is** that enemy regardless of visibility, and `ManualTarget` is never cleared when the target walks into fog (`PartUnitCommands.cs:190-201`). Reachable in one keypress.
 - **What the game masks:** `OvertipEntityUnitVM.cs:98-106` `HideFromScreen` hides the entire overtip (HP + buffs) when `Unit.IsInState && IsAwake && !IsVisibleForPlayer && !IsDirectlyControllable`; `OvertipUnitHealthBlockView.cs:152` forces "???" under `HideRealHealthInUI`; `OvertipHealthBlockVM.cs:91-93` clamps HP under that flag. No `FogProbe`/`IsVisibleForPlayer`/`CurrentlySeen` appears anywhere in `Buffers/`.
 - **Fix — gate to add:** In `UnitBuffer.Populate`, for a non-directly-controllable unit, when `!unit.IsVisibleForPlayer` (or `FogProbe.Classify != Visible`) emit only the name / a "not visible" line and suppress HP/AP/defenses/buffs (mirror `OvertipEntityUnitVM.HideFromScreen`). Also honor `HideRealHealthInUI` (speak "???"). In `BufferManager.TargetUnit`, treat a `ManualTarget` that is no longer visible as absent so it cannot leak a target that walked into fog.
 - **✅ Fixed (2026-07-03):** `BufferManager.TargetUnit` now ignores a `ManualTarget` unless `IsPlayerFaction || IsVisibleForPlayer`, falling back to the turn's unit. `UnitBuffer.Populate` adds a fog gate right after the name: a non-party, non-visible unit emits only the name + localized `buffer.not_visible` and returns (HP/AP/defenses/buffs suppressed). The name is kept because it is already parity-safe (spoken by the whose-turn cue). The HP line additionally masks to `buffer.hit_points_hidden` under `HideRealHealthInUI`.
@@ -165,7 +165,7 @@ A decisive at-a-glance targeting cue, and the data is already in hand.
 ### Medium severity
 
 #### L2. `ProxyUnit.Detail` exact-HP read ignores `HideRealHealthInUI` (scanner category browse + enemy review cycle)
-- **The leak:** `RTAccess/Exploration/ProxyUnit.cs:99-100` speaks `HitPointsLeft + " of " + MaxHitPoints` with no guard, for any living currently-visible enemy (`IsVisible == IsVisibleForPlayer` at `:41`). Grep for `HideRealHealthInUI` across the mod = 0.
+- **The leak:** `src/RTAccess/Exploration/ProxyUnit.cs:99-100` speaks `HitPointsLeft + " of " + MaxHitPoints` with no guard, for any living currently-visible enemy (`IsVisible == IsVisibleForPlayer` at `:41`). Grep for `HideRealHealthInUI` across the mod = 0.
 - **What the game masks:** `OvertipUnitHealthBlockView.cs:152` (`HideRealHealthInUI ? "???" : value`) and `OvertipHealthBlockVM.cs:54-64,86-93` (skips real HP, clamps under the flag). The mask is **independent of fog**, so the mod's `IsVisible`/`CurrentlySeen` gating does not cover it — concealed-health bosses/special units the game shows as "???" have their exact HP announced the instant they're cycled to.
 - **Fix — gate to add:** In `ProxyUnit.Detail`, guard with `if (_unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)) → localized "???"; else → exact HP` (use the game's `MechanicEntity.HasMechanicFeature`, as `OvertipHealthBlockVM` does). Localize the masked string. Also audit the Inspect (K) tooltip path and any `CombatReads` HP exposure — `InspectExtensions.cs` honors the same feature. (This mask is also the critical guard for completeness fix #9.)
 - **✅ Fixed (2026-07-03):** `ProxyUnit.Detail` now reads `_unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)` and speaks localized `scan.unit_hp_hidden` ("health unknown") instead of the exact "N of M HP" (now the localized `scan.unit_hp`). Inspect (K) and `CombatReads` were checked and need no change: Inspect renders the game's own tooltip (which already honors the mask via `InspectExtensions`), and `CombatReads` exposes cover/range/threat, not HP.
@@ -197,7 +197,7 @@ against the mod + decompiled source after the run:
 
 #### R1. "Possible to push" (knockback) reticle flag — **CONFIRMED gap (low severity)**
 - **Sighted reads it at:** `OvertipHitChanceBlockView.cs:65,133-140` shows the `m_Push` status icon (tooltip `UIStrings.Instance.Tooltips.PossibleToPush`) driven by `ViewModel.CanPush && IsVisible`; `OvertipHitChanceBlockVM.cs:54,156` sets `CanPush.Value = m_AbilityTargetUIData.Value.CanPush`.
-- **Mod status:** *missing* — `HitPredictor` reads the very same `AbilityTargetUIData` (via `AbilityTargetUIDataCache.GetOrCreate`) but never reads `.CanPush`; grep across `RTAccess/` = 0. Exact sibling of completeness gap #2 ("possible to kill" / `CanDie`), which lives on the same struct and is also unsurfaced.
+- **Mod status:** *missing* — `HitPredictor` reads the very same `AbilityTargetUIData` (via `AbilityTargetUIDataCache.GetOrCreate`) but never reads `.CanPush`; grep across `src/RTAccess/` = 0. Exact sibling of completeness gap #2 ("possible to kill" / `CanDie`), which lives on the same struct and is also unsurfaced.
 - **Fix:** In `HitPredictor.Compose`, read `ui.CanPush` and, when true, append a localized `predict.can_push` ("can knock back") clause in both terse and verbose output — same insertion point and fog gate (`IsVisibleForPlayer`) as the `CanDie` fix. Trivial; the data is already fetched.
 
 #### R2. Predicted *remaining* AP/MP after the hovered move / ability — **CONFIRMED partial (low severity)**

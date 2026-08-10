@@ -1,0 +1,137 @@
+﻿<Project Sdk="Microsoft.NET.Sdk" InitialTargets="GenerateCustomPropsFile">
+
+	<!-- Repo root, derived from THIS file's location rather than $(SolutionDir). $(SolutionDir) is only
+	     defined when MSBuild is driven by the solution, so building this csproj directly used to need an
+	     explicit -p:SolutionDir=<root>\ (trailing backslash and all) or paths silently resolved to
+	     *Undefined*. Deriving it here makes `dotnet build src/RTAccess/RTAccess.csproj` work unaided. -->
+	<PropertyGroup>
+		<RepoRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..\..'))</RepoRoot>
+		<GamePathProps>$(RepoRoot)build\GamePath.RT.props</GamePathProps>
+	</PropertyGroup>
+
+	<Import Project="$(GamePathProps)" Condition="Exists('$(GamePathProps)')" />
+
+	<PropertyGroup>
+		<TargetFramework>net481</TargetFramework>
+		<AssemblyName>RTAccess</AssemblyName>
+		<Description>RTAccess</Description>
+		<Version>1.0.0</Version>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<LangVersion>latest</LangVersion>
+		<RootNamespace>RTAccess</RootNamespace>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<RestoreAdditionalProjectSources>https://api.nuget.org/v3/index.json</RestoreAdditionalProjectSources>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<RogueTraderData>$(LocalAppData)Low\Owlcat Games\Warhammer 40000 Rogue Trader</RogueTraderData>
+		<!-- Where the game's reference assemblies live. Defaults to the local install's Managed dir;
+		     CI overrides this (and RogueTraderData) to point into the RogueTraderGameAssemblies
+		     NuGet package, which has a flat Assemblies/ layout instead of WH40KRT_Data\Managed. -->
+		<RogueTraderManagedDir Condition="'$(RogueTraderManagedDir)' == ''">$(RogueTraderInstallDir)\WH40KRT_Data\Managed</RogueTraderManagedDir>
+	</PropertyGroup>
+	<ItemGroup>
+		<Reference Include="$(RogueTraderManagedDir)\Unity*.dll" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Kingmaker*.dll" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Utility*.dll" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Core*.dll" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Owlcat*.dll" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\RogueTrader*.dll" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Code.dll*" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\LocalizationShared.dll*" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderData)\UnityModManager\UnityModManager.dll*" Publicize="true" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\0Harmony.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Newtonsoft.Json.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\UniRx.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\Rewired_Core.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\ContextData.dll*" Private="false" />
+		<Reference Include="$(RogueTraderManagedDir)\StateHasher.dll*" Private="false" />
+		<!-- StatefulRandom: DisableStatefulRandomContext — the dry-run guard the game's own overtips wrap
+		     around damage predictions (GetStarshipDamagePrediction); used by Combat/StarshipAim. -->
+		<Reference Include="$(RogueTraderManagedDir)\StatefulRandom.dll*" Private="false" />
+		<!-- CountingGuard: Game.Keyboard.Disabled (the keyboard-suppression guard FocusMode toggles via
+		     SetValue) is a CountingGuard, which lives in its own assembly not matched by the wildcards. -->
+		<Reference Include="$(RogueTraderManagedDir)\CountingGuard.dll*" Private="false" />
+		<!-- A* Pathfinding Project — defines GraphNode/NavGraph behind CustomGridNodeBase (grid walkability,
+		     node.position, node.Graph). Needed by the tile explorer (see TileExplorer / InteractableDescriber). -->
+		<Reference Include="$(RogueTraderManagedDir)\AstarPathfindingProject.dll*" Private="false" />
+	</ItemGroup>
+	<ItemGroup>
+		<!-- The game-agnostic accessibility core (graph nav, text cleanup, room segmentation). Copy-local
+		     lands Access.Core.dll in $(TargetDir) and the wildcard Deploy target carries it into the UMM
+		     mod folder beside RTAccess.dll, where Mono resolves it the same way it already resolves the
+		     other bundled managed deps (NAudio, Mono.CSharp). -->
+		<ProjectReference Include="$(RepoRoot)src\Access.Core\Access.Core.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="Info.json" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+		<None Include="OwlcatModificationManifest.json" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+		<!-- Native Prism speech library + NVDA client. Ship them with the mod so the Prism backend works
+		     (else Speaker falls back to the stopgap TTS). prism.dll needs nvdaControllerClient64.dll for NVDA. -->
+		<!-- The mod's own speech strings (framework glue: roles, positions, screen names). Deployed under
+		     assets/locale/<lang>/<table>.json; LocalizationManager reads them from Main.ModDir/assets/locale. -->
+		<None Include="assets\**\*.json" CopyToOutputDirectory="PreserveNewest" Link="assets\%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- Bundled audio stems (wall tones, sonar interactable stems, cue earcons) — sourced from WrathAccess.
+		     Deployed under assets/audio/**; AudioAssets.Dir reads them from Main.ModDir/assets/audio. -->
+		<None Include="assets\**\*.wav" CopyToOutputDirectory="PreserveNewest" Link="assets\%(RecursiveDir)%(Filename)%(Extension)" />
+		<None Include="prism.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('prism.dll')" />
+		<None Include="nvdaControllerClient64.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('nvdaControllerClient64.dll')" />
+		<!-- Docs + licences from the repo root. They land in $(TargetDir), so the Deploy target carries them
+		     into the UMM mod folder AND into the release zip — the MIT licence and the third-party notices
+		     have to travel with the redistributed binaries. -->
+		<None Include="$(RepoRoot)README.md" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+		<None Include="$(RepoRoot)LICENSE" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+		<None Include="$(RepoRoot)THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+	</ItemGroup>
+	<Target Name="Deploy" AfterTargets="Build">
+		<ItemGroup>
+			<Files Include="$(TargetDir)\**\*.*" />
+		</ItemGroup>
+
+		<Copy SourceFiles="@(Files)" DestinationFiles="@(Files->'$(RogueTraderData)\UnityModManager\$(AssemblyName)\%(RecursiveDir)%(Filename)%(Extension)')" />
+		<ZipDirectory SourceDirectory="$(MSBuildProjectDirectory)\$(OutputPath)" DestinationFile="$(MSBuildProjectDirectory)\$(OutputPath)\..\$(AssemblyName)-$(Version).zip" Overwrite="true" />
+	</Target>
+	<!-- Mono.CSharp: the runtime C# REPL compiler behind the DEBUG-only dev server's /eval (RTAccess/Dev/).
+	     Vendored via NuGet (4.0.0.143; net45 lib, loads fine on the game's Unity Mono / net481). Referenced
+	     ONLY in Debug — the dev code is all #if DEBUG, so a Release build neither compiles against nor ships
+	     it. Copy-local lands Mono.CSharp.dll in $(TargetDir), and the wildcard Deploy target carries it into
+	     the UMM mod folder. -->
+	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+		<PackageReference Include="Mono.CSharp" Version="4.0.0.143" />
+	</ItemGroup>
+	<ItemGroup>
+		<!-- NAudio 1.10.0: net35 single-DLL managed audio mixer behind the (deferred, off-by-default)
+		     spatial-audio / UI-earcon engine (RTAccess/Audio/). Copy-local lands NAudio.dll in $(TargetDir)
+		     and the wildcard Deploy carries it into the UMM mod folder, beside prism.dll. -->
+		<PackageReference Include="NAudio" Version="1.10.0" />
+		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+		<PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" IncludeAssets="build; contentfiles" Version="0.4.2" PrivateAssets="all" />
+		<PackageReference Include="PublishToWorkshop" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" Version="1.0.10" PrivateAssets="all" />
+		<PackageReference Include="MicroUtils.HarmonyAnalyzers" IncludeAssets="runtime; build; native; contentfiles; analyzers" Version="*-*" PrivateAssets="all" />
+	</ItemGroup>
+	<Target Name="PublishToSteamWorkshop" AfterTargets="Publish">
+		<RemoveDir Directories="$(OutputPath)\publish" />
+		<PublishToWorkshop PathToManifest="$(MSBuildThisFileDirectory)\OwlcatModificationManifest.json" ImageDir="$(RepoRoot)" BuildDir="$(MSBuildProjectDirectory)\$(OutputPath)" PathToDescription="$(RepoRoot)Workshop-description.txt" GameAppId="2186680" />
+	</Target>
+	<Target Name="GenerateCustomPropsFile" Condition="$(RogueTraderInstallDir) == ''">
+		<Exec Command="findstr /C:&quot;Mono path[0]&quot; &quot;$(RogueTraderData)\Player.log&quot;" IgnoreExitCode="true" ConsoleToMSBuild="true">
+			<Output TaskParameter="ExitCode" PropertyName="ExitCode" />
+			<Output TaskParameter="ConsoleOutput" PropertyName="MonoPathLine" />
+		</Exec>
+
+		<PropertyGroup>
+			<MonoPathRegex>^Mono path\[0\] = '(.*?)/WH40KRT_Data/Managed'$</MonoPathRegex>
+		</PropertyGroup>
+
+		<PropertyGroup>
+			<RogueTraderInstallDir>$([System.Text.RegularExpressions.Regex]::Match($(MonoPathLine), $(MonoPathRegex)).Groups[1].Value)</RogueTraderInstallDir>
+		</PropertyGroup>
+
+		<WriteLinesToFile File="$(GamePathProps)" Lines="&lt;Project xmlns='http://schemas.microsoft.com/developer/msbuild/2003'&gt;
+	&lt;PropertyGroup&gt;
+		&lt;RogueTraderInstallDir&gt;$(RogueTraderInstallDir)&lt;/RogueTraderInstallDir&gt;
+	&lt;/PropertyGroup&gt;
+&lt;/Project&gt;" Overwrite="true" Encoding="utf-8" />
+	</Target>
+	<Target Name="DeleteCustomPropsFile" BeforeTargets="Clean">
+		<Delete Files="$(GamePathProps)" />
+	</Target>
+</Project>

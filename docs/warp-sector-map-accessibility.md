@@ -70,7 +70,7 @@ Warp travel = **`GameModeType.GlobalMap`**, a full game area (`BlueprintSectorMa
 
 ## What was built (no live access needed)
 
-### `RTAccess/Screens/SectorMapScreen.cs` (new)
+### `src/RTAccess/Screens/SectorMapScreen.cs` (new)
 Base context, `Key "ctx.sectormap"`, Layer 0, `StartUnfocused`. `IsActive()` = `CurrentlyLoadedArea is
 BlueprintSectorMapArea && SpaceVM != null` (a distinct area type ⇒ naturally mutually exclusive with the other
 Layer-0 contexts). `SectorMapVM` is re-resolved every frame via `SpaceVM.StaticPartVM.TryGetComponentVM(
@@ -91,7 +91,7 @@ SpaceStaticComponentType.SectorMap)` — never cached (it is disposed on mode ch
 `Interactive` (the **verb** gate — reading is never gated) = top screen is `ctx.sectormap` AND `CurrentMode ==
 GlobalMap` AND not `IsTraveling`/`IsDialogActive`. There is no "stop travel" verb by design (the game has no abort).
 
-### `RTAccess/Accessibility/WarpEvents.cs` (new)
+### `src/RTAccess/Accessibility/WarpEvents.cs` (new)
 The `SpaceEvents` sibling — a long-lived `EventBus` subscriber, subscribed in `Main.Load`, `.Tick()` in
 `OnUpdate` (edge-state housekeeping only), unsubscribed in unload. All lines passive → QUEUED. Voices:
 entering warp (dest + difficulty; suppressed once via `MarkCommandedTravel()` when our own screen commanded it),
@@ -108,7 +108,7 @@ voicing it here would double).
   `systemmap.has_colony/has_quest/has_rumour/units`. Game content (system/quest/rumour names) passes through
   untranslated.
 
-Compiles clean (`dotnet msbuild RTAccess/RTAccess.csproj -t:Compile` — 0 errors, 0 warnings).
+Compiles clean (`dotnet msbuild src/RTAccess/RTAccess.csproj -t:Compile` — 0 errors, 0 warnings).
 
 ## In-game test checklist (run once warp travel is unlocked)
 
@@ -178,9 +178,9 @@ routes to test against. Watch `speech_log.txt` (`[!]` interrupted, `[+]` queued)
   encounter) already cover the jump; only add if play-testing shows a need.
 
 ## Files
-- `RTAccess/Screens/SectorMapScreen.cs` (new), `RTAccess/Accessibility/WarpEvents.cs` (new).
-- `RTAccess/Screens/ScreenManager.cs` (register), `RTAccess/Main.cs` (subscribe/tick/unsubscribe),
-  `RTAccess/assets/locale/enGB/ui.json` (`sectormap.*` block).
+- `src/RTAccess/Screens/SectorMapScreen.cs` (new), `src/RTAccess/Accessibility/WarpEvents.cs` (new).
+- `src/RTAccess/Screens/ScreenManager.cs` (register), `src/RTAccess/Main.cs` (subscribe/tick/unsubscribe),
+  `src/RTAccess/assets/locale/enGB/ui.json` (`sectormap.*` block).
 
 ## Prior art
 WoTR Global Map (`C:\modding\not-my\wotr-access\src\Exploration\GlobalMap*.cs`, `Screens\GlobalMapScreen.cs`) —

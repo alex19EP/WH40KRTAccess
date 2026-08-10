@@ -1,6 +1,6 @@
 # TooltipReader coverage audit (2026-07-02)
 
-Multi-agent audit of `RTAccess/Accessibility/TooltipReader.cs` against **all 88** game tooltip
+Multi-agent audit of `src/RTAccess/Accessibility/TooltipReader.cs` against **all 88** game tooltip
 brick VM types (`TooltipBrick*VM`). Each brick's VM + its View (what sighted players actually see)
 was compared to the reader's extraction rules; every flagged gap was adversarially re-verified
 (a gap counts only if the content is BOTH rendered to sighted players AND not captured by the reader).
