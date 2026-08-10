@@ -54,6 +54,25 @@ internal static class UnitFaction
         return list;
     }
 
+    /// <summary>
+    /// Is this unit currently flagged <c>Features.IsUntargetable</c> — the game's scripted "off-limits" state
+    /// (a cutscene <c>CommandMarkUntargetableSpan</c>, a resurrection window, or an encounter buff such as the
+    /// Beast's tail Caution/withdraw)? It is a retain-counted flag, so it flips during a fight.
+    ///
+    /// A sighted player is NOT blind to such a unit — the flag never touches rendering
+    /// (<c>EntityVisibilityForPlayerController</c> gates on <c>IsVisibleForPlayer</c>, and no renderer path reads
+    /// this flag), so the model is on screen and animating. What the flag removes is the UI affordance of a
+    /// TARGET: the overtip is suppressed (<c>UnitOvertipsView</c>), name/health/level blocks hide behind
+    /// <c>UnitState.HasHiddenCondition</c>, and <c>ClickUnitHandler</c> gives it zero click priority so the
+    /// cursor will not lock onto it. So we keep such units readable (they are still combatants standing next to
+    /// you) but tag them and drop them from the enemy TARGET cycle — the ring that exists to pick a target.
+    /// </summary>
+    internal static bool Untargetable(BaseUnitEntity unit)
+    {
+        try { return unit != null && unit.Features != null && unit.Features.IsUntargetable.Value; }
+        catch { return false; }
+    }
+
     /// <summary>The taxonomy node a living unit scans under.</summary>
     internal static string Node(BaseUnitEntity unit)
         => unit == null ? ScanTaxonomy.UnitsNeutrals

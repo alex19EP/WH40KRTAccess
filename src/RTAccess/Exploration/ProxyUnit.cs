@@ -155,6 +155,12 @@ internal sealed class ProxyUnit : ScanItem
                 }
                 else
                 {
+                    // Scripted "off-limits" state (Features.IsUntargetable). A sighted player reads it off the
+                    // MISSING furniture — no overtip, no health bar, and the cursor refuses to lock on — so say
+                    // it outright, before the numbers, or the unit is indistinguishable from a live target.
+                    // Same reveal gate as the threat tier below: never leak an unseen enemy's condition.
+                    if ((_unit.IsPlayerFaction || _unit.IsVisibleForPlayer) && UnitFaction.Untargetable(_unit))
+                        bits.Add(Loc.T("unit.untargetable"));
                     var health = _unit.Health;
                     if (health != null)
                         // Honor the game's HideRealHealthInUI mask (fog-independent — the "???" concealed-HP units;

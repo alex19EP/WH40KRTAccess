@@ -703,7 +703,13 @@ internal static class Scanner
             // unreachable by a single key. Each one names itself ("party member" / "ally") when selected,
             // and the Ctrl+PageUp/Down browse splits them into their own two categories.
             case Group.Party: return it.Primary == ScanTaxonomy.UnitsParty || it.Primary == ScanTaxonomy.UnitsAllies;
-            case Group.Enemies: return it.Primary == ScanTaxonomy.UnitsEnemies;
+            // The period cycle is a TARGET PICKER, so it mirrors what the sighted reticle will lock onto: a unit
+            // the game has flagged untargetable takes no click (ClickUnitHandler scores it 0) and shows no
+            // overtip, so parking the cycle on it hands the player a decoy that silently eats a turn. It stays in
+            // the registry — the tile cursor still reads it, tagged, and the Ctrl+PageUp/Down category browse
+            // still lists it — because the unit IS on screen for a sighted player. See UnitFaction.Untargetable.
+            case Group.Enemies: return it.Primary == ScanTaxonomy.UnitsEnemies
+                                    && !UnitFaction.Untargetable(it.TargetUnit);
             case Group.Neutrals: return it.Primary == ScanTaxonomy.UnitsNeutrals;
             default:
                 // Objects (M): EVERY interactable map object, so any object is reachable by cycle + I — not just

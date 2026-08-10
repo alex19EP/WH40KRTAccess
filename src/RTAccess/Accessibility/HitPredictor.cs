@@ -56,7 +56,7 @@ public static class HitPredictor
             var tw = new TargetWrapper(target);
 
             if (!ability.CanTargetFromNode(casterNode, null, tw, out int distance, out var _, out var reason))
-                return Untargetable(ability, distance, reason);
+                return Untargetable(ability, target, distance, reason);
 
             // The ability may pick a better firing node than the desired position (e.g. to clear cover / gain LOS);
             // read the hit cache keyed on THAT node so the number matches the reticle.
@@ -113,10 +113,19 @@ public static class HitPredictor
         catch { return 0; }
     }
 
-    private static string Untargetable(AbilityData ability, int distance, AbilityData.UnavailabilityReasonType? reason)
+    private static string Untargetable(AbilityData ability, BaseUnitEntity target, int distance,
+        AbilityData.UnavailabilityReasonType? reason)
     {
         switch (reason)
         {
+            // A unit the game has flagged off-limits (Features.IsUntargetable) is refused with the SAME code it
+            // uses for "there is no target at all" (AbilityData.CalculateIsValid), which localizes to a bare
+            // "Unavailable" — a dead end the mouse UI never reaches, so the game never needed a better string.
+            // Read the flag to tell the two apart and name the real cause; fall through to the generic line when
+            // NullTarget genuinely means the anchor found nothing.
+            case AbilityData.UnavailabilityReasonType.NullTarget
+                when RTAccess.Exploration.UnitFaction.Untargetable(target):
+                return Loc.T("predict.untargetable");
             case AbilityData.UnavailabilityReasonType.TargetTooFar:
                 int over = distance - ability.RangeCells;
                 return over > 0 ? Loc.T("predict.too_far", new { over, cells = Cells(over) }) : Loc.T("predict.out_of_range");

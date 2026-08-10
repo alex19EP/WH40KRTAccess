@@ -124,6 +124,10 @@ internal static class InteractableDescriber
             // scanner cycles now skip the dead, so the tile cursor is the one place a corpse is still announced.
             if (unit.LifeState.IsDead) Append(sb, Loc.T("unit.dead"));
             else if (!unit.LifeState.IsConscious) Append(sb, Loc.T("unit.unconscious"));
+            // The cursor is the one surface that still reaches an untargetable unit (it is dropped from the
+            // enemy target cycle), so it must be the surface that says why the attack will bounce — the tag a
+            // sighted player infers from the missing overtip / unclickable cursor. See UnitFaction.Untargetable.
+            else if (RTAccess.Exploration.UnitFaction.Untargetable(unit)) Append(sb, Loc.T("unit.untargetable"));
         }
         if (seen && TryNameMapObject(node, out var objectName, out var objectVerb))
         {
