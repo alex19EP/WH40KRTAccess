@@ -285,14 +285,16 @@ namespace RTAccess.Input
                 Ax.TileExplorer.StepWest).AddBinding(KeyCode.LeftArrow).Repeating().Grouped("cursor");
             InputManager.Register("cursor.right", "Cursor: step east", InputCategory.Exploration,
                 Ax.TileExplorer.StepEast).AddBinding(KeyCode.RightArrow).Repeating().Grouped("cursor");
+            // The secondary slot ALWAYS tile-steps (the precision slot) — in free cursor mode the primary
+            // arrows glide (CursorGlide polls their held state) while Shift+arrows keep discrete tiles.
             InputManager.Register("cursor.up2", "Cursor: step north (secondary)", InputCategory.Exploration,
-                Ax.TileExplorer.StepNorth).AddBinding(KeyCode.UpArrow, shift: true).Repeating().Grouped("cursor");
+                Ax.TileExplorer.StepNorthSecondary).AddBinding(KeyCode.UpArrow, shift: true).Repeating().Grouped("cursor");
             InputManager.Register("cursor.down2", "Cursor: step south (secondary)", InputCategory.Exploration,
-                Ax.TileExplorer.StepSouth).AddBinding(KeyCode.DownArrow, shift: true).Repeating().Grouped("cursor");
+                Ax.TileExplorer.StepSouthSecondary).AddBinding(KeyCode.DownArrow, shift: true).Repeating().Grouped("cursor");
             InputManager.Register("cursor.left2", "Cursor: step west (secondary)", InputCategory.Exploration,
-                Ax.TileExplorer.StepWest).AddBinding(KeyCode.LeftArrow, shift: true).Repeating().Grouped("cursor");
+                Ax.TileExplorer.StepWestSecondary).AddBinding(KeyCode.LeftArrow, shift: true).Repeating().Grouped("cursor");
             InputManager.Register("cursor.right2", "Cursor: step east (secondary)", InputCategory.Exploration,
-                Ax.TileExplorer.StepEast).AddBinding(KeyCode.RightArrow, shift: true).Repeating().Grouped("cursor");
+                Ax.TileExplorer.StepEastSecondary).AddBinding(KeyCode.RightArrow, shift: true).Repeating().Grouped("cursor");
             InputManager.Register("cursor.recenter", "Cursor: recenter on party", InputCategory.Exploration,
                 Ax.TileExplorer.Recenter).AddBinding(KeyCode.C).Grouped("cursor");
             InputManager.Register("cursor.reannounce", "Cursor: re-announce tile", InputCategory.Exploration,

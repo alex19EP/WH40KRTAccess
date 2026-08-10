@@ -256,6 +256,11 @@ public static class Main {
         // the audio thread only reads the cached float). Cheap and harmless when the soundscape is off.
         Safe(() => Audio.AudioMixer.RefreshMaster(), "AudioMaster");
 
+        // Free-floating cursor glide (exploration.cursor_mode = free): move the shared cursor continuously along
+        // the held-arrow vector, traced on the game's own navmesh. Ticked BEFORE the audio systems below so
+        // sonar / fog / wall tones hear the current-frame position. See RTAccess.Exploration.CursorGlide.
+        Safe(() => Exploration.CursorGlide.Tick(dt), "CursorGlide");
+
         // Ambient sonar sweep: ping the perceivable things around the shared cursor with their recorded per-type
         // stems (the "feel the room" layer). Gated OFF by default (exploration.sonar); reads the current-frame
         // WorldModel registry above. See RTAccess.Exploration.Sonar.
@@ -264,6 +269,10 @@ public static class Main {
         // Fog-boundary cue: a brief tone as the shared cursor crosses the edge of the party's current sight
         // (into fog / back into view). ON by default; fog-gated so it's inherently visual-parity-safe. See FogCue.
         Safe(() => Exploration.FogCue.Tick(dt), "FogCue");
+
+        // Object enter/exit earcon + the free cursor's idle hover announce: blip footprint crossings under the
+        // moving cursor, speak what it rests inside once the keys release. See RTAccess.Exploration.ObjectCue.
+        Safe(() => Exploration.ObjectCue.Tick(), "ObjectCue");
 
         // Live-track every sonar ping still sounding: re-pan / re-attenuate it in 3D against the moving cursor +
         // the item's nearest edge until it drains, so a source follows you instead of freezing. See SpatialSources.

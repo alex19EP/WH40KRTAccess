@@ -48,10 +48,21 @@ internal static class TileExplorer
 
     // ---- registered handlers (InputCategory.Exploration; see InputBindings) ----
 
+    // Primary arrows: tile steps — but while the FREE cursor mode owns them (exploration.cursor_mode = free,
+    // outside combat/deployment) they yield to the per-frame glide (Exploration/CursorGlide), which polls the
+    // same actions' HELD state instead of these press handlers.
     public static void StepNorth() => Step(0, 1);   // +Z
     public static void StepSouth() => Step(0, -1);  // -Z
     public static void StepEast()  => Step(1, 0);   // +X
     public static void StepWest()  => Step(-1, 0);  // -X
+
+    // Secondary Shift+arrows: ALWAYS tile steps, in both cursor modes (WA's two-slot idiom — the precision
+    // slot). In free mode a secondary step snaps the glide point onto the grid by construction: Move() steps
+    // from the derived node and Set(node) clears the sub-tile point.
+    public static void StepNorthSecondary() => StepTile(0, 1);
+    public static void StepSouthSecondary() => StepTile(0, -1);
+    public static void StepEastSecondary()  => StepTile(1, 0);
+    public static void StepWestSecondary()  => StepTile(-1, 0);
 
     /// <summary>Re-read the cursor tile (planting on the party first if the cursor is cold).</summary>
     public static void ReAnnounce()
@@ -60,10 +71,17 @@ internal static class TileExplorer
         if (EnsurePlanted(out _)) Announce();
     }
 
-    /// <summary>Recenter the cursor on the anchor unit and read its tile.</summary>
+    /// <summary>Recenter the cursor on the anchor unit and read its tile. In free mode it lands on the anchor's
+    /// EXACT live position (the glide's sub-tile truth, WA's glide-Recenter), not the tile centre.</summary>
     public static void Recenter()
     {
         if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys; the primary cursor controls stand down
+        if (RTAccess.Exploration.CursorGlide.FreeModeActive && MapCursor.SetPoint(MapCursor.PlayerPosition))
+        {
+            ScrollTo(MapCursor.Position);
+            Announce();
+            return;
+        }
         var node = GetAnchor()?.CurrentUnwalkableNode;
         if (node == null) { Speaker.Speak(Loc.T("cursor.no_reference"), interrupt: true); return; }
         MapCursor.Set(node);
@@ -74,6 +92,12 @@ internal static class TileExplorer
     // ---- stepping ----
 
     private static void Step(int dx, int dz)
+    {
+        if (RTAccess.Exploration.CursorGlide.FreeModeActive) return;   // the glide owns the primary arrows
+        StepTile(dx, dz);
+    }
+
+    private static void StepTile(int dx, int dz)
     {
         if (!EnsurePlanted(out bool fresh)) return;
         if (fresh) { Announce(); return; }   // the first touch reads the planted tile; it doesn't also step
@@ -99,8 +123,9 @@ internal static class TileExplorer
     /// Plant the cursor on the anchor unit if it is unplanted. Returns false (and speaks) only when there is no
     /// anchor to plant on. <paramref name="fresh"/> is true when this call did the planting — callers read the tile
     /// instead of acting on that first press, so a cold key never walks the party onto its own tile.
+    /// Internal: the free-cursor glide's cold hold rides the same plant + read discipline.
     /// </summary>
-    private static bool EnsurePlanted(out bool fresh)
+    internal static bool EnsurePlanted(out bool fresh)
     {
         fresh = false;
         if (MapCursor.Has) return true;
@@ -185,7 +210,10 @@ internal static class TileExplorer
                 // once UnitCommandController / UnitMoveController resume, which sit out Pause. Refusing it here
                 // was ours, not the game's.
                 if (GetAnchor() == null) { Speaker.Speak(Loc.T("path.no_character"), interrupt: true); return; }
-                UnitCommandsRunner.MoveSelectedUnitsToPoint(node.Vector3Position);
+                // MapCursor.Position, not node.Vector3Position: identical in tile mode (the point IS the tile
+                // centre), and in free mode the party walks to the exact sub-tile point — real-time movement is
+                // continuous, so the raw point is the higher-fidelity destination.
+                UnitCommandsRunner.MoveSelectedUnitsToPoint(MapCursor.Position);
                 Speaker.Speak(MovingAnnounce(), interrupt: true);
             }
         }
@@ -201,10 +229,15 @@ internal static class TileExplorer
     /// </summary>
     public static void PlantOn(Vector3 worldPos)
     {
-        if (!MapCursor.Set(worldPos)) { Speaker.Speak(Loc.T("cursor.cant_place"), interrupt: true); return; }
+        // In free mode the plant keeps the EXACT point (the scanner's selection position), so the glide resumes
+        // from the thing itself rather than its tile centre; tile mode snaps to the node as always.
+        bool ok = RTAccess.Exploration.CursorGlide.FreeModeActive
+            ? MapCursor.SetPoint(worldPos)
+            : MapCursor.Set(worldPos);
+        if (!ok) { Speaker.Speak(Loc.T("cursor.cant_place"), interrupt: true); return; }
         var node = MapCursor.Node;
         if (node == null) { Speaker.Speak(Loc.T("cursor.no_reference"), interrupt: true); return; }
-        ScrollTo(node);
+        ScrollTo(MapCursor.Position);
         Announce();
     }
 
@@ -324,7 +357,8 @@ internal static class TileExplorer
     // ---- readout ----
 
     // Each step supersedes the previous, so interrupt — stepping fast naturally clips long lines at the headline.
-    private static void Announce() => Speaker.Speak(Describe(), interrupt: true);
+    // Internal: the glide's cold plant reads through the same line.
+    internal static void Announce() => Speaker.Speak(Describe(), interrupt: true);
 
     private static string Describe()
     {
@@ -356,10 +390,14 @@ internal static class TileExplorer
         return game?.SelectionCharacter?.SelectedUnit?.Value ?? game?.Player?.MainCharacterEntity;
     }
 
-    private static void ScrollTo(CustomGridNodeBase node)
+    private static void ScrollTo(CustomGridNodeBase node) => ScrollTo((Vector3)node.position);
+
+    // Internal: the free-cursor glide follows the camera through the same gate (a per-frame ScrollTo just
+    // retargets the rig's lerp — the same thing the game's own edge-scroll does).
+    internal static void ScrollTo(Vector3 pos)
     {
         if (!CameraFollow()) return;   // exploration.camera_follow gates the follow-cam; review cycles never reach here
-        try { CameraRig.Instance?.ScrollTo((Vector3)node.position); }
+        try { CameraRig.Instance?.ScrollTo(pos); }
         catch (Exception e) { Main.Log?.Error("TileExplorer.ScrollTo failed: " + e); }
     }
 

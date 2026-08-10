@@ -436,6 +436,13 @@
   "bind.scan.debugRooms": "Read room map stats (debug)",
 
   "exploration.camera_follow": "Camera follows cursor",
+  "exploration.cursor_mode": "Cursor movement",
+  "exploration.cursor_mode.tiled": "Tile stepping",
+  "exploration.cursor_mode.free": "Free glide",
+  "exploration.cursor_speed": "Glide speed (meters per second)",
+  "exploration.object_cue": "Object enter/exit cue",
+  "exploration.object_cue_volume": "Object cue volume",
+  "exploration.hover_announce": "Announce hover when idle",
   "exploration.sonar": "Sonar",
   "exploration.sonar_volume": "Sonar volume",
   "exploration.sonar_rest": "Sonar rest between sweeps (ms)",
