@@ -213,7 +213,15 @@ public static class Main {
         }
     }
 
-    private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt) {
+    // NOTE the parameter is deliberately unused: UMM hands us Time.deltaTime (UnityModManager.cs:1894),
+    // and the game zeroes Time.timeScale while paused (Kingmaker.Controllers.TimeController), so a scaled
+    // delta freezes every per-frame consumer below the moment the player hits pause. All four of them —
+    // the gliding cursor and the sonar / fog / wall-tone bed that describes where it is — are accessibility
+    // feedback, and surveying a paused world is exactly when a blind player leans on them hardest. So the
+    // mod runs on UNSCALED time: the cursor keeps gliding and the bed keeps sounding while the world holds
+    // still. This also keeps the audio bed honest under slow-motion, which scales the same clock.
+    private static void OnUpdate(UnityModManager.ModEntry modEntry, float scaledDt) {
+        float dt = Time.unscaledDeltaTime;
 #if DEBUG
         // Run any queued /eval jobs on the main thread before our own per-frame work (dev harness).
         Safe(() => RTAccess.Dev.DevServer.Instance.Pump(), "DevServer.Pump");
