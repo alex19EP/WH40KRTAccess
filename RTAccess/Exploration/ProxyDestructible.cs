@@ -1,5 +1,6 @@
 using Kingmaker.EntitySystem.Entities; // DestructibleEntity, MechanicEntity
 using Kingmaker.Enums;                 // DestructionStage
+using RTAccess.Accessibility;          // InteractableDescriber.DevSuffix (the shared dev-names suffix)
 using UnityEngine;
 
 namespace RTAccess.Exploration;
@@ -84,7 +85,9 @@ internal sealed class ProxyDestructible : ScanItem
     public override bool CurrentlySeen => IsVisible && !_d.IsInFogOfWar;
 
     // The game's own localized entity name (description part → blueprint). Covers/props can be nameless —
-    // fall back to the generic object word rather than reading silence.
+    // fall back to the generic object word rather than reading silence. The dev-name suffix rides along when
+    // exploration.dev_names is on: destructibles need it more than any other kind, since a whole area's barrels,
+    // branches and cover props answer to one shared blueprint name, and only the scene object tells them apart.
     public override string Name
     {
         get
@@ -92,7 +95,9 @@ internal sealed class ProxyDestructible : ScanItem
             try
             {
                 var name = _d.Name;
-                return string.IsNullOrWhiteSpace(name) ? Loc.T("scan.singular.object") : name;
+                if (string.IsNullOrWhiteSpace(name)) name = Loc.T("scan.singular.object");
+                var dev = InteractableDescriber.DevSuffix(_d.View, name);
+                return string.IsNullOrEmpty(dev) ? name : name + " " + dev;
             }
             catch { return Loc.T("scan.singular.object"); }
         }
