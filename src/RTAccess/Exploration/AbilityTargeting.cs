@@ -40,7 +40,7 @@ internal sealed class AbilityTargeting
         if (!h.OnClick(go, point, 0)) return; // refused → the game spoke the reason; nothing to add
 
         bool moreTargets = h.Ability != null; // still armed → a multi-target ability wants the next target
-        var name = target is BaseUnitEntity u ? u.CharacterName : target?.Name;
+        var name = target is BaseUnitEntity u ? Accessibility.UnitNames.Of(u) : target?.Name;
         if (moreTargets) Speaker.Speak(MultiTargetProgress(h), interrupt: true);
         else if (!string.IsNullOrWhiteSpace(name)) Speaker.Speak(Loc.T("aim.firing_on", new { name }), interrupt: true);
         else Speaker.Speak(Loc.T("aim.ability_used"), interrupt: true);

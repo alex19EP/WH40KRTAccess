@@ -170,6 +170,14 @@ internal sealed class ProxyMapObject : ScanItem
                             var checkInfo = InteractableDescriber.CheckInfo(part);
                             if (!string.IsNullOrWhiteSpace(checkInfo)) bits.Add(checkInfo);
                             break;
+                        // A ladder/stairs: its node link joins two floors, and the object itself usually stands
+                        // at the FOOT — its own distance can read "0 tiles" while the useful end is a level away.
+                        // Say where it goes ("leads up 4 metres"); which end is the destination is judged from
+                        // the player's own footing, like the trap-link readout below.
+                        case InteractionStairsPart stairs when part.Enabled:
+                            var lead = StairsLead(stairs);
+                            if (lead != null) bits.Add(lead);
+                            break;
                     }
                 }
                 catch { /* per-part best-effort */ }
@@ -214,6 +222,23 @@ internal sealed class ProxyMapObject : ScanItem
 
             return bits.Count > 0 ? string.Join(", ", bits) : null;
         }
+    }
+
+    // "leads up 4 metres" — the stairs' destination relative to the PLAYER's footing: of the node link's two
+    // ends, the one farther from the player's height is where using it lands you. Ends can be unresolved
+    // before the graph scan settles, and a link within LevelThreshold (a ramp) says nothing.
+    private static string StairsLead(InteractionStairsPart stairs)
+    {
+        var link = stairs.Settings?.NodeLink;
+        var s = link?.StartNode;
+        var e = link?.EndNode;
+        if (s == null || e == null) return null;
+        var player = MapCursor.PlayerPosition;
+        var sp = (UnityEngine.Vector3)s.Vector3Position;
+        var ep = (UnityEngine.Vector3)e.Vector3Position;
+        var dest = Math.Abs(sp.y - player.y) >= Math.Abs(ep.y - player.y) ? sp : ep;
+        var vertical = Geo.Vertical(player, dest);
+        return vertical == null ? null : Loc.T("object.leads", new { vertical });
     }
 
     // The container kind as a terse word, mirroring the game's own LootContainerType. DefaultLoot adds nothing (a
@@ -321,6 +346,22 @@ internal sealed class ProxyMapObject : ScanItem
 
         var view = _obj.View;
         if (view == null) return false;
+
+        // Turn-based guard for stairs/ladders: clicking an InteractionStairsPart in combat is broken IN THE
+        // GAME — the click passes every gate, spends 2 action points, stamps the object's once-per-round
+        // marker, then UnitCommandsRunner.MoveSelectedUnitsToPointRT throws ("Not expecting to be in TBM
+        // mode here") and nothing moves. The ladder's node link IS part of the combat movement graph (the
+        // reachable set crosses it), so the accessible answer is a move, not a click. Refuse aloud BEFORE
+        // the game eats the action points.
+        if (Game.Instance?.TurnController?.TurnBasedModeActive == true)
+        {
+            foreach (var p in _obj.Interactions)
+                if (p is InteractionStairsPart && p.Enabled)
+                {
+                    RTAccess.Speech.Speaker.Speak(Loc.T("stairs.combat_move"), interrupt: true);
+                    return true;
+                }
+        }
 
         // A locked/variative object offers a CHOICE of actor (a skill check vs Tech-Use vs a Key vs a Melta charge
         // vs Destroy, each with its own success chance). The static ClickMapObjectHandler.Interact below would

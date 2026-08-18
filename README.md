@@ -254,7 +254,9 @@ selection again, and **Home** or **/** to jump the tile cursor to it.
 
 You can also cycle quickly through nearby things: **.** enemies, **,** party, **N** neutrals,
 **M** interactable objects, **V** the current room's exits (hold **Shift** on any of these to go
-backwards). Press **X** for "where am I" (area, the room you're in, and whether the spot is still
+backwards). When several units share a name, each gets a stable number — "Cultist 1", "Cultist 2" —
+kept for the whole area, so the same number always means the same individual in every readout
+(scanner, aim, initiative, buffers). Press **X** for "where am I" (area, the room you're in, and whether the spot is still
 unexplored), **U** for a battlefield summary, and **'** / **Y** to inspect the cursor's occupant or
 the scanner selection in full.
 
@@ -264,6 +266,13 @@ Buffers let you read a character's details line by line without leaving what you
 **Alt+Left / Right** to switch buffer and **Alt+Up / Down** to move through its lines — name, hit
 points, defenses, then every buff and debuff. On a buff line, **Alt+T** opens the game's own tooltip
 for it (the full description, and which sources are overriding it when a bonus doesn't stack).
+
+There are three buffers: the **selected unit** (whoever you've selected — inside Inventory or the
+character sheet, the character the window is showing), the current combat **target**, and the
+**reviewed unit** — whatever unit the scanner cursor is on. The reviewed-unit buffer is how you read
+*anyone*, friend or enemy: cycle to them with **,** / **.** and step through their buffer. It's also
+the way to read another party member during combat, where the game locks character switching to the
+acting unit.
 
 ### Spatial audio
 
@@ -284,7 +293,8 @@ soundscape is too much, set both to **Off** there or with the keys above.
 Press **Ctrl+A** to select the whole party or **Alt+1**–**Alt+6** for a single member; **Shift+A /
 Shift+D** step through members. **H** holds position and **G** stops. **P** reads the party and
 **K** reads the RT-specific gauges — momentum, the veil, profit factor, and any turn or objective
-timers.
+timers. During turn-based combat the game locks character switching to the acting unit — the mod
+says so if you try; use the reviewed-unit buffer to read the others.
 
 In **turn-based combat** you'll hear whose turn it is; press **R** at any time for a status readout
 (actions and movement remaining) and **Z** for how far the acting unit can move this turn. Move the
@@ -296,6 +306,13 @@ Moving in combat is a **two-step preview**, the same one a sighted player gets. 
 provokes — and every readout from then on answers *from that planned tile*, so you can cycle enemies
 and check cover before deciding. A second **Backspace** on the same tile commits it; **Escape**
 cancels. The plan doesn't expire, so take as long as you like between the two presses.
+
+You don't have to hunt for the right tile by hand: in combat, press **I** on anything you've cycled
+to — an enemy, a chest, a ladder — and the acting unit plants an **approach**: the move preview lands
+on the reachable tile closest to it (you hear where it stops and what it costs); press **I** again to
+go. This follows ladders automatically — the movement range already continues across them — which is
+also why a ladder itself isn't clickable during combat: you cross it by moving, and the mod says so
+if you try.
 
 During pre-combat **deployment**, place characters with the cursor and press **Space** to start the
 battle.

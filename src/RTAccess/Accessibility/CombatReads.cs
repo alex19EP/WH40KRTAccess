@@ -213,7 +213,7 @@ internal static class CombatReads
                 string line;
                 if (cover == LosCalculations.CoverType.Invisible)
                 {
-                    line = Loc.T("vantage.los_line_hidden", new { name = u.CharacterName, tiles, tileword });
+                    line = Loc.T("vantage.los_line_hidden", new { name = UnitNames.Of(u), tiles, tileword });
                 }
                 else
                 {
@@ -222,8 +222,8 @@ internal static class CombatReads
                         : Loc.T("cover.none");
                     int pct = LosHitChance(me, u);
                     line = pct > 0
-                        ? Loc.T("vantage.los_line", new { name = u.CharacterName, tiles, tileword, pct, cover = coverWord })
-                        : Loc.T("vantage.los_line_nopct", new { name = u.CharacterName, tiles, tileword, cover = coverWord });
+                        ? Loc.T("vantage.los_line", new { name = UnitNames.Of(u), tiles, tileword, pct, cover = coverWord })
+                        : Loc.T("vantage.los_line_nopct", new { name = UnitNames.Of(u), tiles, tileword, cover = coverWord });
                 }
                 if (sb.Length > 0) sb.Append(". ");
                 sb.Append(line);
@@ -285,7 +285,7 @@ internal static class CombatReads
                 : Loc.T("cover.none");
 
             var sb = new System.Text.StringBuilder();
-            sb.Append(Loc.T("vantage.cover_from", new { cover = coverWord, name = nearest.CharacterName }));
+            sb.Append(Loc.T("vantage.cover_from", new { cover = coverWord, name = UnitNames.Of(nearest) }));
             sb.Append(", ").Append(Loc.T("vantage.in_range", new { count = inRange }));
             if (threats > 0) sb.Append(", ").Append(Loc.T("vantage.threatened", new { count = threats }));
             return sb.ToString();

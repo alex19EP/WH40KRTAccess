@@ -163,7 +163,7 @@ internal sealed class CombatEvents
     // ("Your turn, X, movement 11, normal speed"); the Phase-0 transcript's "0 AP" was pure noise.
     private static string TurnCue(Kingmaker.Controllers.TurnBased.TurnController tc, MechanicEntity cur)
     {
-        string name = (cur as AbstractUnitEntity)?.CharacterName ?? cur.Name;
+        string name = UnitNames.Of(cur as AbstractUnitEntity) ?? cur.Name;
         if (tc.IsPlayerTurn)
         {
             var cs = (cur as BaseUnitEntity)?.GetCombatStateOptional();

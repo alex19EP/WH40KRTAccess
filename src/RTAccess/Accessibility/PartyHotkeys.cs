@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using Kingmaker;
+using Kingmaker.Controllers;       // SelectionCharacterController.CanSelectUnit (the TB selection lock)
 using Kingmaker.EntitySystem.Entities;
-using Kingmaker.UI.Selection;      // SelectionManagerBase (SelectAll / Hold / Stop)
+using Kingmaker.UI.Selection;      // SelectionManagerBase (SelectAll / Hold / Stop / SelectUnit)
 using RTAccess.Speech;
 
 namespace RTAccess.Accessibility;
@@ -82,15 +83,38 @@ internal static class PartyHotkeys
         Select(list[index]);
     }
 
-    private static void Select(BaseUnitEntity unit)
+    /// <summary>The one world-selection switch (Alt+1..6 / Shift+A/D steps, and the HUD party rows'
+    /// Enter — see InGameScreen.Select): TB-locked with a spoken refusal, physical-Shift-proof, and
+    /// announced only when the switch actually happened.</summary>
+    internal static void Select(BaseUnitEntity unit)
     {
         if (unit == null) return;
         try
         {
-            Game.Instance.SelectionCharacter.SetSelected(unit);
-            // Route the confirmation through the one selection-announce path (force → always speaks, and marks the
-            // unit so the per-frame poll doesn't echo it). See SelectionAnnouncer.
-            SelectionAnnouncer.Announce(unit, force: true);
+            // In turn-based combat (outside the preparation turn) the game hard-refuses selection changes:
+            // SwitchSelectionUnitInGroup early-returns on !CanSelectUnit and the turn machinery force-selects
+            // the acting unit anyway. Speak the refusal — the old code announced the requested name after a
+            // silent no-op, claiming a switch that never happened. (To READ another character in combat, aim
+            // the scanner at them and use the reviewed-unit buffer.)
+            if (!SelectionCharacterController.CanSelectUnit)
+            {
+                Speaker.Speak(Loc.T("party.locked_combat"), interrupt: true);
+                return;
+            }
+            // The game's own selector one level below SetSelected. SetSelected → SwitchSelectionUnitInGroup
+            // sniffs the PHYSICAL Shift key for its multi-select toggle branch, and our member chords are
+            // Shift+A/D — through SetSelected a held Shift TOGGLES the unit's membership (peeling members off
+            // the selection) instead of switching to it. SelectUnit(single: true) is exactly the branch that
+            // call takes with Shift up.
+            SelectionManagerBase.Instance?.SelectUnit(unit.View, single: true);
+            // Announce only a switch that actually took (SelectUnit updates SelectedUnit synchronously) —
+            // the confirmation rides the one selection-announce path (force → always speaks, and marks the
+            // unit so the per-frame poll doesn't echo it). A refused unit (capital-party companion, no
+            // selection manager) gets the game's "can't be commanded" line instead of a false confirm.
+            if (Game.Instance.SelectionCharacter?.SelectedUnit?.Value == unit)
+                SelectionAnnouncer.Announce(unit, force: true);
+            else
+                Speaker.Speak(Loc.T("party.not_commandable", new { name = unit.CharacterName }), interrupt: true);
         }
         catch (Exception e)
         {

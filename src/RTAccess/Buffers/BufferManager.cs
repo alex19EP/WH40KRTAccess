@@ -8,9 +8,9 @@ namespace RTAccess.Buffers;
 /// <summary>
 /// The ring of <see cref="Buffer"/>s and the current position within it. Alt+Left/Right cycle between enabled
 /// buffers (skipping disabled ones, wrapping); Alt+Up/Down move within the current buffer. Ported from
-/// WrathAccess. v1 ships two unit buffers — the selected unit and the current combat target — both always
-/// enabled. The resolvers read the live unit from the game each refresh, so a buffer always reflects the
-/// current selection / target without an explicit re-bind.
+/// WrathAccess. Ships three unit buffers — the selected unit, the current combat target, and the scanner's
+/// reviewed unit — all always enabled. The resolvers read the live unit from the game each refresh, so a
+/// buffer always reflects the current selection / target / review without an explicit re-bind.
 /// </summary>
 internal sealed class BufferManager
 {
@@ -58,28 +58,41 @@ internal sealed class BufferManager
         return false;
     }
 
-    /// <summary>Build the standard buffer set (once, at boot). The two unit buffers read their live unit from
-    /// the game each refresh: the selected unit (the game's real single selection) and the current combat
-    /// target. Leaves <c>_position</c> at -1 so the first Alt+Left/Right ENTERS a buffer and reads its first
-    /// line (the unit name), then Alt+Up/Down advance from there (the SayTheSpire buffer convention).</summary>
+    /// <summary>Build the standard buffer set (once, at boot). The three unit buffers read their live unit
+    /// from the game each refresh: the selected unit (the game's real single selection), the current combat
+    /// target, and the scanner's reviewed unit (aim the review cursor at anyone — the WrathAccess third
+    /// channel, and the one that works in turn-based combat where the game locks the selection). Leaves
+    /// <c>_position</c> at -1 so the first Alt+Left/Right ENTERS a buffer and reads its first line (the unit
+    /// name), then Alt+Up/Down advance from there (the SayTheSpire buffer convention).</summary>
     public void RegisterDefaults()
     {
         if (_buffers.Count > 0) return;
         // Labels resolve now (RegisterDefaults runs after LocalizationManager.Initialize; see Main). A
-        // mid-session language change won't retranslate these two boot-time labels — an accepted edge case.
+        // mid-session language change won't retranslate these boot-time labels — an accepted edge case.
         Add(new UnitBuffer(Loc.T("buffer.selected_unit"), SelectedUnit));
         Add(new UnitBuffer(Loc.T("buffer.target"), TargetUnit));
+        Add(new UnitBuffer(Loc.T("buffer.reviewed"), ReviewedUnit));
         foreach (var b in _buffers) b.Enabled = true;
     }
 
-    // The game's current single selection. Mirrors RTAccess PartyHotkeys.Current(): the real selection, then
-    // the UI selection, then the first of the multi-select. Null when nothing's selected or out of game.
+    // The unit whose data the player is currently LOOKING AT. Inside a member-switching service window
+    // (Inventory / Character Info / Augmentations) that's the window's viewed character: SetSelected only
+    // retargets SelectedUnitInUI there (the world selection stays put — see ViewedCharacter.SwitchMember),
+    // so with the old world-selection-first order a Shift+A/D switch never moved this buffer. Outside those
+    // windows: the real selection, then the first of the multi-select. Null when out of game.
     private static BaseUnitEntity SelectedUnit()
     {
         var s = Game.Instance?.SelectionCharacter;
         if (s == null) return null;
+        if (RTAccess.Accessibility.ViewedCharacter.WindowActive)
+            return s.SelectedUnitInUI.Value ?? s.SelectedUnit.Value ?? s.FirstSelectedUnit;
         return s.SelectedUnit.Value ?? s.SelectedUnitInUI.Value ?? s.FirstSelectedUnit;
     }
+
+    // The scanner review selection, when it's a unit — party or enemy alike. Selection-driven with no
+    // dependency on the game's unit selection, so it keeps working in turn-based combat where CanSelectUnit
+    // locks the party selection. UnitBuffer.Populate fog-gates whatever this returns.
+    private static BaseUnitEntity ReviewedUnit() => RTAccess.Exploration.Scanner.SelectedUnit();
 
     // The selected unit's manual combat target if it has one; otherwise the unit whose turn it currently is.
     // A manual target that has since slipped into fog is ignored: the game drops its overtip entirely, so reading

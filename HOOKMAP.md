@@ -470,7 +470,9 @@ but if you read fields immediately, prefer the VM, or hook `UpdateView`.
   `IUnitSpentActionPoints` / `IUnitSpentMovementPoints`.
 - HP — `Kingmaker.UnitLogic.Parts.PartHealth` (`MechanicEntity.Health`):
   `int HitPointsLeft` (122), `int MaxHitPoints` (124), `int Damage`,
-  `int TemporaryHitPoints`; wounds `WoundFreshStacks`/`WoundOldStacks`/`TraumaStacks`.
+  `int TemporaryHitPoints`; injuries `WoundFreshStacks`/`WoundOldStacks` (NO trauma counter on
+  PartHealth — the trauma count is `unit.Buffs.Get(Root.WH.BlueprintTraumaRoot.Trauma)?.Rank ?? 0`,
+  and each rank grants one named trauma buff via `AddRandomUniqueFactOnEachRank`).
   Mutators `SetDamage(int)` / `DealDamage(int)` / `HealDamage(int)`. **No HP-changed EventBus
   interface found** — patch `SetDamage` (postfix) or poll on turn/command events.
 - Conditions — `Kingmaker.UnitLogic.PartUnitState` (`BaseUnitEntity.State`):

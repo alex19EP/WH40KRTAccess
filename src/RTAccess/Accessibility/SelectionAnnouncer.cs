@@ -44,7 +44,7 @@ namespace RTAccess.Accessibility
             // Interrupt ONLY for an explicit selector press (force) — that's a keypress the player expects instant
             // feedback for. A polled/game-driven change (force=false: unit death, area load, combat auto-reselect)
             // is automatic, so it QUEUES behind passive lines rather than purging them ([[rt-interrupt-speech-rule]]).
-            Speaker.Speak(unit.CharacterName, interrupt: force);
+            Speaker.Speak(UnitNames.Of(unit), interrupt: force);
         }
     }
 }

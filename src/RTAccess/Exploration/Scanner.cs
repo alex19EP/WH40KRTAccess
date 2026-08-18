@@ -250,7 +250,50 @@ internal static class Scanner
         }
         if (origin is Vector3 o && Activation.TryCursorObject(o)) return;
 
+        // 3) Turn-based combat: a selection with nothing to click is still a DESTINATION. I on a cycled enemy
+        //    (or any distant thing) plants the game's own move preview on the acting unit's best reachable tile
+        //    toward it — the auto-approach for "the enemy is on another level and finding a route by hand is
+        //    tedious" — and a second press commits, exactly the Backspace two-step. The reachable set already
+        //    crosses ladder node links, so a floor change inside movement range needs no ladder-hunting.
+        if (sel != null && Game.Instance?.TurnController?.TurnBasedModeActive == true)
+        {
+            ApproachInCombat(sel.Position, sel.Name);
+            return;
+        }
+
         Speak(Loc.T("scan.nothing_nearby"));
+    }
+
+    /// <summary>Plant/commit the acting unit's approach toward <paramref name="target"/> — the reachable tile
+    /// this turn that lands closest to it (<see cref="PathInfo.FindApproachNode"/>), driven through the game's
+    /// own two-press TB move flow (<see cref="RTAccess.Combat.CommandDispatch.MoveStep"/>): first press plants
+    /// the holo preview and speaks where it stops (short distance, cost, provokes), the second press commits.
+    /// All refusals are spoken (guards by <see cref="RTAccess.Combat.CommandDispatch.ActingUnit"/> /
+    /// <c>MoveStep</c>). Starships keep the plain refusal — their inertial ShipPath movement has no
+    /// "nearest tile" notion (see ShipPathInfo).</summary>
+    private static void ApproachInCombat(Vector3 target, string label)
+    {
+        var unit = RTAccess.Combat.CommandDispatch.ActingUnit();
+        if (unit == null) return; // refusal spoken (not player turn / wrong selection)
+        if (unit is StarshipEntity) { Speak(Loc.T("travel.combat")); return; }
+
+        var best = PathInfo.FindApproachNode(unit, target, out int shortTiles, out bool alreadyClosest);
+        if (best == null) { Speak(Loc.T("path.preview.out_of_movement")); return; }
+        if (alreadyClosest) { Speak(Loc.T("approach.no_closer", new { dest = label })); return; }
+
+        var r = RTAccess.Combat.CommandDispatch.MoveStep(best);
+        if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Committed)
+        {
+            Speak(Loc.T("path.moving"));
+        }
+        else if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Planted)
+        {
+            string lead = shortTiles <= 1
+                ? Loc.T("approach.reaches", new { dest = label })
+                : Loc.T("approach.short", new { dest = label, tiles = shortTiles });
+            Speak(lead + " " + PathInfo.Preview(unit, best, out _) + " " + Loc.T("path.preview.press_again"));
+        }
+        // Refused: MoveStep already spoke the engine's reason.
     }
 
     /// <summary>
@@ -299,7 +342,15 @@ internal static class Scanner
     /// surfaces behave identically.</summary>
     internal static void TravelToPoint(Vector3 target, string label)
     {
-        if (Game.Instance?.Player?.IsInCombat == true) { Speak(Loc.T("travel.combat")); return; }
+        if (Game.Instance?.Player?.IsInCombat == true)
+        {
+            // In turn-based combat the long walk becomes an APPROACH: the acting unit's best reachable tile
+            // toward the target, through the game's own two-press move preview. Any non-TB combat edge keeps
+            // the old refusal.
+            if (Game.Instance.TurnController.TurnBasedModeActive) ApproachInCombat(target, label);
+            else Speak(Loc.T("travel.combat"));
+            return;
+        }
         var self = Anchor();
         if (self == null) { Speak(Loc.T("status.no_selection")); return; }
 
@@ -529,7 +580,7 @@ internal static class Scanner
             if (member == null) continue;
             // Tag a downed/dead companion so the roster doesn't read them as a healthy member — the Party review cycle
             // (comma) now skips the dead entirely, but this roster still lists everyone, so it must say who is down.
-            var line = member.CharacterName;
+            var line = Accessibility.UnitNames.Of(member);
             if (member.LifeState.IsDead) line += ", " + Loc.T("unit.dead");
             else if (!member.LifeState.IsConscious) line += ", " + Loc.T("unit.unconscious");
             parts.Add(line + ", " + InteractableDescriber.DirectionAndDistance(refPos, member.Position));

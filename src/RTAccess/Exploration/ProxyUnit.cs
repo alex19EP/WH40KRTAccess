@@ -30,7 +30,9 @@ internal sealed class ProxyUnit : ScanItem
 
     public override object Key => _unit;
 
-    public override string Name => _unit.CharacterName;
+    // The spoken identity — ordinal-disambiguated when several units share a display name ("Cultist 2");
+    // see Accessibility.UnitNames. Covers every scanner surface (browse, cycles, exits, local map, cues).
+    public override string Name => Accessibility.UnitNames.Of(_unit);
 
     public override Vector3 Position => _unit.Position;
 

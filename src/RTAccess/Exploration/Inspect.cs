@@ -51,7 +51,7 @@ internal static class Inspect
         // scripted-hidden — all folded into IsVisibleForPlayer via View.IsVisible) must read as an empty tile,
         // and its NAME must not leak either — so answer exactly like a null occupant, not with inspect.cant.
         if (!(unit.IsPlayerFaction || unit.IsVisibleForPlayer)) { Speak(Loc.T("inspect.none")); return; }
-        if (!InspectUnitsHelper.IsInspectAllow(unit)) { Speak(Loc.T("inspect.cant", new { name = unit.CharacterName })); return; }
+        if (!InspectUnitsHelper.IsInspectAllow(unit)) { Speak(Loc.T("inspect.cant", new { name = Accessibility.UnitNames.Of(unit) })); return; }
 
         // Drive the game's own inspect. This is the only handler of the event (InspectVM), so the sole effects are
         // building the inspect template on the live VM and showing the visual panel — no selection or camera move.
@@ -59,7 +59,7 @@ internal static class Inspect
 
         // OnUnitInvoke set Tooltip.Value synchronously (surface path), so the template is ready to read now.
         var text = ReadInspect();
-        Speak(string.IsNullOrWhiteSpace(text) ? (unit.CharacterName + ", " + Faction(unit)) : text);
+        Speak(string.IsNullOrWhiteSpace(text) ? (Accessibility.UnitNames.Of(unit) + ", " + Faction(unit)) : text);
     }
 
     /// <summary>The inspect template the live <c>InGameInspectVM</c> just built, rendered to text.</summary>

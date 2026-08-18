@@ -435,7 +435,7 @@ namespace RTAccess.Screens
             try
             {
                 if (unit == null) return "";
-                var sb = new StringBuilder(unit.CharacterName);
+                var sb = new StringBuilder(RTAccess.Accessibility.UnitNames.Of(unit));
                 AppendWounds(sb, unit);
                 if (Game.Instance?.SelectionCharacter?.SelectedUnit?.Value == unit) sb.Append(", ").Append(Loc.T("unit.selected"));
                 return sb.ToString();
@@ -443,17 +443,13 @@ namespace RTAccess.Screens
             catch (Exception e) { Main.Log?.Error("InGameScreen.PartyLabel: " + e); return ""; }
         }
 
+        // The party rows share PartyHotkeys' selection path: the raw SetSelected call this used to make is a
+        // silent no-op in turn-based combat (the game locks selection to the acting unit) yet the announce
+        // still claimed the switch, and a held physical Shift routes SetSelected into the multi-select
+        // TOGGLE branch. PartyHotkeys.Select handles all of it (TB spoken refusal, SelectUnit(single:true),
+        // announce-on-success).
         private static void Select(BaseUnitEntity unit)
-        {
-            if (unit == null) return;
-            try
-            {
-                Game.Instance.SelectionCharacter.SetSelected(unit);
-                // One selection-announce path (force → always speaks + marks the unit so the poll won't echo it).
-                RTAccess.Accessibility.SelectionAnnouncer.Announce(unit, force: true);
-            }
-            catch (Exception e) { Main.Log?.Error("InGameScreen.Select failed: " + e); }
-        }
+            => RTAccess.Accessibility.PartyHotkeys.Select(unit);
 
         // ---- Status line ----
 
@@ -468,7 +464,7 @@ namespace RTAccess.Screens
                 var unit = SelectedUnit();
                 if (unit == null) return Loc.T("status.no_selection");
 
-                var sb = new StringBuilder(unit.CharacterName);
+                var sb = new StringBuilder(RTAccess.Accessibility.UnitNames.Of(unit));
                 AppendWounds(sb, unit);
 
                 if (game.TurnController.TurnBasedModeActive)
@@ -636,7 +632,7 @@ namespace RTAccess.Screens
         }
 
         private static string NameOf(MechanicEntity e)
-            => (e as AbstractUnitEntity)?.CharacterName ?? e?.Name;
+            => RTAccess.Accessibility.UnitNames.Of(e as AbstractUnitEntity) ?? e?.Name;
 
         private static SurfaceStaticPartVM StaticPart() => Game.Instance?.RootUiContext?.SurfaceVM?.StaticPartVM;
         private static SurfaceHUDVM SurfaceHUD() => StaticPart()?.SurfaceHUDVM;

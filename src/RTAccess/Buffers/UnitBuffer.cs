@@ -32,7 +32,7 @@ internal sealed class UnitBuffer : Buffer
     private void Populate(BaseUnitEntity unit)
     {
         if (unit == null) return;
-        Add(unit.CharacterName);
+        Add(RTAccess.Accessibility.UnitNames.Of(unit));
 
         // Fog gate (RULE 2 / audit L1): a not-yet-revealed, non-party unit has its ENTIRE overtip hidden by the
         // game (OvertipEntityUnitVM.HideFromScreen) — HP, defenses AND buffs. Never read any of them here. The

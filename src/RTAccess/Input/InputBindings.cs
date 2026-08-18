@@ -29,18 +29,18 @@ namespace RTAccess.Input
             // focused; the handlers stand down out of a game. Alt+arrows don't collide with the bare-arrow UI
             // nav (exact-modifier match) or PartyHotkeys' Alt+digits. See RTAccess.Buffers.
             InputManager.Register("buffer.prev", "Previous review buffer", InputCategory.Global,
-                () => { if (InAGame()) RTAccess.Buffers.BufferControls.PrevBuffer(); }).AddBinding(KeyCode.LeftArrow, alt: true).Repeating();
+                () => { if (InAGame()) RTAccess.Buffers.BufferControls.PrevBuffer(); }).AddBinding(KeyCode.LeftArrow, alt: true).Repeating().Grouped("buffers");
             InputManager.Register("buffer.next", "Next review buffer", InputCategory.Global,
-                () => { if (InAGame()) RTAccess.Buffers.BufferControls.NextBuffer(); }).AddBinding(KeyCode.RightArrow, alt: true).Repeating();
+                () => { if (InAGame()) RTAccess.Buffers.BufferControls.NextBuffer(); }).AddBinding(KeyCode.RightArrow, alt: true).Repeating().Grouped("buffers");
             InputManager.Register("buffer.line_prev", "Previous review line", InputCategory.Global,
-                () => { if (InAGame()) RTAccess.Buffers.BufferControls.PrevItem(); }).AddBinding(KeyCode.UpArrow, alt: true).Repeating();
+                () => { if (InAGame()) RTAccess.Buffers.BufferControls.PrevItem(); }).AddBinding(KeyCode.UpArrow, alt: true).Repeating().Grouped("buffers");
             InputManager.Register("buffer.line_next", "Next review line", InputCategory.Global,
-                () => { if (InAGame()) RTAccess.Buffers.BufferControls.NextItem(); }).AddBinding(KeyCode.DownArrow, alt: true).Repeating();
+                () => { if (InAGame()) RTAccess.Buffers.BufferControls.NextItem(); }).AddBinding(KeyCode.DownArrow, alt: true).Repeating().Grouped("buffers");
             // Alt+T ("tooltip") — the current review line's detail via the game's own tooltip template (a
             // buff's description / non-stack sources). Alt+Space and Alt+Enter are OS-claimed on Windows
             // (system menu / display toggle), so the mnemonic letter is the safe chord in the Alt layer.
             InputManager.Register("buffer.detail", "Read details of the current review line", InputCategory.Global,
-                () => { if (InAGame()) RTAccess.Buffers.BufferControls.Detail(); }).AddBinding(KeyCode.T, alt: true);
+                () => { if (InAGame()) RTAccess.Buffers.BufferControls.Detail(); }).AddBinding(KeyCode.T, alt: true).Grouped("buffers");
 
             // ---- Formation editor field (Formation category — live ONLY while FormationScreen's WASD
             // field is the focused Tab stop, see FormationScreen.InputCategories; ranked above Global there,

@@ -60,7 +60,7 @@ internal static class DeploymentMode
         if (!MapCursor.Has) { Speaker.Speak(Loc.T("deploy.move_cursor_first"), interrupt: true); return; }
         var unit = Selected();
         if (RTAccess.Combat.CommandDispatch.Deploy(MapCursor.Node))
-            Speaker.Speak(Loc.T("deploy.placed", new { name = unit?.CharacterName ?? "" }), interrupt: true);
+            Speaker.Speak(Loc.T("deploy.placed", new { name = Accessibility.UnitNames.Of(unit) ?? "" }), interrupt: true);
     }
 
     /// <summary>Space, while deploying: start the battle, or say why it can't start yet. Space IS the game's own

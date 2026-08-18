@@ -210,7 +210,7 @@ public static class HitPredictor
                     && !pierced.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
                     && d.MaxDamage >= pierced.Health.HitPointsLeft + pierced.Health.TemporaryHitPoints;
                 parts.Add(Loc.T(kill ? "predict.pierce_kill" : "predict.pierce",
-                    new { name = pierced.CharacterName, hit = h, min = d.MinDamage, max = d.MaxDamage }));
+                    new { name = UnitNames.Of(pierced), hit = h, min = d.MinDamage, max = d.MaxDamage }));
             }
             if (parts.Count == 0) return null;
             return Loc.T("predict.pierces", new { count = parts.Count, list = string.Join("; ", parts) });

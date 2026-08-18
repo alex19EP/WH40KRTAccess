@@ -6,6 +6,7 @@ using Kingmaker;                                         // Game
 using Kingmaker.EntitySystem.Entities;                  // BaseUnitEntity
 using Kingmaker.UI.Pointer.AbilityTarget;               // AbilityRange, AbilitySingleTargetRange, AbilityPatternRange
 using Kingmaker.UnitLogic.Abilities;                    // AbilityData, AbilityTargetUIData
+using RTAccess.Accessibility;                           // UnitNames (ordinal-disambiguated spoken names)
 using RTAccess.Exploration;                             // MapCursor, CursorTarget, Targeting
 using UnityEngine;                                      // Vector3, Mathf, FindObjectsByType
 
@@ -85,7 +86,7 @@ internal static class AimRead
             {
                 var shipTarget = CursorTarget.Inside()?.TargetUnit as StarshipEntity;
                 var line = StarshipAim.Describe(caster as StarshipEntity, ability, shipTarget, verbose);
-                return line == null ? null : shipTarget.CharacterName + ", " + line;
+                return line == null ? null : UnitNames.Of(shipTarget) + ", " + line;
             }
 
             // The game's own SHOWN set: every captured target whose overtip the game would display (fog + faction +
@@ -129,7 +130,7 @@ internal static class AimRead
             // Friendly fire — the headline. Allies the ability WILL actually hit (passed the same gate).
             if (allies.Count > 0)
             {
-                var names = allies.Select(e => e.Unit.CharacterName).Where(n => !string.IsNullOrEmpty(n));
+                var names = allies.Select(e => UnitNames.Of(e.Unit)).Where(n => !string.IsNullOrEmpty(n));
                 if (sb.Length > 0) sb.Append(". ");
                 sb.Append(Loc.T("aim.ff_warning", new { names = string.Join(", ", names) }));
             }
@@ -141,7 +142,7 @@ internal static class AimRead
     private static void AppendPrimary(StringBuilder sb, Entry e, bool verbose)
     {
         var s = e.S;
-        sb.Append(e.Unit.CharacterName).Append(", ");
+        sb.Append(UnitNames.Of(e.Unit)).Append(", ");
         sb.Append(s.HitAlways ? Loc.T("aim.odds_sure") : Loc.T("predict.to_hit", new { hit = Round(s.HitChance) }));
         if (s.MaxDamage > 0) sb.Append(", ").Append(Loc.T("predict.damage", new { min = s.MinDamage, max = s.MaxDamage }));
         else if (s.Ricochet) sb.Append(", ").Append(Loc.T("aim.ricochet_unknown"));
@@ -157,7 +158,7 @@ internal static class AimRead
         {
             var s = e.S;
             parts.Add(Loc.T(s.CanDie ? "predict.pierce_kill" : "predict.pierce",
-                new { name = e.Unit.CharacterName, hit = Round(s.HitChance), min = s.MinDamage, max = s.MaxDamage }));
+                new { name = UnitNames.Of(e.Unit), hit = Round(s.HitChance), min = s.MinDamage, max = s.MaxDamage }));
         }
         sb.Append(". ").Append(Loc.T("predict.pierces", new { count = parts.Count, list = string.Join("; ", parts) }));
     }
@@ -166,7 +167,7 @@ internal static class AimRead
     {
         var s = e.S;
         string chance = s.HitAlways ? Loc.T("aim.odds_sure") : Loc.T("aim.odds_pct", new { chance = Round(s.HitChance) });
-        sb.Append(". ").Append(Loc.T(s.CanDie ? "aim.odds_lethal" : "aim.odds_entry", new { name = e.Unit.CharacterName, chance }));
+        sb.Append(". ").Append(Loc.T(s.CanDie ? "aim.odds_lethal" : "aim.odds_entry", new { name = UnitNames.Of(e.Unit), chance }));
     }
 
     // The avoidance breakdown the sighted overtip shows at a glance (dodge/parry/cover/block/evasion) plus per-shot

@@ -299,7 +299,7 @@ namespace RTAccess.Screens
                 var post = pvm.m_Post;
                 if (post?.CurrentUnit != null)
                 {
-                    sb.Append(", ").Append(post.CurrentUnit.CharacterName).Append(", ");
+                    sb.Append(", ").Append(RTAccess.Accessibility.UnitNames.Of(post.CurrentUnit)).Append(", ");
                     string skill = null;
                     try { skill = Kingmaker.Blueprints.Root.LocalizedTexts.Instance.Stats.GetText(post.PostData.AssociatedSkill); }
                     catch { }
@@ -374,7 +374,7 @@ namespace RTAccess.Screens
             {
                 return Loc.T("spacecombat.hull", new
                 {
-                    name = ship.CharacterName,
+                    name = RTAccess.Accessibility.UnitNames.Of(ship),
                     cur = ship.Health?.HitPointsLeft ?? 0,
                     max = ship.Health?.MaxHitPoints ?? 0,
                 });
@@ -506,7 +506,7 @@ namespace RTAccess.Screens
                 var cur = tc.CurrentUnit;
                 if (cur != null)
                 {
-                    string name = (cur as Kingmaker.Mechanics.Entities.AbstractUnitEntity)?.CharacterName ?? cur.Name;
+                    string name = RTAccess.Accessibility.UnitNames.Of(cur as Kingmaker.Mechanics.Entities.AbstractUnitEntity) ?? cur.Name;
                     sb.Append(", ").Append(Loc.T(
                         tc.IsPlayerTurn ? "combat.turn" : "combat.turn_enemy", new { name }));
                 }

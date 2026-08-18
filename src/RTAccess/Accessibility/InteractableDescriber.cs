@@ -114,7 +114,7 @@ internal static class InteractableDescriber
         if (unit != null && !(unit.IsPlayerFaction || unit.IsVisibleForPlayer)) unit = null;
         if (unit != null)
         {
-            sb.Append(unit.CharacterName);
+            sb.Append(UnitNames.Of(unit));
             // Same four-way classifier the scanner uses, so the tile cursor and the review cycles call a unit
             // the same thing — this used to say "ally" for every non-enemy, including plain neutral NPCs and
             // the capital-area companion NPCs the player cannot command.
@@ -573,7 +573,7 @@ internal static class InteractableDescriber
         // (both derive AbstractUnitEntity). The v1 BaseUnitEntity-only cast missed lightweight crowd and fell
         // back to the raw GameObject name ("BCT_...(Clone)").
         if (entity.Data is AbstractUnitEntity unit && !string.IsNullOrWhiteSpace(unit.CharacterName))
-            return unit.CharacterName;
+            return UnitNames.Of(unit);
 
         var tips = Game.Instance?.BlueprintRoot?.LocalizedTexts?.UserInterfacesText?.Tooltips;
         switch (interaction)

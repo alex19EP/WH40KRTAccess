@@ -86,7 +86,7 @@ internal static class PathInfo
         var attackers = unit.CalculateAttackOfOpportunity(nodes)
                             .Select(a => a.Attacker).Where(a => a != null).Distinct().ToList();
         if (attackers.Count > 0)
-            line += " " + Loc.T("path.preview.provokes", new { names = string.Join(", ", attackers.Select(a => a.CharacterName)) });
+            line += " " + Loc.T("path.preview.provokes", new { names = string.Join(", ", attackers.Select(a => Accessibility.UnitNames.Of(a))) });
 
         line += HazardWarning(nodes, dest);
         return line;
@@ -160,6 +160,58 @@ internal static class PathInfo
         return mp > 0
             ? Loc.T("path.movearea_mp", new { count, mp })
             : Loc.T("path.movearea", new { count });
+    }
+
+    /// <summary>
+    /// The reachable, standable tile this turn that lands CLOSEST to <paramref name="target"/> — the auto-approach
+    /// core ("part of the enemies is on a different level and finding a way by hand is tedious"). Reads the same
+    /// authoritative reachable set as <see cref="Preview"/>, which already crosses ladder node links, so an upstairs
+    /// enemy within movement range yields an upstairs tile with no ladder-hunting. Distance is 3-D: a tile on the
+    /// target's own floor beats one directly beneath it (XZ would happily park the unit under the enemy's feet).
+    /// Ties break on the cheaper path. Null when the unit has no movement at all this turn;
+    /// <paramref name="alreadyClosest"/> true when no reachable tile improves on where the unit stands (then the
+    /// returned node is not worth moving to). <paramref name="shortTiles"/> is the XZ tile distance still left from
+    /// the chosen tile to the target — 0/1 means "arrives at it", matching the spoken tile metric everywhere else.
+    /// </summary>
+    public static CustomGridNodeBase FindApproachNode(BaseUnitEntity unit, Vector3 target,
+        out int shortTiles, out bool alreadyClosest)
+    {
+        shortTiles = 0;
+        alreadyClosest = false;
+        if (unit == null || unit.View == null) return null;
+        var area = Game.Instance?.UnitMovableAreaController?.CurrentUnitMovableArea;
+        if (area == null || area.Count == 0) return null;
+
+        // Price the set for standability + path cost (same call Preview makes). A node the game lists but the
+        // pricing misses is an anomaly — skip it rather than risk planting on an occupied cell.
+        var dict = PathfindingService.Instance?.FindAllReachableTiles_Blocking(
+            unit.View.MovementAgent, unit.Position, unit.CombatState.ActionPointsBlue);
+
+        CustomGridNodeBase best = null;
+        float bestDist = float.MaxValue, bestCost = float.MaxValue;
+        foreach (var n in area)
+        {
+            if (!(n is CustomGridNodeBase node)) continue;
+            float cost = 0f;
+            if (dict != null)
+            {
+                if (!dict.TryGetValue(node, out var cell) || !cell.IsCanStand) continue;
+                cost = cell.Length;
+            }
+            float d = Vector3.Distance((Vector3)node.Vector3Position, target);
+            if (d < bestDist - 0.05f || (Mathf.Abs(d - bestDist) <= 0.05f && cost < bestCost))
+            {
+                bestDist = d;
+                bestCost = cost;
+                best = node;
+            }
+        }
+        if (best == null) return null;
+
+        // Under half a tile of gain is standing still with extra steps.
+        if (bestDist >= Vector3.Distance(unit.Position, target) - 0.7f) { alreadyClosest = true; return best; }
+        shortTiles = Mathf.RoundToInt(Geo.Distance((Vector3)best.Vector3Position, target) / 1.35f);
+        return best;
     }
 
     /// <summary>The traversed node list origin→dest, from the priced dict's parent chain — fed to the engine's

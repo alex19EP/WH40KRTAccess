@@ -349,7 +349,7 @@ internal static class TileExplorer
             var one = (n == 1 ? sel[0] : null) ?? GetAnchor() as BaseUnitEntity;
             return string.IsNullOrWhiteSpace(one?.CharacterName)
                 ? Loc.T("path.moving")
-                : Loc.T("path.moving_name", new { name = one.CharacterName });
+                : Loc.T("path.moving_name", new { name = UnitNames.Of(one) });
         }
         catch { return Loc.T("path.moving"); }
     }

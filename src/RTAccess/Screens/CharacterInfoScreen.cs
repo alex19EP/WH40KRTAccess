@@ -687,7 +687,7 @@ namespace RTAccess.Screens
         }
 
         // Shared with InGameScreen.AppendWounds via UnitReads: current/max wounds + temp HP, here WITH the
-        // 40K trauma stacks (fresh/old wounds).
+        // 40K injury state (Fresh/Old Injury stacks and the named traumas).
         private static string WoundsLine(BaseUnitEntity unit) => UnitReads.Wounds(unit, withTrauma: true);
     }
 }
