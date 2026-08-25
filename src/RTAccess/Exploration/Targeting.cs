@@ -1,5 +1,6 @@
 using Kingmaker;                       // Game
 using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
+using Kingmaker.UnitLogic.Abilities;   // AbilityData (the armed-ability identity the tick tracks)
 using RTAccess.Speech;                 // Speaker
 
 namespace RTAccess.Exploration;
@@ -79,15 +80,32 @@ internal static class Targeting
     // ---- per-frame ----
 
     private static bool _wasAiming;
+    private static AbilityData _wasArmed;
 
     /// <summary>The moment aiming begins, hand the keyboard from the HUD back to exploration so the cursor/scanner
     /// commit keys work immediately — the exploration keys are live only while the HUD is unfocused, and arming an
     /// ability from the (focused) action bar would otherwise strand the player inside the HUD. Only blurs when the
     /// HUD actually holds focus; leaves focus elsewhere alone. Also announces the opening of targeting (what's armed,
-    /// its range, and how to pick a target / fire / cancel) so a blind player knows they've entered aim mode.</summary>
+    /// its range, and how to pick a target / fire / cancel) so a blind player knows they've entered aim mode.
+    ///
+    /// The announce is driven by the armed ability's IDENTITY, not by a bool. Pressing another slot's hotkey while
+    /// already aiming is a legal direct swap — <c>ClickWithSelectedAbilityHandler.SetAbility</c> drops the old root
+    /// ability and arms the new one (only re-pressing the SAME slot clears the pointer mode) — so
+    /// <see cref="Aiming"/> never goes false and an edge-triggered announce stayed completely silent through it.
+    /// A blind player then hears nothing at all, concludes the key is dead, and cancels with Escape first to get a
+    /// spoken confirmation: the reported "I have to press Escape before the next ability" (August field report #2).
+    /// The swap also left <see cref="RTAccess.Combat.AimReadTap"/> holding the PREVIOUS ability's affected-target
+    /// snapshot, so the AoE/target readout answered for the wrong ability until the next pointer move.
+    ///
+    /// Identity is the ROOT ability, not <c>Ability</c>: a multi-target ability rewrites <c>Ability</c> between
+    /// picks (<c>SetCurrentTargetAbility</c>) while the root stays put, and those steps are already narrated by
+    /// <see cref="AbilityTargeting"/>'s "target k of n" — tracking <c>Ability</c> would re-read the whole opening
+    /// announce on every pick.</summary>
     public static void Tick()
     {
         bool aiming = Aiming;
+        var armed = Game.Instance?.SelectedAbilityHandler?.RootAbility;
+        bool swapped = aiming && _wasAiming && !ReferenceEquals(armed, _wasArmed);
         if (aiming && !_wasAiming)
         {
             // Start reading the game's own affected-target broadcast for this aim; AimPointerDriver's Tick postfix
@@ -97,11 +115,20 @@ internal static class Targeting
             var opening = ArmAnnounce();
             if (opening != null) Speaker.Speak(opening, interrupt: true);
         }
+        else if (swapped)
+        {
+            // Begin() is idempotent on the subscription and clears the snapshot, so it re-scopes the tap to the
+            // newly armed ability without a redundant unsubscribe.
+            RTAccess.Combat.AimReadTap.Instance.Begin();
+            var opening = ArmAnnounce();
+            if (opening != null) Speaker.Speak(opening, interrupt: true);
+        }
         else if (!aiming && _wasAiming)
         {
             RTAccess.Combat.AimReadTap.Instance.End();
         }
         _wasAiming = aiming;
+        _wasArmed = armed;
     }
 
     /// <summary>The opening announce when an ability arms: name + range + the controls that fit its target kind
