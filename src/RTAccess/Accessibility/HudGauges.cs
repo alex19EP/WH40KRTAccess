@@ -44,6 +44,34 @@ namespace RTAccess.Accessibility
             catch (Exception e) { Main.Log?.Error("HudGauges.ReadAll: " + e); }
         }
 
+        /// <summary>
+        /// The gauges that describe the STATE OF A FIGHT, comma-joined, or null when none applies — the tail the
+        /// battlefield summary (U, <see cref="RTAccess.Exploration.Scanner"/>) appends so one key answers "how is
+        /// this fight going" instead of U-then-K (August field report #1: "why not put this on U for the full
+        /// combat overview").
+        ///
+        /// Deliberately a SUBSET of <see cref="ReadAll"/>, not the whole thing. Profit factor is a strategic
+        /// resource with no bearing on the turn, and the reachable-area extent already has its own key (Z,
+        /// TileExplorer.ReadMoveSummary) and would double the length of a line the player hears every turn. Every
+        /// remaining gauge self-hides on its own conditions, so out of combat this is almost always null and the
+        /// summary is unchanged.
+        /// </summary>
+        internal static string CombatSummary()
+        {
+            try
+            {
+                var parts = new List<string>();
+                AppendMomentum(parts);
+                AppendVeil(parts);
+                AppendBoss(parts);
+                AppendTurnTimer(parts);
+                AppendNecronTimer(parts);
+                AppendObjective(parts);
+                return parts.Count == 0 ? null : string.Join(", ", parts);
+            }
+            catch (Exception e) { Main.Log?.Error("HudGauges.CombatSummary: " + e); return null; }
+        }
+
         private static SurfaceStaticPartVM StaticPart() => Game.Instance?.RootUiContext?.SurfaceVM?.StaticPartVM;
 
         // Momentum lives inside the action-bar VM; MomentumEntityVM.Value is non-null only in turn-based

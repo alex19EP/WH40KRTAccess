@@ -104,6 +104,12 @@ namespace RTAccess.Settings
             // (the game shows a sighted player no name for those either).
             if (explCat.GetByKey("dev_names") == null)
                 explCat.Add(new BoolSetting("dev_names", "Show internal object names", false, "exploration.dev_names"));
+            // Two-axis tile breakdown behind a diagonal bearing (Accessibility/InteractableDescriber.AxisOffset) —
+            // "7 tiles, north-east, 6 north, 3 east". ON by default: a 45° compass sector is a wedge covering most
+            // of a room, and the breakdown is the only thing that pins the target down. Self-suppressing on cardinal
+            // bearings (where the compass word is already exact), so the cost is a few words on diagonals only.
+            if (explCat.GetByKey("axis_offsets") == null)
+                explCat.Add(new BoolSetting("axis_offsets", "Speak tile offsets on diagonals", true, "exploration.axis_offsets"));
             if (explCat.GetByKey("announce_rooms") == null)
                 explCat.Add(new BoolSetting("announce_rooms", "Announce room changes", true, "overlay.cursor.announce_rooms"));
             // Directional wall tones (Exploration/WallTones.cs) — the continuous "shape of the room" bed: four

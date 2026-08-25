@@ -37,7 +37,8 @@ namespace RTAccess.Screens
     /// character + wounds, and in combat their AP/MP + whose turn), the <b>Action bar</b> (the selected
     /// unit's usable slots), the <b>Party</b> roster (each member's wounds; Enter selects them), the
     /// <b>Combat</b> panel (turn-based only: status + End turn + initiative order; nothing is emitted out of
-    /// combat, so Tab skips it), the <b>Windows</b> list, and the <b>Menu</b> controls.
+    /// combat, so Tab skips it), the <b>Windows</b> list, the <b>Menu</b> controls, and last the <b>Gauges</b>
+    /// (veil / Necron timer — reference cards, self-hiding, so Tab usually skips it entirely).
     ///
     /// Everything renders live per frame — a character swap, an item being consumed, or the initiative order
     /// shifting just re-renders; action-bar focus rides the bar POSITION (the old restore-to-index behavior,
@@ -163,12 +164,17 @@ namespace RTAccess.Screens
         public override void Build(GraphBuilder b)
         {
             BuildStatus(b);
-            BuildGauges(b);
             BuildActions(b);
             BuildParty(b);
             BuildCombat(b);
             BuildWindows(b);
             BuildMenu(b);
+            // Gauges LAST. The stop exists only to give the veil / Necron cards a route (K speaks their numbers
+            // in one line, and now U carries the combat-relevant ones too), so it is the rarest destination on
+            // the ring — and sitting second it pushed the action bar, the party and the combat panel one Tab
+            // further away on every single pass through the HUD, in combat, where those three are the whole
+            // point. Reference material goes at the end.
+            BuildGauges(b);
         }
 
         // ---- Status stop ----
