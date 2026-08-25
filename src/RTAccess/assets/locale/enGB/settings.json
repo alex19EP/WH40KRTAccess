@@ -374,6 +374,7 @@
   "bind.scan.announceCursor": "Announce cursor position",
   "bind.scan.announceParty": "Announce party",
   "bind.scan.interact": "Scanner: interact with item",
+  "bind.scan.approach": "Scanner: move toward the selection",
   "bind.scan.moveToCursor": "Scanner: move to cursor",
   "bind.scan.debugShowAll": "Scanner: toggle show all (debug)",
   "bind.scan.debugDumpNames": "Scanner: dump object names to log (debug)",

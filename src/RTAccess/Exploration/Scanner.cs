@@ -16,8 +16,9 @@ namespace RTAccess.Exploration;
 /// current area (units + interactable map objects), plus tactical "nearest party / enemy / neutral / object"
 /// review cycles. Its selection is a look-without-moving cursor — I interacts with it (and never moves your
 /// position), falling back to the object at the tile cursor when the selection isn't itself an actionable object,
-/// so the same key activates any object the same way; walking the party to a tile is the tile cursor's job
-/// (Backspace; see TileExplorer). Both interact keys drive the game's own object activation
+/// so the same key activates any object the same way; going TO the selection is Backslash's job
+/// (<see cref="ApproachSelection"/>), the same two-step Backspace runs on the tile cursor
+/// (see TileExplorer). Both interact keys drive the game's own object activation
 /// (<see cref="ProxyMapObject.Interact"/>). Distances and
 /// bearings are relative to the selected (or lead) unit and
 /// are spoken via <see cref="InteractableDescriber"/> so the compass matches the other navigators.
@@ -121,6 +122,21 @@ internal static class Scanner
         if (Targeting.Aiming) { Targeting.CommitOnSelection(ResolveSelected()); return; }
         if (RTAccess.UI.Navigation.HasFocus) return;
         Interact();
+    });
+    // Backslash — the MOVEMENT half of the selection verb pair (I acts on the selection, Backslash goes to it),
+    // sitting under Backspace, which is the same two-step aimed at the tile cursor instead. Out of combat it walks
+    // the party toward the selection (Home + Backspace in one press); in turn-based combat it plants the acting
+    // unit's best reachable tile toward it and a second press commits — the auto-approach for "the enemy is up a
+    // ladder and finding a route by hand is tedious". Both routes funnel through TravelToPoint.
+    internal static void ApproachSelection() => Safe(() =>
+    {
+        // Same rule the other movement key has: while an ability is armed, this cancels the aim instead of moving
+        // (see Targeting / TileExplorer's Backspace). A second press then approaches.
+        if (Targeting.Aiming) { Targeting.Cancel(); return; }
+        if (RTAccess.UI.Navigation.HasFocus) return;
+        var sel = ResolveSelected();
+        if (sel == null) { Speak(Loc.T("scan.no_selection")); return; }
+        TravelToPoint(sel.Position, sel.Name);
     });
     internal static void CursorToSelection() => Safe(PlantCursorOnSelection);
     internal static void WhereAmINow() => Safe(WhereAmI);
@@ -250,14 +266,15 @@ internal static class Scanner
         }
         if (origin is Vector3 o && Activation.TryCursorObject(o)) return;
 
-        // 3) Turn-based combat: a selection with nothing to click is still a DESTINATION. I on a cycled enemy
-        //    (or any distant thing) plants the game's own move preview on the acting unit's best reachable tile
-        //    toward it — the auto-approach for "the enemy is on another level and finding a route by hand is
-        //    tedious" — and a second press commits, exactly the Backspace two-step. The reachable set already
-        //    crosses ladder node links, so a floor change inside movement range needs no ladder-hunting.
+        // 3) Turn-based combat: a selection with nothing to click is still a DESTINATION — but that's the approach
+        //    verb's job, not this key's (Backslash / scan.approach; see ApproachSelection). I stays a pure interact
+        //    key so it never turns "shoot that enemy" into "walk at it". Point the player at the key rather than
+        //    dead-ending on "nothing nearby"; the chord is read live so a rebind keeps the hint true.
         if (sel != null && Game.Instance?.TurnController?.TurnBasedModeActive == true)
         {
-            ApproachInCombat(sel.Position, sel.Name);
+            var chord = RTAccess.Input.InputManager.Actions
+                .FirstOrDefault(a => a.Key == "scan.approach")?.BindingsDisplay;
+            Speak(chord == null ? Loc.T("scan.nothing_nearby") : Loc.T("scan.approach_hint", new { key = chord }));
             return;
         }
 

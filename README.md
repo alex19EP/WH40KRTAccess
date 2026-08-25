@@ -161,6 +161,7 @@ puts there — collecting everything in a loot window, or starting the battle du
 | , / . / N / M / V | Cycle party / enemies / neutrals / objects / room exits (hold Shift to go back) |
 | O | Re-announce the current selection |
 | I | Interact with the selection (or target an ability at it) |
+| `\` | Move toward the selection — walks the party to it, or in combat plants the closest reachable tile toward it (press again to commit) |
 | ' / Y | Inspect the cursor's occupant / the scanner selection |
 | P | Read the party |
 | U | Battlefield summary (counts, reach, threat) |

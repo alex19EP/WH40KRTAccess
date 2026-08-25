@@ -306,6 +306,7 @@
   "scan.interacting": "Interacting with {name}",
   "scan.cant_interact": "Can't interact with {name}",
   "scan.nothing_nearby": "Nothing to interact with nearby",
+  "scan.approach_hint": "Nothing to interact with. Press {key} to move toward it.",
   "scan.choose_object": "Choose what to activate",
   "scan.unit_hp": "{current} of {max} HP",
   "scan.unit_hp_hidden": "health unknown",

@@ -239,6 +239,13 @@ namespace RTAccess.Input
                 Ex.Scanner.ExitPrev).AddBinding(KeyCode.V, shift: true).Grouped("scanner");
             InputManager.Register("scan.interact", "Scanner: interact with selection", InputCategory.Exploration,
                 Ex.Scanner.InteractSelected).AddBinding(KeyCode.I).Grouped("scanner");
+            // Backslash — go to the selection: out of combat walk the party toward it, in turn-based combat plant
+            // the acting unit's best reachable tile toward it and commit on a second press (the auto-approach; it
+            // used to ride I's dead-end branch). It sits directly under Backspace, which runs the same two-step on
+            // the tile cursor — one key per cursor. Bare Backslash is free in the game's own keymap (F10 dump:
+            // punctuation is unbound in every game mode) and is not an NVDA modifier.
+            InputManager.Register("scan.approach", "Scanner: move toward selection", InputCategory.Exploration,
+                Ex.Scanner.ApproachSelection).AddBinding(KeyCode.Backslash).Grouped("scanner");
             // Home / Slash — plant the movement cursor on the current review selection's tile (the coupling core;
             // the selection itself is unchanged). Home yields to ui.home when the HUD is focused (chord shadowing).
             InputManager.Register("scan.cursor_to_item", "Scanner: cursor to selection", InputCategory.Exploration,
