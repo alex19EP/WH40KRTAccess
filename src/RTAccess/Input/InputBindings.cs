@@ -237,6 +237,17 @@ namespace RTAccess.Input
                 Ex.Scanner.ExitNext).AddBinding(KeyCode.V).Grouped("scanner");
             InputManager.Register("scan.exit_prev", "Scanner: previous room exit", InputCategory.Exploration,
                 Ex.Scanner.ExitPrev).AddBinding(KeyCode.V, shift: true).Grouped("scanner");
+            // J / Shift+J — cycle the COVER POSITIONS nearest the cursor: the tiles you could stand on to be behind
+            // something, named by the side(s) they cover ("half cover north"), in or out of this turn's movement
+            // range so a position can be planned before you can reach it (the "cover-direction category" request in
+            // docs/feedback/2026-07-discord-triage.md). Like every review cycle it only SELECTS — Home/Slash then
+            // plants the cursor on that cover side and Backspace moves there. Live while the game's own cover
+            // overlay is (your turn / deployment) and SILENT out of combat, where there is no overlay to mirror.
+            // Bare J is free: GameKeybinds moved the game's Journal onto Ctrl+J. Grouped with the scanner cycles.
+            InputManager.Register("scan.cover_next", "Scanner: next cover position", InputCategory.Exploration,
+                Ex.Scanner.CoverNext).AddBinding(KeyCode.J).Grouped("scanner");
+            InputManager.Register("scan.cover_prev", "Scanner: previous cover position", InputCategory.Exploration,
+                Ex.Scanner.CoverPrev).AddBinding(KeyCode.J, shift: true).Grouped("scanner");
             InputManager.Register("scan.interact", "Scanner: interact with selection", InputCategory.Exploration,
                 Ex.Scanner.InteractSelected).AddBinding(KeyCode.I).Grouped("scanner");
             // Backslash — go to the selection: out of combat walk the party toward it, in turn-based combat plant
@@ -248,6 +259,8 @@ namespace RTAccess.Input
                 Ex.Scanner.ApproachSelection).AddBinding(KeyCode.Backslash).Grouped("scanner");
             // Home / Slash — plant the movement cursor on the current review selection's tile (the coupling core;
             // the selection itself is unchanged). Home yields to ui.home when the HUD is focused (chord shadowing).
+            // With a cover position selected (J, above) the selection's tile IS the cover side — the tile you would
+            // stand on — so Slash is also "move the cursor to the nearest cover side".
             InputManager.Register("scan.cursor_to_item", "Scanner: cursor to selection", InputCategory.Exploration,
                 Ex.Scanner.CursorToSelection).AddBinding(KeyCode.Home).AddBinding(KeyCode.Slash).Grouped("scanner");
             InputManager.Register("scan.where_am_i", "Scanner: where am I", InputCategory.Exploration,

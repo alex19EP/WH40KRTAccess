@@ -150,7 +150,7 @@ puts there — collecting everything in a loot window, or starting the battle du
 | C | Recenter the cursor on the party |
 | Delete | Re-announce the cursor tile |
 | X | Where am I (area, room, whether the spot is unexplored) |
-| Home or / | Move the tile cursor to the scanner selection |
+| Home or / | Move the tile cursor to the scanner selection (with a cover selected, that is its cover side) |
 
 ### The scanner
 
@@ -159,12 +159,13 @@ puts there — collecting everything in a loot window, or starting the battle du
 | PageUp / PageDown | Previous / next item |
 | Ctrl+PageUp / PageDown | Previous / next category |
 | , / . / N / M / V | Cycle party / enemies / neutrals / objects / room exits (hold Shift to go back) |
+| J | Cycle nearby cover positions — or, with an enemy selected, the positions you can shoot it from (Shift+J to go back) |
 | O | Re-announce the current selection |
 | I | Interact with the selection (or target an ability at it) |
 | `\` | Move toward the selection — walks the party to it, or in combat plants the closest reachable tile toward it (press again to commit) |
 | ' / Y | Inspect the cursor's occupant / the scanner selection |
 | P | Read the party |
-| U | Battlefield summary (counts, reach, threat) |
+| U | Battlefield summary (counts, reach, threat, and the fight's gauges) |
 
 ### Party and combat
 
@@ -248,14 +249,52 @@ party leader.
 Alongside it is the **scanner**: a categorized, distance-sorted browse of everything in the area.
 Use **PageUp / PageDown** to step through items and **Ctrl+PageUp / PageDown** to switch category —
 party, enemies, neutrals, containers, corpses, doors, area exits, points of interest, search points,
-traps, mechanisms, destructible scenery, hazards, buff zones, and **unexplored space** (the fog edges
-where exploration can still continue). Press **I** to interact with the current scanner selection —
-including targeting an ability at it, or shooting a destructible to open a path — **O** to hear the
-selection again, and **Home** or **/** to jump the tile cursor to it.
+traps, mechanisms, destructible scenery, hazards, buff zones, **unexplored space** (the fog edges
+where exploration can still continue), and **cover**. Press **I** to interact with the current scanner
+selection — including targeting an ability at it, or shooting a destructible to open a path — **O** to
+hear the selection again, and **Home** or **/** to jump the tile cursor to it.
 
 You can also cycle quickly through nearby things: **.** enemies, **,** party, **N** neutrals,
-**M** interactable objects, **V** the current room's exits (hold **Shift** on any of these to go
-backwards). When several units share a name, each gets a stable number — "Cultist 1", "Cultist 2" —
+**M** interactable objects, **V** the current room's exits, **J** cover positions (hold **Shift** on
+any of these to go backwards).
+
+While an **area ability is armed**, **.** changes gear: instead of walking the enemies one by one it
+cycles *blast positions*, best first — "Cultist 3, catches 5 enemies, 7 tiles south-west, 1 of 4" —
+and plants the cursor on each, so **Enter** fires the template there and **Delete** re-reads the cell
+with the full pattern readout. Friendly fire is called out whenever the template would catch your own.
+Every position is still an enemy's own cell, so this is also how you pick one particular enemy out of
+a crowd; the ordering is just by what the blast actually catches rather than by distance.
+
+**J** is the positioning key. On your turn in combat — and during the pre-battle deployment phase —
+it cycles the tiles near the cursor that give you cover, nearest first, naming which sides they cover
+("half cover north, 4 tiles wide") and, when there are enemies about, what that spot would actually be
+worth: the cover you'd have from the nearest enemy, how many you'd be in range of, and how many would
+threaten you. Tiles beyond this turn's movement are still listed, marked "unreachable", so you can plan
+a position before you can reach it. Once you like one, press **Home** or **/** to move the tile cursor
+onto that cover side and **Backspace** to go there. Like the game's own cover overlay, cover is only
+shown on your turn: outside combat J is simply silent, and during a fight it tells you when it can't
+answer yet.
+
+**With an enemy selected** (cycle to one with **.**), J changes gear and answers the question that
+actually decides a fight: *where can I stand so I can shoot that?* It searches every tile you can
+reach this turn, keeps the ones your weapon — or the ability you have armed — can genuinely fire from,
+and offers them **safest first**:
+
+> "Full cover, 45 percent, 5 tiles north, 5 north, costs 4 of 6 movement. 1 of 3."
+
+The list is trade-offs, not tiles: positions are collapsed so you hear the three or four options that
+genuinely differ (behind full cover at worse odds, half cover at better odds, in the open at the best
+odds) rather than the forty cells that would all technically work. Each one plants the tile cursor, so
+**Backspace** goes there, **;** reads the full vantage from it, and once the move is planted **.**
+tells you what *else* you could hit from there.
+
+**\\** is the shortcut when you don't want to browse: it goes straight to the safest firing position
+(press again to confirm, as with any move). If you can already shoot from where you stand it says so
+instead of marching you anywhere, and if nothing you can reach can hit the target it tells you that
+too — "No firing position this turn. Closest approach 5 tiles north-east, still 4 tiles short" — so a
+hopeless approach ends in one keypress rather than minutes of hunting.
+
+When several units share a name, each gets a stable number — "Cultist 1", "Cultist 2" —
 kept for the whole area, so the same number always means the same individual in every readout
 (scanner, aim, initiative, buffers). Press **X** for "where am I" (area, the room you're in, and whether the spot is still
 unexplored), **U** for a battlefield summary, and **'** / **Y** to inspect the cursor's occupant or

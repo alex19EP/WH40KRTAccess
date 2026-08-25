@@ -4,6 +4,7 @@ using Kingmaker.Code.UI.MVVM.VM.ServiceWindows.LocalMap.Utils; // LocalMapModel,
 using Kingmaker.Controllers.Units;     // UnitCommandsRunner (landmark travel)
 using Kingmaker.EntitySystem;          // DistanceToInCells (EntityHelper ext)
 using Kingmaker.EntitySystem.Entities; // BaseUnitEntity
+using Kingmaker.Pathfinding;           // CustomGridNodeBase (the blast-position cycle's cell identity)
 using Kingmaker.UnitLogic;             // IsThreat (AttackOfOpportunityHelper ext)
 using RTAccess.Accessibility;          // InteractableDescriber, CombatReads
 using RTAccess.Speech;                 // Speaker
@@ -44,13 +45,15 @@ namespace RTAccess.Exploration;
 /// selection; Home/Slash = plant the movement cursor on the selection; X = where am I; P = party readout. ' / Y
 /// inspect the cursor / the selection (see <see cref="Inspect"/>). V / Shift+V = cycle the current room's ways
 /// out — doors, area transitions, and uncovered geometric openings, merged into one distance-sorted review that
-/// drives the shared selection (see <see cref="CycleExit"/>).
+/// drives the shared selection (see <see cref="CycleExit"/>). J / Shift+J = cycle the cover POSITIONS around the
+/// origin — the tiles you could stand on to be behind something, in or out of this turn's reach (see
+/// <see cref="CycleCover"/> / <see cref="CoverModel"/>); Home/Slash then plants the cursor on the chosen cover side.
 /// </summary>
 internal static class Scanner
 {
     // Where a browse category's items come from: most filter the WorldModel registry by a taxonomy predicate;
-    // two are special-sourced lists with no backing registry entity (see MarkerList / FrontierList).
-    private enum Source { Registry, Markers, Frontier }
+    // three are special-sourced lists with no backing registry entity (see MarkerList / FrontierList / CoverList).
+    private enum Source { Registry, Markers, Frontier, Cover }
 
     // The browse categories cycled by Ctrl+PageUp/Down. Most filter the WorldModel registry by a taxonomy predicate;
     // the "points of interest" category is instead marker-sourced — the area-wide local-map pins
@@ -86,6 +89,10 @@ internal static class Scanner
         ("taxonomy.buffzones",      Source.Registry, it => it.HasNode(ScanTaxonomy.BuffZones)),
         // Last so the established category order is untouched: fog-edge openings where exploration can continue.
         ("taxonomy.unexplored",     Source.Frontier, null),
+        // Cover positions — the walkable tiles whose edges give half/full cover, in or out of this turn's reach
+        // (see CoverModel / ProxyCover). Grid geometry, not a registry entity, and empty unless the game's own
+        // cover overlay is up, so out of your turn the category simply skips like any other empty one.
+        ("taxonomy.cover",          Source.Cover,    null),
     };
 
     // Party/Enemies/Neutrals/Objects come from the WorldModel snapshot (units + reachable interactables). Area
@@ -111,11 +118,21 @@ internal static class Scanner
     internal static void CategoryPrev() => Safe(() => StepCategory(-1));
     internal static void CategoryNext() => Safe(() => StepCategory(1));
     internal static void ReviewParty(bool back) => Safe(() => Review(Group.Party, back ? -1 : 1));
-    internal static void ReviewEnemies(bool back) => Safe(() => Review(Group.Enemies, back ? -1 : 1));
+    // The enemy key has a second gear. While an AREA ability is armed, the useful question stops being "which
+    // enemy" and becomes "where do I put the template" — so the same key cycles ranked blast positions instead
+    // (best first; see BlastPlan). Nothing new to learn, no key to find, and it self-cancels the moment the aim
+    // ends. Single-target abilities and unarmed browsing are untouched.
+    internal static void ReviewEnemies(bool back) => Safe(() =>
+    {
+        if (BlastPlan.Active) CycleBlast(back ? -1 : 1);
+        else Review(Group.Enemies, back ? -1 : 1);
+    });
     internal static void ReviewNeutrals(bool back) => Safe(() => Review(Group.Neutrals, back ? -1 : 1));
     internal static void ReviewObjects(bool back) => Safe(() => Review(Group.Objects, back ? -1 : 1));
     internal static void ExitNext() => Safe(() => CycleExit(1));
     internal static void ExitPrev() => Safe(() => CycleExit(-1));
+    internal static void CoverNext() => Safe(() => CycleCover(1));
+    internal static void CoverPrev() => Safe(() => CycleCover(-1));
     internal static void InteractSelected() => Safe(() =>
     {
         // While an ability is armed, I commits the aim on the review selection instead of interacting (see Targeting).
@@ -136,8 +153,52 @@ internal static class Scanner
         if (RTAccess.UI.Navigation.HasFocus) return;
         var sel = ResolveSelected();
         if (sel == null) { Speak(Loc.T("scan.no_selection")); return; }
+        // "Go to the selection" means something sharper when the selection is an enemy and there is a turn to
+        // spend: go to where you can SHOOT it, not merely as close as the legs reach. This is also the engine's
+        // own reading of the verb — out of combat, clicking a distant enemy walks to the ability's RangeCells and
+        // fires (UnitCommandsRunner.TryUnitUseAbility with shouldApproach), stopping at weapon range rather than
+        // closing on the target. Turn-based combat simply never had that path; this gives it one.
+        var foe = FiringTarget();
+        if (foe != null && ReferenceEquals(sel.Key, foe)) { ApproachToFire(foe); return; }
         TravelToPoint(sel.Position, sel.Name);
     });
+
+    /// <summary>
+    /// Plant the SAFEST stance from which the acting unit can shoot the selected enemy (second press commits, via
+    /// the same two-step every other move uses). Already able to shoot from here → say so and stay put; nothing
+    /// reachable can shoot it → say that, then fall through to the plain closest-approach so the answer is still
+    /// "here is what you CAN do", not a dead end. That fallback line is the one the August field report needed:
+    /// it ends a hopeless approach in one keypress instead of minutes of arrowing.
+    /// </summary>
+    private static void ApproachToFire(BaseUnitEntity foe)
+    {
+        var me = RTAccess.Combat.CommandDispatch.ActingUnit();
+        if (me == null) return;   // refusal already spoken
+
+        if (FiringPositions.InRangeNow(me, foe, out int hitNow, out var coverNow))
+        {
+            Speak(Loc.T("firing.already", new { hit = hitNow, cover = FiringPositions.CoverWord(coverNow) }));
+            return;
+        }
+
+        var list = FiringPositions.Find(me, foe);
+        if (list.Count == 0) { ApproachInCombat(foe.Position, Accessibility.UnitNames.Of(foe), Loc.T("firing.none")); return; }
+
+        var spot = list[0];
+        _firingNode = spot.Node;
+        var r = RTAccess.Combat.CommandDispatch.MoveStep(spot.Node);
+        if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Committed)
+        {
+            Speak(Loc.T("path.moving"));
+        }
+        else if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Planted)
+        {
+            // The move preview's own line carries the attacks of opportunity and the hazards on the way.
+            Speak(FiringLine(me, spot) + ". " + PathInfo.Preview(me, spot.Node, out _)
+                  + " " + Loc.T("path.preview.press_again"));
+        }
+        // Refused: MoveStep already spoke the engine's reason.
+    }
     internal static void CursorToSelection() => Safe(PlantCursorOnSelection);
     internal static void WhereAmINow() => Safe(WhereAmI);
     internal static void ReadParty() => Safe(PartyReadout);
@@ -288,27 +349,32 @@ internal static class Scanner
     /// All refusals are spoken (guards by <see cref="RTAccess.Combat.CommandDispatch.ActingUnit"/> /
     /// <c>MoveStep</c>). Starships keep the plain refusal — their inertial ShipPath movement has no
     /// "nearest tile" notion (see ShipPathInfo).</summary>
-    private static void ApproachInCombat(Vector3 target, string label)
+    /// <summary><paramref name="prelude"/> leads every line this speaks, so a caller that fell through to the
+    /// plain approach can explain WHY in the same utterance ("No firing position this turn. Closest approach…")
+    /// rather than in a second one the first would interrupt.</summary>
+    private static void ApproachInCombat(Vector3 target, string label, string prelude = null)
     {
+        void Say(string s) => Speak(string.IsNullOrEmpty(prelude) ? s : prelude + " " + s);
+
         var unit = RTAccess.Combat.CommandDispatch.ActingUnit();
         if (unit == null) return; // refusal spoken (not player turn / wrong selection)
-        if (unit is StarshipEntity) { Speak(Loc.T("travel.combat")); return; }
+        if (unit is StarshipEntity) { Say(Loc.T("travel.combat")); return; }
 
         var best = PathInfo.FindApproachNode(unit, target, out int shortTiles, out bool alreadyClosest);
-        if (best == null) { Speak(Loc.T("path.preview.out_of_movement")); return; }
-        if (alreadyClosest) { Speak(Loc.T("approach.no_closer", new { dest = label })); return; }
+        if (best == null) { Say(Loc.T("path.preview.out_of_movement")); return; }
+        if (alreadyClosest) { Say(Loc.T("approach.no_closer", new { dest = label })); return; }
 
         var r = RTAccess.Combat.CommandDispatch.MoveStep(best);
         if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Committed)
         {
-            Speak(Loc.T("path.moving"));
+            Say(Loc.T("path.moving"));
         }
         else if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Planted)
         {
             string lead = shortTiles <= 1
                 ? Loc.T("approach.reaches", new { dest = label })
                 : Loc.T("approach.short", new { dest = label, tiles = shortTiles });
-            Speak(lead + " " + PathInfo.Preview(unit, best, out _) + " " + Loc.T("path.preview.press_again"));
+            Say(lead + " " + PathInfo.Preview(unit, best, out _) + " " + Loc.T("path.preview.press_again"));
         }
         // Refused: MoveStep already spoke the engine's reason.
     }
@@ -519,6 +585,57 @@ internal static class Scanner
         Speak(line + ", " + Loc.T("nav.position", new { index = idx + 1, count = list.Count }));
     }
 
+    // J / Shift+J: cycle the COVER POSITIONS nearest the scan origin — the walkable tiles whose edges give half or
+    // full cover (see CoverModel), distance-sorted and continuing from the current selection like every other
+    // cycle. The hit becomes the shared review selection, so O re-announces it and Home/Slash plants the cursor on
+    // the COVER SIDE — the tile you would stand on — from where the tile readout names the same edges back and
+    // Backspace walks the party there (in turn-based combat, Backslash plants the move preview toward it). The
+    // cursor is NEVER moved implicitly, matching the V exit cycle: moving it would silently flip ScanFrom for
+    // every later scanner action.
+    private static void CycleCover(int dir)
+    {
+        // J is the positioning key, and with an enemy under the review cursor the position question is no longer
+        // "where is there cover" but "where can I stand and still shoot THAT" — so the key changes gear, the same
+        // way the enemy cycle does while an area ability is armed. Falls back to the plain cover cycle whenever no
+        // enemy is selected. See FiringPositions.
+        var foe = FiringTarget();
+        if (foe != null) { CycleFiring(foe, dir); return; }
+
+        if (!InteractableDescriber.CoverOverlayActive)
+        {
+            // In combat the key has something worth explaining — it is an enemy's turn, or an ability is armed,
+            // and the answer will come back in a moment. Out of combat there is no cover overlay to speak of at
+            // all, so J stays SILENT rather than nagging on every press: a dead key that talks back is worse than
+            // one that doesn't. (Deployment counts as "overlay active" above, so scouting cover before the first
+            // shot still works.)
+            if (Game.Instance?.Player?.IsInCombat == true) Speak(Loc.T("scan.cover_unavailable"));
+            return;
+        }
+        var refPos = ScanFrom();
+        var list = CoverList(refPos);
+        if (list.Count == 0) { Speak(Loc.T("scan.no_cover")); return; }
+
+        int idx = CoverIndexOfSelected(list);
+        idx = idx < 0 ? (dir >= 0 ? 0 : list.Count - 1) : Wrap(idx + dir, list.Count);
+        Select(list, idx, refPos);
+    }
+
+    // The J cycle's continuation. Identity first — a burst of presses reuses one cached scan, so the SAME Spot
+    // objects come back — then the origin-independent Id + signature, which re-finds the same cluster after a
+    // recompute (the cursor moved, so the scan window did too). Mirrors ExitIndexOfSelected's identity-then-value
+    // shape for the same reason: these items have no backing entity to key on.
+    private static int CoverIndexOfSelected(List<ScanItem> list)
+    {
+        if (_selectedKey == null) return -1;
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (ReferenceEquals(list[i].Key, _selectedKey)) return i;
+            if (_selectedKey is CoverModel.Spot prev && list[i].Key is CoverModel.Spot cur
+                && cur.Id == prev.Id && cur.Sig == prev.Sig) return i;
+        }
+        return -1;
+    }
+
     // The V cycle's continuation: real items match by key identity (the standard rule), but bare openings match
     // by POSITION — the two sides of one threshold hold DISTINCT Exit objects at the same point, and RoomAt on a
     // boundary can resolve to either room, so an identity match would restart the cycle whenever the room flips.
@@ -653,6 +770,12 @@ internal static class Scanner
         sb.Append(". ").Append(Loc.T(allies == 1 ? "scan.sum_ally_one" : "scan.sum_allies", new { count = allies })).Append('.');
         if (haveNearest)
             sb.Append(' ').Append(Loc.T("scan.sum_nearest", new { cells = nearestCells }));
+        // The fight's own gauges close the line — momentum, veil, boss HP, turn / Necron timers, objective counter —
+        // so U alone answers "what is the state of this fight" instead of U-then-K. Each gauge self-hides, so out of
+        // combat this is null and the summary reads exactly as before; K still reads the full set (profit factor
+        // included). See HudGauges.CombatSummary.
+        var gauges = HudGauges.CombatSummary();
+        if (!string.IsNullOrWhiteSpace(gauges)) sb.Append(' ').Append(gauges).Append('.');
         Speak(sb.ToString());
     }
 
@@ -661,9 +784,11 @@ internal static class Scanner
     private static List<ScanItem> CategoryList(int categoryIndex, Vector3 refPos)
     {
         var cat = Categories[categoryIndex];
-        // Two categories aren't WorldModel entities: local-map pins and fog-frontier openings (special-sourced).
+        // Three categories aren't WorldModel entities: local-map pins, fog-frontier openings and cover positions
+        // (special-sourced).
         if (cat.Src == Source.Markers) return MarkerList(refPos);
         if (cat.Src == Source.Frontier) return FrontierList(refPos);
+        if (cat.Src == Source.Cover) return CoverList(refPos);
 
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Items)
@@ -757,6 +882,23 @@ internal static class Scanner
         return list;
     }
 
+    // The "Cover" category / J cycle: cover POSITIONS — walkable tiles whose edges give half or full cover, found
+    // by scanning the live grid around the scan origin (see CoverModel), not by filtering the registry. Gated on
+    // the game's own cover overlay (InteractableDescriber.CoverOverlayActive), the same predicate that decides
+    // whether the tile readout may name a tile's cover, so the mod never speaks cover a sighted player has no way
+    // to read off the screen — and the two surfaces can never contradict each other. Empty (not refused) here, so
+    // the category browse just skips it like any other empty category; the J cycle says why instead.
+    // Deliberately NOT range-gated: an out-of-reach tile is flagged "unreachable" and kept, because planning a
+    // position you cannot reach yet is the point (docs/feedback/2026-07-discord-triage.md, request 2).
+    private static List<ScanItem> CoverList(Vector3 refPos)
+    {
+        var list = new List<ScanItem>();
+        if (!InteractableDescriber.CoverOverlayActive) return list;
+        foreach (var spot in CoverModel.Near(refPos)) list.Add(new ProxyCover(spot));
+        list.Sort((a, b) => a.DistanceTo(refPos).CompareTo(b.DistanceTo(refPos)));
+        return list;
+    }
+
     // The full sighted-map gate for one pin — the game's own perception check (LocalMapCommonMarkerVM feeds
     // IsVisible() to the view's SetActive) plus the Suppressed-entity filter from LocalMapVM.SetMarkers — now
     // owned by ProxyMarker so the local map's marker/exit cycles gate identically (see ProxyMarker.Listable).
@@ -837,6 +979,14 @@ internal static class Scanner
         // map still holds the exit; a map rebuild (area/part change) orphans it → null.
         if (_selectedKey is RoomMap.Exit exit)
             return RoomMap.ContainsExit(exit) ? new ProxyRoomExit(exit) : null;
+        // Cover selections (the J cycle / Cover category) are grid geometry, not entities — re-wrap while the
+        // cached scan still holds the spot, so Home/Slash plants the cursor on its cover side and O re-announces
+        // it; null once the spot is out of the scanned window or the graph rebuilt under it.
+        if (_selectedKey is CoverModel.Spot spot)
+        {
+            var live = CoverModel.Resolve(spot);
+            return live != null ? new ProxyCover(live) : null;
+        }
         // Everything else keys on its backing entity — the persistent registry re-finds the SAME stable proxy in
         // O(1); null once it despawns or the area changes.
         return WorldModel.Find(_selectedKey);
@@ -956,6 +1106,110 @@ internal static class Scanner
             case Group.Neutrals: return Loc.T("taxonomy.units.neutrals");
             default: return Loc.T("review.others");
         }
+    }
+
+    // ---- firing positions (the positioning key's enemy gear; see FiringPositions) ----
+
+    // The stance last landed on, so the cycle resumes across re-ranks. Same reference-identity rule the blast
+    // cycle uses: grid nodes are stable for the life of an area, and a stale one restarts the cycle at the
+    // safest option — which is what should happen once the battlefield has moved.
+    private static CustomGridNodeBase _firingNode;
+
+    /// <summary>The enemy the positioning key should plan against: the review selection, while it is a live,
+    /// visible enemy and the player actually has a turn to spend. Null in every other case, which is what makes
+    /// J fall back to its ordinary cover cycle.</summary>
+    private static BaseUnitEntity FiringTarget()
+    {
+        try
+        {
+            var tc = Game.Instance?.TurnController;
+            if (tc == null || !tc.TurnBasedModeActive || !tc.IsPlayerTurn) return null;
+            var sel = SelectedUnit();
+            if (sel == null || sel.LifeState.IsDead || !sel.IsPlayerEnemy) return null;
+            // Same parity lens as everywhere else — never plan a shot at something the sighted player cannot see.
+            return (sel.IsPlayerFaction || sel.IsVisibleForPlayer) ? sel : null;
+        }
+        catch (Exception e) { Main.Log?.Error("Scanner.FiringTarget failed: " + e); return null; }
+    }
+
+    /// <summary>
+    /// Step the ranked stances for shooting the selected enemy and plant the cursor on the chosen one, so
+    /// Backspace commits the move, Semicolon reads the full vantage from it, and — once the move preview pins the
+    /// virtual position — the enemy cycle answers "what else could I hit from there".
+    /// </summary>
+    private static void CycleFiring(BaseUnitEntity foe, int dir)
+    {
+        var me = RTAccess.Combat.CommandDispatch.ActingUnit();
+        if (me == null) return;   // refusal already spoken (not your turn / wrong unit selected)
+
+        var list = FiringPositions.Find(me, foe);
+        // The unit's own cell is in the movable area, so "stay where you are" appears in the list by itself at
+        // zero cost whenever it can shoot — no special case needed for "already in range".
+        if (list.Count == 0) { Speak(Loc.T("firing.none")); return; }
+
+        int idx = -1;
+        for (int i = 0; i < list.Count; i++)
+            if (ReferenceEquals(list[i].Node, _firingNode)) { idx = i; break; }
+        idx = idx < 0 ? (dir >= 0 ? 0 : list.Count - 1) : Wrap(idx + dir, list.Count);
+
+        var spot = list[idx];
+        _firingNode = spot.Node;
+        Accessibility.TileExplorer.PlantOn(spot.Position, announce: false);
+        Speak(FiringLine(me, spot) + ", " + Loc.T("nav.position", new { index = idx + 1, count = list.Count }));
+    }
+
+    /// <summary>"Half cover, 61 percent, 4 tiles north-east, 3 north 2 east, costs 3 of 6 movement" — the five
+    /// facts a sighted player reads off the reticle, the blue area and the threat overlay at a glance. Measured
+    /// from the ACTING UNIT, not the scan origin: the bearing is how far it has to walk. Attacks of opportunity
+    /// are not repeated here — the move preview's own line carries them when the move is planted.</summary>
+    private static string FiringLine(BaseUnitEntity me, FiringPositions.Spot spot)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(Loc.T("firing.spot", new { cover = FiringPositions.CoverWord(spot.Cover), hit = spot.HitChance }));
+        sb.Append(", ").Append(spot.Cost == 0
+            ? Loc.T("firing.here")
+            : InteractableDescriber.DirectionAndDistance(me.Position, spot.Position));
+        int budget = UnityEngine.Mathf.RoundToInt(me.CombatState.ActionPointsBlue);
+        if (spot.Cost > 0) sb.Append(", ").Append(Loc.T("firing.cost", new { cost = spot.Cost, budget }));
+        return sb.ToString();
+    }
+
+    // ---- blast positions (the enemy key's area-ability gear; see BlastPlan) ----
+
+    // The cell the player last landed on, so the cycle resumes where it left off across re-ranks. Grid nodes are
+    // stable objects for the life of an area, so reference identity is enough; a stale one simply isn't found and
+    // the cycle restarts at the best cell — which is also what should happen when the battlefield has moved on.
+    private static CustomGridNodeBase _blastNode;
+
+    /// <summary>
+    /// Step the ranked blast positions and plant the cursor on the chosen one, so Enter fires the template there
+    /// through the ordinary aim commit and Delete re-reads the cell with the full pattern tail. The spoken line is
+    /// the decision, not the geometry: who it catches, whether it catches our own, and where it is.
+    /// </summary>
+    private static void CycleBlast(int dir)
+    {
+        var list = BlastPlan.Rank();
+        if (list.Count == 0) { Speak(Loc.T("blast.none")); return; }
+
+        int idx = -1;
+        for (int i = 0; i < list.Count; i++)
+            if (ReferenceEquals(list[i].Node, _blastNode)) { idx = i; break; }
+        idx = idx < 0 ? (dir >= 0 ? 0 : list.Count - 1) : Wrap(idx + dir, list.Count);
+
+        var cell = list[idx];
+        _blastNode = cell.Node;
+        Accessibility.TileExplorer.PlantOn(cell.Position, announce: false);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(Accessibility.UnitNames.Of(cell.Seed));
+        sb.Append(", ").Append(Loc.T(cell.Enemies == 1 ? "blast.enemies_one" : "blast.enemies", new { count = cell.Enemies }));
+        // Friendly fire speaks only when there IS some — silence means clear, the same rule the reachability and
+        // cover words follow. The full per-target readout stays on the cursor (Delete) and the aim tail.
+        if (cell.Allies > 0)
+            sb.Append(", ").Append(Loc.T(cell.Allies == 1 ? "blast.allies_one" : "blast.allies", new { count = cell.Allies }));
+        sb.Append(", ").Append(InteractableDescriber.DirectionAndDistance(ScanFrom(), cell.Position));
+        sb.Append(", ").Append(Loc.T("nav.position", new { index = idx + 1, count = list.Count }));
+        Speak(sb.ToString());
     }
 
     private static int Wrap(int i, int n) => ((i % n) + n) % n;

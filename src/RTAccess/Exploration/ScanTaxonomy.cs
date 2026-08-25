@@ -43,4 +43,7 @@ internal static class ScanTaxonomy
     // Frontier blobs — openings where walkable never-seen ground borders explored ground (FrontierModel),
     // surfaced by ProxyFrontier in the "Unexplored space" category.
     public const string Unexplored = "unexplored";
+    // Cover positions — walkable cells whose edges give half/full cover (CoverModel), surfaced by ProxyCover in
+    // the "Cover" category and the J cycle. Level geometry rather than an entity, like Unexplored above.
+    public const string Cover = "cover";
 }
