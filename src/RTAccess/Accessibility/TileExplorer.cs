@@ -112,11 +112,42 @@ internal static class TileExplorer
             if (cur == null) return;   // EnsurePlanted guarantees this; defensive only
             var next = NavmeshProbe.Neighbour(cur, dx, dz);
             if (next == null) { Speaker.Speak(Loc.T("cursor.edge"), interrupt: true); return; }
+            string crossed = CrossedWall(cur, next, dx, dz) ? Loc.T("tile.through_wall") : null;
             MapCursor.Set(next);
             ScrollTo(next);
-            Announce();
+            Announce(crossed);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.Move failed: " + e); }
+    }
+
+    /// <summary>
+    /// True when the step from <paramref name="cur"/> to <paramref name="next"/> passed THROUGH a wall — the edge
+    /// between the two cells is cut, but the destination cell is itself perfectly walkable.
+    ///
+    /// This is the case a blind player has no way to detect. RT models thin walls, railings and cover as FENCES on
+    /// the edge between two cells (<c>IsConnectionCut</c>), not as unwalkable cells: both cells stay walkable, no
+    /// map object sits on either, and the cursor — which navigates by raw grid coordinates
+    /// (<see cref="NavmeshProbe.Neighbour"/>) so it can scan through geometry, and must keep doing so — crosses in
+    /// silence. The cover readout names such an edge only inside the combat overlay window (your own turn, no
+    /// ability armed, and only if that fence grants cover at all), so out of combat or mid-aim there was no signal
+    /// whatsoever, and the first hint was a move-to refusal (August field report #5).
+    ///
+    /// <c>GetNeighbourAlongDirection</c> applies the pathfinder's own connectivity bits — the ones
+    /// <c>CustomGridGraph.CalculateConnections</c> wrote, folding in fences, climb height and corner-cutting — so a
+    /// null here IS the engine's verdict, not an approximation of it. It also returns null for an unwalkable
+    /// neighbour, hence the <c>next.Walkable</c> guard: that case already reads "wall" from the tile description
+    /// and does not need a second word. Cardinal steps only (the arrows never move diagonally).
+    /// </summary>
+    private static bool CrossedWall(CustomGridNodeBase cur, CustomGridNodeBase next, int dx, int dz)
+    {
+        try
+        {
+            if (next == null || !next.Walkable) return false;
+            // Grid direction indices, same map the cover readout and the wall tones use: N=2 E=1 S=0 W=3.
+            int dir = dz > 0 ? 2 : dz < 0 ? 0 : dx > 0 ? 1 : 3;
+            return cur.GetNeighbourAlongDirection(dir) == null;
+        }
+        catch (Exception e) { Main.Log?.Error("TileExplorer.CrossedWall failed: " + e); return false; }
     }
 
     /// <summary>
@@ -227,7 +258,12 @@ internal static class TileExplorer
     /// re-announcing the old tile as if the cursor had jumped to the selection (which would also leave the scanner
     /// measuring from, and move-to walking to, the wrong tile).
     /// </summary>
-    public static void PlantOn(Vector3 worldPos)
+    public static void PlantOn(Vector3 worldPos) => PlantOn(worldPos, announce: true);
+
+    /// <summary>Plant the cursor without reading the tile — for callers that speak their OWN line about the spot
+    /// (the blast-position cycle names what the template catches there; the tile description would bury that under
+    /// the cover/offset readout). Delete still re-reads the tile in full, aim tail included.</summary>
+    internal static void PlantOn(Vector3 worldPos, bool announce)
     {
         // In free mode the plant keeps the EXACT point (the scanner's selection position), so the glide resumes
         // from the thing itself rather than its tile centre; tile mode snaps to the node as always.
@@ -238,7 +274,7 @@ internal static class TileExplorer
         var node = MapCursor.Node;
         if (node == null) { Speaker.Speak(Loc.T("cursor.no_reference"), interrupt: true); return; }
         ScrollTo(MapCursor.Position);
-        Announce();
+        if (announce) Announce();
     }
 
     /// <summary>
@@ -358,7 +394,15 @@ internal static class TileExplorer
 
     // Each step supersedes the previous, so interrupt — stepping fast naturally clips long lines at the headline.
     // Internal: the glide's cold plant reads through the same line.
-    internal static void Announce() => Speaker.Speak(Describe(), interrupt: true);
+    internal static void Announce() => Announce(null);
+
+    /// <summary>Read the cursor tile, optionally led by a one-word note about the STEP that got here (see
+    /// <see cref="Move"/>'s cut-edge check) rather than about the tile itself.</summary>
+    internal static void Announce(string prefix)
+    {
+        var line = Describe();
+        Speaker.Speak(string.IsNullOrEmpty(prefix) ? line : prefix + ", " + line, interrupt: true);
+    }
 
     private static string Describe()
     {

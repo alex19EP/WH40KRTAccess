@@ -91,6 +91,33 @@ internal static class Reachability
         }
     }
 
+    /// <summary>
+    /// Classify a KNOWN grid cell — an exact component comparison, with none of <see cref="Classify"/>'s
+    /// neighbourhood tolerance.
+    ///
+    /// <see cref="Classify"/> takes a world POINT and answers "could the party get to something standing here",
+    /// so it spirals a 5x5 window (<see cref="NavmeshProbe.AnyWalkableOnLevel"/>) — correct for a chest or a
+    /// ladder, which sit off-grid and are reached from whatever floor is beside them. It is wrong for the tile
+    /// cursor, which HAS the node: a single cell fenced off on every edge is its own connected component, but its
+    /// neighbour one step across the fence is on the party's island and inside the window, so the tolerant test
+    /// would call it reachable — silently, in precisely the case the player is asking about. Compare the cell's
+    /// own <c>Area</c> instead, and speak only about the cell the cursor is actually on.
+    /// </summary>
+    public static ReachClass ClassifyNode(Pathfinding.GraphNode node)
+    {
+        try
+        {
+            if (node == null || !node.Walkable) return ReachClass.Unknown;
+            if (!PartyArea(out uint party)) return ReachClass.Unknown;
+            return node.Area == party ? ReachClass.Walkable : ReachClass.Elsewhere;
+        }
+        catch (Exception e)
+        {
+            Main.Log?.Error("Reachability.ClassifyNode failed: " + e);
+            return ReachClass.Unknown;
+        }
+    }
+
     /// <summary>The word appended to a browse line, or null when there is nothing worth saying. Only the
     /// genuinely-unwalkable case speaks: "reachable" on every one of a dozen entries would be pure noise, and
     /// <see cref="ReachClass.Unknown"/> has nothing honest to claim.</summary>

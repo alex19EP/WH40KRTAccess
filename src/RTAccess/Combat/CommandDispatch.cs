@@ -199,7 +199,18 @@ public static class CommandDispatch
         switch (status)
         {
             case UnitHelper.MoveCommandStatus.NotEnoughMovementPoints: return Loc.T("path.not_enough_mp");
+            // The pathfind reached a node that is NOT in the destination's footprint — and it ran with
+            // limitRangeByActionPoints:false, so this is never about the movement budget. The cell simply cannot be
+            // entered on foot from here: a different walkable island (a catwalk, a ledge) or a pocket fenced off on
+            // every edge. The old wording ("Path blocked") was indistinguishable from the movement-point refusal
+            // above and from path.preview.blocked, which is why the field report could only say "it told me path
+            // blocked" with no idea which fact it meant. The tile readout now says "no path" as the cursor lands
+            // (InteractableDescriber section 2c), so this line is the confirmation, not the first news.
             case UnitHelper.MoveCommandStatus.DestinationUnreachable: return Loc.T("path.blocked");
+            // The route exists but bodies stand on it: the engine walks the path backwards past every cell blocked
+            // by another unit and gives up with fewer than two cells left. A distinct fact from "no path" — waiting
+            // a turn or routing around fixes it — and it used to fall through to the generic "can't reach".
+            case UnitHelper.MoveCommandStatus.NotEnoughPathPoints: return Loc.T("path.blocked_by_units");
             case UnitHelper.MoveCommandStatus.CannotMove: return Loc.T("path.cant_move");
             case UnitHelper.MoveCommandStatus.SamePath: return Loc.T("path.already_moving");
             default: return Loc.T("path.preview.cant_reach");

@@ -197,15 +197,13 @@ internal static class InteractableDescriber
         // TurnBasedModeActive FIRST: IsPreparationTurn walks TurnOrder → Data → Player.GetOrCreate<TurnDataPart>(),
         // which throws on a null Player between area loads (see DeploymentMode.Active).
         bool tbActive = turn != null && Game.Instance?.Player != null && turn.TurnBasedModeActive;
-        bool deployment = tbActive && turn.IsPreparationTurn && turn.IsDeploymentAllowed;
         bool abilityArmed = Game.Instance?.CursorController?.SelectedAbility != null;   // mesh hides cover while aiming
-        bool coverShown = seen && node.Walkable && tbActive
-            && (deployment || (turn.IsPlayerTurn && !abilityArmed));
+        // The turn-state half of the mesh predicate lives in CoverOverlayActive so the cover SCANNER
+        // (CoverModel / ProxyCover, the J cycle) cannot drift from this readout about whether cover is knowable.
+        bool coverShown = seen && node.Walkable && CoverOverlayActive;
         if (coverShown)
         {
-            var checkType = Game.Instance?.SelectionCharacter?.SelectedUnit?.Value != null
-                ? LosCalculations.ForcedCoverCheckType.BySource
-                : LosCalculations.ForcedCoverCheckType.ByTarget;
+            var checkType = CoverCheckType;
             AppendCover(sb, node, 2, "aim.dir_n", checkType);
             AppendCover(sb, node, 1, "aim.dir_e", checkType);
             AppendCover(sb, node, 0, "aim.dir_s", checkType);
@@ -226,6 +224,24 @@ internal static class InteractableDescriber
         if (seen && !abilityArmed && tbActive && turn.IsPlayerTurn
             && turn.CurrentUnit is Kingmaker.EntitySystem.Entities.StarshipEntity actingShip)
             Append(sb, RTAccess.Exploration.ShipPathInfo.TileReachabilityWord(actingShip, node));
+
+        // 2c. "No path" — the tile is walkable but sits on a walkable island the anchor cannot reach on foot at
+        //     all: a catwalk overhead, a ledge behind a railing, a fenced-off pocket. This is NOT the movement-point
+        //     question section 2 answers ("unreachable" = outside THIS turn's blue highlight, and only spoken while
+        //     the cover overlay is live, i.e. in your own turn with no ability armed). It is the harder fact, and
+        //     the tile cursor never asked it: Reachability.Classify has been sorting the SCANNER's lists since the
+        //     Kiava Gamma fix, but DescribeTile never called it — so a cell the pathfinder cannot enter under any
+        //     circumstances read as bare empty floor, and the only feedback was the move-to's unexplained refusal
+        //     (August field report #5: "one arrow left, path blocked, no wall, no door, no object in the way").
+        //     Walls in RT are FENCES on cell edges, so the blocked cell itself is perfectly walkable and neither
+        //     the "wall" word nor the object headline ever fires for it — the connected-component id is the only
+        //     honest witness. Fog-gated like everything else here, and skipped on unwalkable cells (already "wall").
+        //     ClassifyNode, not Classify: the point-based one tolerates a 5x5 neighbourhood (right for an off-grid
+        //     chest, wrong here) and would call a fenced-off single cell reachable because its neighbour across the
+        //     fence is on the party's island — silent in exactly the reported case.
+        if (seen && node.Walkable
+            && RTAccess.Exploration.Reachability.ClassifyNode(node) == RTAccess.Exploration.ReachClass.Elsewhere)
+            Append(sb, Loc.T("tile.no_path"));
 
         // 3. Offset from the anchor unit, in tiles (+Z = north, +X = east — matches the compass above).
         Append(sb, RelativeTile(node, anchor));
@@ -363,6 +379,39 @@ internal static class InteractableDescriber
         catch (Exception e) { Main.Log?.Error("DescribeTile trap-zone read failed: " + e); }
     }
 
+    /// <summary>
+    /// Is the game's own cover overlay showing right now — i.e. may the mod speak a tile's cover at all? The
+    /// turn-state half of <c>CoverVisualizer.IsNodeCoverVisible</c>:
+    /// <c>(playerTurn &amp;&amp; !abilityArmed) || deploymentPhase</c>, both inside turn-based mode. The mesh's
+    /// remaining clause — in the movable area OR Ctrl held — is deliberately dropped: holding Ctrl reveals cover on
+    /// every nearby walkable cell in or out of range, so reachability is an additive cue, not a gate (see the
+    /// DescribeTile comment above and <see cref="RTAccess.Exploration.CoverModel"/>).
+    ///
+    /// Single-sourced here because two surfaces read it — this tile readout and the cover scanner (the J cycle /
+    /// "Cover" browse category). If they disagreed, the scanner could find a spot the cursor then refuses to
+    /// describe, which is exactly the kind of self-contradiction a blind player cannot debug.
+    /// </summary>
+    internal static bool CoverOverlayActive
+    {
+        get
+        {
+            // TurnBasedModeActive FIRST: IsPreparationTurn walks TurnOrder → Data → Player.GetOrCreate<TurnDataPart>(),
+            // which throws on a null Player between area loads (see DeploymentMode.Active).
+            var turn = Game.Instance?.TurnController;
+            if (turn == null || Game.Instance?.Player == null || !turn.TurnBasedModeActive) return false;
+            if (turn.IsPreparationTurn && turn.IsDeploymentAllowed) return true;   // deployment shows cover regardless
+            return turn.IsPlayerTurn && Game.Instance?.CursorController?.SelectedAbility == null;
+        }
+    }
+
+    /// <summary>The perspective the cover oracle is asked from, matching the mesh: BySource (the selected/acting
+    /// unit) so exclusive-user forced cover resolves as on-screen, ByTarget only when nothing is selected
+    /// (pre-deploy), to avoid dereferencing a null selection.</summary>
+    internal static LosCalculations.ForcedCoverCheckType CoverCheckType
+        => Game.Instance?.SelectionCharacter?.SelectedUnit?.Value != null
+            ? LosCalculations.ForcedCoverCheckType.BySource
+            : LosCalculations.ForcedCoverCheckType.ByTarget;
+
     /// <summary>Append "half/full cover &lt;dir&gt;" (or "blocked &lt;dir&gt;" for sight-blocking) for one edge, read
     /// with the same <paramref name="checkType"/> the game's cover mesh uses (BySource on the acting unit).
     /// <paramref name="dirKey"/> is the localization key for the edge's direction word.</summary>
@@ -388,7 +437,15 @@ internal static class InteractableDescriber
         if (origin == null) return null;
         int dx = node.XCoordinateInGrid - origin.XCoordinateInGrid; // east(+) / west(-)
         int dz = node.ZCoordinateInGrid - origin.ZCoordinateInGrid; // north(+) / south(-)
-        if (dx == 0 && dz == 0) return Loc.T("geo.here");
+        // The vertical term FIRST, because it is the one that can be true while the plan offset says "beside you":
+        // the grid stores exactly one node per XZ column — the TOPMOST walkable surface (see
+        // NavmeshProbe.WalkableNodeOnLevel) — so the cell one step west of a unit standing under a catwalk is the
+        // CATWALK, several metres up. Without this the two read byte-identically, the tile sounds adjacent and
+        // walkable, and the move-to then refuses with an unexplained "no path" (August field report #5). Same
+        // Geo.Vertical the scanner's bearings already use, so "3 metres up" means the same thing everywhere.
+        var vertical = RTAccess.Exploration.Geo.Vertical((Vector3)origin.Vector3Position, (Vector3)node.Vector3Position);
+        if (dx == 0 && dz == 0)
+            return string.IsNullOrEmpty(vertical) ? Loc.T("geo.here") : Loc.T("geo.here") + ", " + vertical;
         var sb = new StringBuilder();
         if (dx != 0)
             sb.Append(Loc.T("geo.offset", new { count = dx > 0 ? dx : -dx, dir = Loc.T(dx > 0 ? "aim.dir_e" : "aim.dir_w") }));
@@ -397,6 +454,7 @@ internal static class InteractableDescriber
             if (sb.Length > 0) sb.Append(", ");
             sb.Append(Loc.T("geo.offset", new { count = dz > 0 ? dz : -dz, dir = Loc.T(dz > 0 ? "aim.dir_n" : "aim.dir_s") }));
         }
+        if (!string.IsNullOrEmpty(vertical)) sb.Append(", ").Append(vertical);
         return sb.ToString();
     }
 
@@ -717,10 +775,38 @@ internal static class InteractableDescriber
         sb.Append(tiles == 1 ? Loc.T("aim.tile_one") : Loc.T("aim.tiles", new { count = tiles }));
         if (dist > 0.5f && RTAccess.Exploration.Geo.CompassSector(dx, dz, out int sector))
             sb.Append(", ").Append(Loc.T(Compass8[sector]));
+        Append(sb, AxisOffset(dx, dz));
         var vertical = RTAccess.Exploration.Geo.Vertical(from, to);
         if (!string.IsNullOrEmpty(vertical)) sb.Append(", ").Append(vertical);
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The two-axis tile breakdown behind a diagonal bearing — "6 north, 3 east" after "7 tiles, north-east".
+    /// A 45°-wide compass sector is a wedge, not a direction: "north-east, 7 tiles" describes every cell from
+    /// (1,7) to (7,1), which is most of a room, and a player trying to walk it has to guess (August field report
+    /// #6: "it's just cardinal directions but this can mean nearly everything"). The distance still leads, because
+    /// that is the number ability ranges are counted in — this only disambiguates the bearing behind it.
+    ///
+    /// Emitted ONLY for genuinely diagonal bearings (both axes non-zero in tiles). On a cardinal the compass word
+    /// is already exact and the breakdown would just re-say the distance ("5 tiles, north, 5 north"), which is the
+    /// spam the same report warned about. Off returns null and nothing is appended.
+    /// </summary>
+    private static string AxisOffset(float dx, float dz)
+    {
+        if (!AxisOffsetsEnabled) return null;
+        float cell = GraphParamsMechanicsCache.GridCellSize;
+        int ex = Mathf.RoundToInt(dx / cell), nz = Mathf.RoundToInt(dz / cell);
+        if (ex == 0 || nz == 0) return null;   // cardinal (or co-located): the compass word already says it exactly
+        var sb = new StringBuilder();
+        sb.Append(Loc.T("geo.offset", new { count = nz > 0 ? nz : -nz, dir = Loc.T(nz > 0 ? "aim.dir_n" : "aim.dir_s") }));
+        sb.Append(", ");
+        sb.Append(Loc.T("geo.offset", new { count = ex > 0 ? ex : -ex, dir = Loc.T(ex > 0 ? "aim.dir_e" : "aim.dir_w") }));
+        return sb.ToString();
+    }
+
+    private static bool AxisOffsetsEnabled =>
+        RTAccess.Settings.ModSettings.GetSetting<RTAccess.Settings.BoolSetting>("exploration.axis_offsets")?.Get() ?? true;
 
     private static void Append(StringBuilder sb, string part)
     {
