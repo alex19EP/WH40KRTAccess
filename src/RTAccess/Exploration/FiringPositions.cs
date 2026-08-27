@@ -64,9 +64,17 @@ internal static class FiringPositions
         => Game.Instance?.SelectedAbilityHandler?.Ability ?? CombatReads.DefaultAttack(me);
 
     /// <summary>
-    /// Can the target already be hit from where the unit stands (or from its planted move preview)? Then there is
-    /// nothing to search for and the caller should say so rather than marching the player somewhere.
-    /// <paramref name="hit"/> / <paramref name="cover"/> describe the shot from here.
+    /// Can the target already be hit from the cell the unit ACTUALLY STANDS ON? Then there is nothing to search
+    /// for and the caller should say so rather than marching the player somewhere.
+    /// <paramref name="hit"/> / <paramref name="cover"/> describe the shot from there.
+    ///
+    /// Deliberately NOT the desired (move-preview) position that every READ in this file's neighbourhood uses.
+    /// The desired position is writable by us — the approach key's own planted stance sets it, and so does the
+    /// tile cursor's hover-sim — so anchoring here on it made the question self-referential: press one planted a
+    /// stance, press two asked "am I in range?", the engine answered about the plant, and the two-step said
+    /// "already in range" forever instead of committing the move (field log 2026-08-28, three attempts, unit
+    /// never moved). "Should I move?" is a question about where I stand; "what would I hit?" is the one that
+    /// belongs to the plan.
     /// </summary>
     public static bool InRangeNow(BaseUnitEntity me, BaseUnitEntity target, out int hit, out LosCalculations.CoverType cover)
     {
@@ -74,8 +82,9 @@ internal static class FiringPositions
         cover = LosCalculations.CoverType.None;
         try
         {
+            if (me == null) return false;
             var atk = Attack(me);
-            var node = CombatReads.ShootNode(me);   // the DESIRED position — a planted move counts
+            var node = NavmeshProbe.NodeAt(me.Position);   // where the legs are, NOT the move preview
             if (atk == null || node == null || target == null) return false;
             if (!atk.CanTargetFromNode(node, null, new TargetWrapper(target), out int _, out var _, out var _)) return false;
             Evaluate(atk, me, target, node, out cover, out hit);
