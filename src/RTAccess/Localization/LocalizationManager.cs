@@ -61,13 +61,22 @@ namespace RTAccess.Localization
             Main.Log?.Log("[loc] language changed to " + lang);
         }
 
-        /// <summary>Current language ?? English fallback. Null only if the key is missing from BOTH (a
-        /// dev error — logged; <see cref="Message"/> then falls back to the raw key).</summary>
+        /// <summary>Current language ?? the game's own equivalent string ?? English fallback. Null only
+        /// if the key is missing from BOTH tables (a dev error — logged; <see cref="Message"/> then falls
+        /// back to the raw key).
+        ///
+        /// <para>Resolution order matters. A translator's own wording for the CURRENT language wins first;
+        /// only then do we borrow the game's already-localized word (<see cref="GameStrings"/>), which is
+        /// what makes those keys read in all nine of the game's locales while our tables ship enGB only;
+        /// our English is the last resort. In English the first and last steps are identical, so the game
+        /// lookup changes nothing there — it only ever adds a translation we don't have.</para></summary>
         public static string Get(string table, string key)
         {
             if (_language != Fallback
                 && _tables.TryGetValue(table, out var t) && t.TryGetValue(key, out var v))
                 return v;
+            var game = GameStrings.Resolve(table, key);
+            if (game != null) return game;
             if (_fallbackTables.TryGetValue(table, out var ft) && ft.TryGetValue(key, out var fv))
                 return fv;
             Main.Log?.Warning("[loc] missing string: " + table + "." + key);
@@ -81,6 +90,8 @@ namespace RTAccess.Localization
             if (_language != Fallback
                 && _tables.TryGetValue(table, out var t) && t.TryGetValue(key, out var v))
                 return v;
+            var game = GameStrings.Resolve(table, key);
+            if (game != null) return game;
             if (_fallbackTables.TryGetValue(table, out var ft) && ft.TryGetValue(key, out var fv))
                 return fv;
             return fallback;
