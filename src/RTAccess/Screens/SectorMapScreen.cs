@@ -396,28 +396,64 @@ namespace RTAccess.Screens
             return result;
         }
 
-        // Shortest number of explored-passage hops from the ship's current system to `target` (BFS over the same
-        // parity-filtered adjacency the walk uses). 0 if it IS the current system, -1 if unreachable through
-        // explored links. Cheap — the explored graph is small.
+        // The shortest chain of explored-passage hops from the ship's current system to `target`, as
+        // (system, the passage crossed to reach it) pairs: index 0 is a NEIGHBOUR of the current system — the one
+        // leg you can actually warp right now — and the last entry is `target` itself. Empty when the target is
+        // the current system or no charted chain reaches it. BFS over the same parity-filtered adjacency the walk
+        // uses ([[rt-visual-parity]]), so it can never route through topology a sighted player hasn't charted.
+        //
+        // Shortest by HOP COUNT, not by danger: hops are the number the sector map already speaks ("N jumps from
+        // your position"), whereas a safest-route promise would need edge weights and would still have to explain
+        // why it sent you the long way. The leg's difficulty is spoken as the cursor lands on it, and the link
+        // walk (m) is the manual override, so the choice stays the player's.
+        internal static List<(SectorMapObjectEntity system, SectorMapPassageEntity passage)> RouteFromCurrent(
+            SectorMapObjectEntity target)
+        {
+            var route = new List<(SectorMapObjectEntity system, SectorMapPassageEntity passage)>();
+            var start = Ctrl?.CurrentStarSystem;
+            if (start == null || target == null || start.UniqueId == target.UniqueId) return route;
+
+            // uid -> how the BFS first reached it: the system it came from, and the passage it crossed.
+            var from = new Dictionary<string, (SectorMapObjectEntity prev, SectorMapPassageEntity passage)>();
+            var seen = new HashSet<string> { start.UniqueId };
+            var queue = new Queue<SectorMapObjectEntity>();
+            queue.Enqueue(start);
+            bool found = false;
+            while (queue.Count > 0 && !found)
+            {
+                var sys = queue.Dequeue();
+                foreach (var n in ExploredNeighbors(sys))
+                {
+                    if (!seen.Add(n.system.UniqueId)) continue;
+                    from[n.system.UniqueId] = (sys, n.passage);
+                    if (n.system.UniqueId == target.UniqueId) { found = true; break; }
+                    queue.Enqueue(n.system);
+                }
+            }
+            if (!found) return route;
+
+            // Walk the parent chain back from the target, then reverse — so the caller reads it outward from the
+            // ship, in the order the jumps would be flown.
+            var at = target;
+            while (at != null && at.UniqueId != start.UniqueId)
+            {
+                if (!from.TryGetValue(at.UniqueId, out var step)) { route.Clear(); return route; }  // broken chain
+                route.Add((at, step.passage));
+                at = step.prev;
+            }
+            route.Reverse();
+            return route;
+        }
+
+        // Shortest number of explored-passage hops from the ship's current system to `target`. 0 if it IS the
+        // current system, -1 if unreachable through explored links. Cheap — the explored graph is small.
         internal static int JumpsFromCurrent(SectorMapObjectEntity target)
         {
             var start = Ctrl?.CurrentStarSystem;
             if (start == null || target == null) return -1;
-            if (start == target) return 0;
-            var seen = new HashSet<string> { start.UniqueId };
-            var queue = new Queue<(SectorMapObjectEntity sys, int dist)>();
-            queue.Enqueue((start, 0));
-            while (queue.Count > 0)
-            {
-                var (sys, dist) = queue.Dequeue();
-                foreach (var n in ExploredNeighbors(sys))
-                {
-                    if (!seen.Add(n.system.UniqueId)) continue;
-                    if (n.system == target) return dist + 1;
-                    queue.Enqueue((n.system, dist + 1));
-                }
-            }
-            return -1;
+            if (start.UniqueId == target.UniqueId) return 0;
+            int hops = RouteFromCurrent(target).Count;
+            return hops == 0 ? -1 : hops;
         }
 
         private static bool SafeCheckQuests(SectorMapObject view)

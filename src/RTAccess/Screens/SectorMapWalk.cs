@@ -70,6 +70,44 @@ namespace RTAccess.Screens
             AnnounceAnchor(focused);
         }
 
+        /// <summary>
+        /// \ — PLOT the route, don't fly it. Charts the shortest explored-passage chain from the ship's current
+        /// system to the SELECTED one and moves the cursor onto the FIRST hop, so Enter's Travel verb jumps
+        /// exactly one leg. It deliberately never warps: a jump is irreversible and costs days, so the key that
+        /// means "go to the selection" on the surface can only mean "point me at the next leg" out here.
+        ///
+        /// Press it again after arriving and it re-plots from where you now are, so a multi-jump crossing is
+        /// pick-destination-once then \ , Enter, \ , Enter — the sector traversed without holding the passage
+        /// graph in your head. That is the gap the frozen nearest-first list leaves open: it orders systems by
+        /// straight-line distance, and on a passage map the nearest system can be the longest warp.
+        ///
+        /// Read-only (focus + speech) like the rest of the walk, so it answers mid-jump too.
+        /// </summary>
+        internal static void RouteToSelection()
+        {
+            var cur = SyncCurrent();
+            var target = Navigation.FocusedReference as SectorMapObjectEntity;
+            if (cur == null || target == null) { Tts.Speak(Loc.T("sectormap.walk_none"), interrupt: true); return; }
+            if (target.UniqueId == cur.UniqueId)
+            { Tts.Speak(Loc.T("sectormap.plot_here", new { name = Name(cur) }), interrupt: true); return; }
+
+            var route = SectorMapScreen.RouteFromCurrent(target);
+            if (route.Count == 0)
+            { Tts.Speak(Loc.T("sectormap.plot_none", new { name = Name(target) }), interrupt: true); return; }
+
+            var hop = route[0];
+            FocusSystem(hop.system);
+            // ExploredNeighbors only ever yields explored passages, so the difficulty is always there — but this
+            // runs straight off a keypress with no Safe() wrapper above it, so it must not be the thing that throws.
+            string difficulty = hop.passage != null
+                ? SectorMapScreen.DifficultyWord(hop.passage.CurrentDifficulty) : "";
+            Tts.Speak(route.Count == 1
+                ? Loc.T("sectormap.plot_one", new { name = Name(target), difficulty })
+                : Loc.T("sectormap.plot_next",
+                    new { dest = Name(target), jumps = route.Count, name = Name(hop.system), difficulty }),
+                interrupt: true);
+        }
+
         /// <summary>c — snap the anchor back to the ship's current system and focus it.</summary>
         internal static void Home()
         {

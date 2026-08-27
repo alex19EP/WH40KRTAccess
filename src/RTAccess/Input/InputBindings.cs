@@ -399,6 +399,12 @@ namespace RTAccess.Input
                 Screens.SectorMapWalk.AnchorHere).AddBinding(KeyCode.Slash).Grouped("sectormap");
             InputManager.Register("sectormap.walk_home", "Sector map: back to current system", InputCategory.WorldMap,
                 Screens.SectorMapWalk.Home).AddBinding(KeyCode.C).Grouped("sectormap");
+            // Backslash — the sector-map reading of the exploration key that means "go to the selection": plot the
+            // route to the selected system and put the cursor on the first hop, WITHOUT jumping (warp is
+            // irreversible, so the key points at the next leg instead of taking it). Same chord as the surface's
+            // scan.approach, which is Exploration-category and therefore dead here — one key, one idea, per map.
+            InputManager.Register("sectormap.plot_route", "Sector map: plot route to selection", InputCategory.WorldMap,
+                Screens.SectorMapWalk.RouteToSelection).AddBinding(KeyCode.Backslash).Grouped("sectormap");
 
             // ---- LocalMap: the map window's free cursor + review cycles (declared ONLY by LocalMapScreen, so
             // these keys are live only while the map is open and are fully isolated from the in-area ones).
