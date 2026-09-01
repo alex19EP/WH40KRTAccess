@@ -44,7 +44,12 @@ internal static class MapCursor
         get { var a = Anchor(); return a != null ? Geo.Live(a) : Vector3.zero; }
     }
 
-    public static void Set(CustomGridNodeBase node) { _node = node; _point = null; }
+    /// <summary>The <c>Time.frameCount</c> of the last plant / step / glide write (never of the mode normalisation —
+    /// see <see cref="DropPoint"/>); -1 until first planted. Paired with <see cref="Scanner.SelectionFrame"/> by the
+    /// review buffer to decide which of the two review tools the player touched last (<c>BufferManager.ReviewedUnit</c>).</summary>
+    public static int TouchedFrame { get; private set; } = -1;
+
+    public static void Set(CustomGridNodeBase node) { _node = node; _point = null; TouchedFrame = Time.frameCount; }
 
     /// <summary>Plant on the grid node nearest a world point — the scanner's Home/Slash "cursor to selection".
     /// Returns false (and keeps the previous node) when the point is off-graph, so planting onto an off-mesh item
@@ -56,6 +61,7 @@ internal static class MapCursor
         if (node == null) return false;
         _node = node;
         _point = null;
+        TouchedFrame = Time.frameCount;
         return true;
     }
 
@@ -70,8 +76,15 @@ internal static class MapCursor
         if (node == null) return false;
         _node = node;
         _point = new Vector3(worldPos.x, node.Vector3Position.y, worldPos.z);
+        TouchedFrame = Time.frameCount;
         return true;
     }
+
+    /// <summary>Collapse a free-mode sub-tile point onto its tile centre WITHOUT counting as a touch — the glide's
+    /// mode normalisation when combat / deployment forces tile mode. The player did nothing, so the review buffer
+    /// must not conclude the cursor was just used (that would snatch the buffer back from a fresh scanner pick the
+    /// moment combat starts).</summary>
+    public static void DropPoint() => _point = null;
 
     public static void Clear() { _node = null; _point = null; }
 

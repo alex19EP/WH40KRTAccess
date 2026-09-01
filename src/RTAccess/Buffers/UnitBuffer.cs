@@ -14,11 +14,11 @@ using Kingmaker.UnitLogic.Parts;        // UnitPartNonStackBonuses
 namespace RTAccess.Buffers;
 
 /// <summary>
-/// A <see cref="Buffer"/> over a live unit (the selected party member, or the current combat target). Its
+/// A <see cref="Buffer"/> over a live unit (the selected party member, or the unit under review). Its
 /// lines, in order: the unit's name, hit points, the action/movement points (only in combat), the defenses
 /// (absorption, deflection, and — for a full <see cref="UnitEntity"/> — dodge and parry), then every visible
 /// buff and debuff in the game's own order. The unit is resolved live on every <see cref="Update"/> via the
-/// supplied factory, so the buffer always reflects the current selection / target. 40K port of WrathAccess'
+/// supplied factory, so the buffer always reflects the current selection / review. 40K port of WrathAccess'
 /// UnitBuffer (RT has Wounds/Trauma + percentile defenses computed by rules, not D&D HP/AC).
 /// </summary>
 internal sealed class UnitBuffer : Buffer
@@ -36,8 +36,9 @@ internal sealed class UnitBuffer : Buffer
 
         // Fog gate (RULE 2 / audit L1): a not-yet-revealed, non-party unit has its ENTIRE overtip hidden by the
         // game (OvertipEntityUnitVM.HideFromScreen) — HP, defenses AND buffs. Never read any of them here. The
-        // name stays (it is parity-safe — the whose-turn cue already speaks the acting enemy's name); the rest is
-        // suppressed. Party units (IsPlayerFaction) are always shown, so they never hit this gate.
+        // name stays (parity-safe: only a scanner selection that has gone hidden SINCE it was cycled onto — and
+        // named aloud — reaches this branch; the cursor path filters hidden units out before we get here); the
+        // rest is suppressed. Party units (IsPlayerFaction) are always shown, so they never hit this gate.
         if (!(unit.IsPlayerFaction || unit.IsVisibleForPlayer))
         {
             Add(Loc.T("buffer.not_visible"));

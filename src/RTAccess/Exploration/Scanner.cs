@@ -103,6 +103,15 @@ internal static class Scanner
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
+    private static int _selectedFrame = -1; // Time.frameCount of the last selection write — a pick OR a clear
+
+    /// <summary>The frame the review selection last changed (cycled, re-picked, or cleared); -1 until the first
+    /// pick. Paired with <see cref="MapCursor.TouchedFrame"/> by the review buffer to decide which of the two review
+    /// tools the player touched last (<c>BufferManager.ReviewedUnit</c>).</summary>
+    internal static int SelectionFrame => _selectedFrame;
+
+    // Every selection write goes through here so the touch stamp can never drift from the key.
+    private static void SetSelection(object key) { _selectedKey = key; _selectedFrame = Time.frameCount; }
 
     // ---- registered action entry points (InputCategory.Exploration; see InputBindings.RegisterDefaults) ----
     // Each is wired to an InputAction so the dev harness /input can drive it and the framework's chord shadowing
@@ -226,7 +235,7 @@ internal static class Scanner
         var refPos = ScanFrom();
 
         var list = CategoryList(_categoryIndex, refPos);
-        if (list.Count == 0) { _selectedKey = null; Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
+        if (list.Count == 0) { SetSelection(null); Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
 
         int idx = IndexOfSelected(list);
         idx = idx < 0 ? 0 : Wrap(idx + dir, list.Count);
@@ -243,7 +252,7 @@ internal static class Scanner
         // something to browse, so the player never cycles onto a dead "…, empty" stop (mirrors WrathAccess's
         // NextCategoryIndex). When NOTHING in the area populates any category, stay put and say so.
         int next = NextNonEmptyCategory(_categoryIndex, dir, refPos);
-        if (next < 0) { _selectedKey = null; Speak(Loc.T("scan.nothing_to_scan")); return; }
+        if (next < 0) { SetSelection(null); Speak(Loc.T("scan.nothing_to_scan")); return; }
 
         _categoryIndex = next;
         var list = CategoryList(_categoryIndex, refPos);
@@ -569,7 +578,7 @@ internal static class Scanner
         int idx = ExitIndexOfSelected(list);
         idx = idx < 0 ? (dir >= 0 ? 0 : list.Count - 1) : Wrap(idx + dir, list.Count);
         var item = list[idx];
-        _selectedKey = item.Key;
+        SetSelection(item.Key);
 
         // A bare opening announces its destination itself ("Exit to Room N…"); a door or transition speaks the
         // THING, so append where it leads — fog-gated like the openings (main-HUD audit L4).
@@ -940,7 +949,7 @@ internal static class Scanner
     private static void Select(List<ScanItem> list, int idx, Vector3 refPos, string prefix = null)
     {
         var item = list[idx];
-        _selectedKey = item.Key;
+        SetSelection(item.Key);
         var line = item.Describe(refPos) + ", " + Loc.T("nav.position", new { index = idx + 1, count = list.Count });
         if (!string.IsNullOrEmpty(prefix)) line = prefix + line;
         // While aiming an attack, cycling doubles as picking a target: append the terse hit prediction (B3/B4).

@@ -307,11 +307,12 @@ Buffers let you read a character's details line by line without leaving what you
 points, defenses, then every buff and debuff. On a buff line, **Alt+T** opens the game's own tooltip
 for it (the full description, and which sources are overriding it when a bonus doesn't stack).
 
-There are three buffers: the **selected unit** (whoever you've selected — inside Inventory or the
-character sheet, the character the window is showing), the current combat **target**, and the
-**reviewed unit** — whatever unit the scanner cursor is on. The reviewed-unit buffer is how you read
-*anyone*, friend or enemy: cycle to them with **,** / **.** and step through their buffer. It's also
-the way to read another party member during combat, where the game locks character switching to the
+There are two buffers: the **selected unit** (whoever you've selected — inside Inventory or the
+character sheet, the character the window is showing) and the **reviewed unit** — the unit you last
+pointed at with either review tool: the tile cursor (a unit standing on the cursor's tile) or the
+scanner keys (cycle with **,** / **.** / **N**). Whichever you used last wins; if it isn't on a unit,
+the other one fills in. The reviewed-unit buffer is how you read *anyone*, friend or enemy, and the
+way to read another party member during combat, where the game locks character switching to the
 acting unit.
 
 ### Spatial audio

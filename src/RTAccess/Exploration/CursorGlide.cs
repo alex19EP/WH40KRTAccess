@@ -55,7 +55,7 @@ internal static class CursorGlide
             {
                 // Combat/deployment (or the tiled setting) took over — collapse a sub-tile point onto its
                 // tile centre ONCE so every tile-mode readout measures from where the game itself would.
-                if (MapCursor.HasPoint && MapCursor.Node != null) MapCursor.Set(MapCursor.Node);
+                if (MapCursor.HasPoint) MapCursor.DropPoint();   // not a plant — must not stamp TouchedFrame
                 return;
             }
 

@@ -427,7 +427,6 @@
   "slot.use_left": "{uses} use left",
   "slot.uses_left": "{uses} uses left",
   "buffer.selected_unit": "Selected unit",
-  "buffer.target": "Target",
   "buffer.reviewed": "Reviewed unit",
   "buffer.none": "No buffers.",
   "buffer.none_selected": "No buffer selected.",

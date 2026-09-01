@@ -1,16 +1,17 @@
 using System.Collections.Generic;
 using Kingmaker;
-using Kingmaker.Controllers.Combat;     // GetCombatStateOptional()
 using Kingmaker.EntitySystem.Entities;  // BaseUnitEntity
+using RTAccess.Exploration;             // MapCursor / CursorTarget / Scanner (the two review tools)
 
 namespace RTAccess.Buffers;
 
 /// <summary>
 /// The ring of <see cref="Buffer"/>s and the current position within it. Alt+Left/Right cycle between enabled
 /// buffers (skipping disabled ones, wrapping); Alt+Up/Down move within the current buffer. Ported from
-/// WrathAccess. Ships three unit buffers — the selected unit, the current combat target, and the scanner's
-/// reviewed unit — all always enabled. The resolvers read the live unit from the game each refresh, so a
-/// buffer always reflects the current selection / target / review without an explicit re-bind.
+/// WrathAccess, and the same two-buffer shape: the selected unit and the reviewed unit, both always enabled.
+/// (An RT-only third "Target" buffer — manual target, else whose turn it is — was dropped: on the player's own
+/// turn it always resolved to the acting unit, i.e. a copy of Selected unit.) The resolvers read the live unit
+/// from the game each refresh, so a buffer always reflects the current selection / review without a re-bind.
 /// </summary>
 internal sealed class BufferManager
 {
@@ -58,19 +59,17 @@ internal sealed class BufferManager
         return false;
     }
 
-    /// <summary>Build the standard buffer set (once, at boot). The three unit buffers read their live unit
-    /// from the game each refresh: the selected unit (the game's real single selection), the current combat
-    /// target, and the scanner's reviewed unit (aim the review cursor at anyone — the WrathAccess third
-    /// channel, and the one that works in turn-based combat where the game locks the selection). Leaves
-    /// <c>_position</c> at -1 so the first Alt+Left/Right ENTERS a buffer and reads its first line (the unit
-    /// name), then Alt+Up/Down advance from there (the SayTheSpire buffer convention).</summary>
+    /// <summary>Build the standard buffer set (once, at boot). The two unit buffers read their live unit from
+    /// the game each refresh: the selected unit (the game's real single selection) and the reviewed unit (point
+    /// the tile cursor or the scanner at anyone — the channel that works in turn-based combat where the game
+    /// locks the selection). Leaves <c>_position</c> at -1 so the first Alt+Left/Right ENTERS a buffer and reads
+    /// its first line (the unit name), then Alt+Up/Down advance from there (the SayTheSpire buffer convention).</summary>
     public void RegisterDefaults()
     {
         if (_buffers.Count > 0) return;
         // Labels resolve now (RegisterDefaults runs after LocalizationManager.Initialize; see Main). A
         // mid-session language change won't retranslate these boot-time labels — an accepted edge case.
         Add(new UnitBuffer(Loc.T("buffer.selected_unit"), SelectedUnit));
-        Add(new UnitBuffer(Loc.T("buffer.target"), TargetUnit));
         Add(new UnitBuffer(Loc.T("buffer.reviewed"), ReviewedUnit));
         foreach (var b in _buffers) b.Enabled = true;
     }
@@ -89,19 +88,22 @@ internal sealed class BufferManager
         return s.SelectedUnit.Value ?? s.SelectedUnitInUI.Value ?? s.FirstSelectedUnit;
     }
 
-    // The scanner review selection, when it's a unit — party or enemy alike. Selection-driven with no
-    // dependency on the game's unit selection, so it keeps working in turn-based combat where CanSelectUnit
-    // locks the party selection. UnitBuffer.Populate fog-gates whatever this returns.
-    private static BaseUnitEntity ReviewedUnit() => RTAccess.Exploration.Scanner.SelectedUnit();
-
-    // The selected unit's manual combat target if it has one; otherwise the unit whose turn it currently is.
-    // A manual target that has since slipped into fog is ignored: the game drops its overtip entirely, so reading
-    // it would leak a hidden enemy's HP/defenses/buffs (docs/combat-hud-parity-audit.md L1). UnitBuffer.Populate
-    // still fog-gates the resolved unit as a backstop (e.g. an enemy whose turn it is but who stands in fog).
-    private static BaseUnitEntity TargetUnit()
+    // The unit under REVIEW: whichever of the two review tools the player touched LAST — the tile cursor (the
+    // visible unit whose footprint the cursor stands in: the same lens as the tile readout and the aim-commit
+    // key) or the scanner's review selection (Period / Comma / N cycles). Last-touched wins, so Period after a
+    // cursor step reads the cycled enemy even while the cursor still sits on your own character (the cursor
+    // self-plants there — a cursor-first rule would have pinned this buffer to the selected unit, the very
+    // complaint that shaped it). When the last-touched tool is not on a unit (cursor over open floor, selection
+    // on a chest) the OTHER tool's unit fills in, so stepping across empty tiles never blanks a buffer the
+    // scanner filled. Neither depends on the game's unit selection, so this is the buffer that reads anyone in
+    // turn-based combat, where CanSelectUnit locks the party selection. CursorTarget already applies the
+    // visibility lens; UnitBuffer.Populate gates the scanner path as a backstop.
+    private static BaseUnitEntity ReviewedUnit()
     {
-        var manual = SelectedUnit()?.GetCombatStateOptional()?.ManualTarget as BaseUnitEntity;
-        if (manual != null && (manual.IsPlayerFaction || manual.IsVisibleForPlayer)) return manual;
-        return Game.Instance?.TurnController?.CurrentUnit as BaseUnitEntity;
+        bool cursorLast = MapCursor.TouchedFrame >= Scanner.SelectionFrame;
+        var first = cursorLast ? CursorUnit() : Scanner.SelectedUnit();
+        return first ?? (cursorLast ? Scanner.SelectedUnit() : CursorUnit());
     }
+
+    private static BaseUnitEntity CursorUnit() => CursorTarget.Inside()?.TargetUnit;
 }
