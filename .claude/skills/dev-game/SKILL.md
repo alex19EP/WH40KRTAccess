@@ -42,10 +42,10 @@ automatically on the Steam relaunch.
 Once the server is up, drive the live game over the loopback dev server (DEBUG-only, port `8772`):
 
 ```
-curl.exe -s --data "DevApi.Say(\"hi\"); 2+2" 127.0.0.1:8772/eval     # => 4, and speaks "hi"
-curl.exe -s "127.0.0.1:8772/speech?since=0"                          # what the mod has spoken
-curl.exe -s 127.0.0.1:8772/screenshot                                # path to a framebuffer PNG (Read it)
-curl.exe -s --data "latest" 127.0.0.1:8772/loadsave                  # load newest save, block until in-play
+curl.exe -s --data "DevApi.Say(\"hi\"); 2+2" localhost:8772/eval     # => 4, and speaks "hi"
+curl.exe -s "localhost:8772/speech?since=0"                          # what the mod has spoken
+curl.exe -s localhost:8772/screenshot                                # path to a framebuffer PNG (Read it)
+curl.exe -s --data "latest" localhost:8772/loadsave                  # load newest save, block until in-play
 ```
 
 `/gui` and `/input` return `[not yet]` until Phase 2 (they need the parallel Screen/Navigator tree).

@@ -98,7 +98,7 @@ internal sealed class DevServer
             // early-return would then never clear.
             Speaker.Observer = _speech.Add;
             _enabled = true;
-            Main.Log?.Log("Dev server on http://127.0.0.1:" + port + " (gate: " + how + "; POST /eval, GET /speech, POST /cheat, POST /dumpstate, GET /known)");
+            Main.Log?.Log("Dev server on http://localhost:" + port + " (" + _http.BoundAddresses + "; gate: " + how + "; POST /eval, GET /speech, POST /cheat, POST /dumpstate, GET /known)");
         }
         catch (Exception e)
         {

@@ -66,7 +66,9 @@ $Solution = Join-Path $Root 'Access.slnx'
 $Marker   = Join-Path $env:USERPROFILE 'AppData\LocalLow\Owlcat Games\Warhammer 40000 Rogue Trader\RTAccess\devserver.enable'
 $PlayerLog = Join-Path $env:USERPROFILE 'AppData\LocalLow\Owlcat Games\Warhammer 40000 Rogue Trader\Player.log'
 $DefaultInstall = 'C:\Program Files (x86)\Steam\steamapps\common\Warhammer 40,000 Rogue Trader'
-$Base     = "127.0.0.1:$Port"
+# localhost, not 127.0.0.1: the server binds both loopbacks and Windows resolves localhost to ::1 first,
+# which sidesteps the IPv4 loopback resets a filter driver inflicts on this box (see DevHttpServer.cs).
+$Base     = "localhost:$Port"
 
 function Step($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "    $m" -ForegroundColor Green }

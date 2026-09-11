@@ -76,7 +76,9 @@ dotnet msbuild src/RTAccess/RTAccess.csproj -t:Compile -p:Configuration=Debug
 building it directly works unaided.)
 
 ## Dev harness (Debug only)
-- A **loopback HTTP dev server on port 8772** (all under `#if DEBUG`), gated on a marker file
+- A **loopback HTTP dev server on port 8772** (all under `#if DEBUG`), bound on both `127.0.0.1` and `[::1]` —
+  address it as **`localhost:8772`** (Windows resolves that to `::1` first, which dodges the IPv4 loopback resets
+  a filter driver causes on the dev box; see `DevHttpServer.cs`), gated on a marker file
   `<GameData>\RTAccess\devserver.enable` (survives Steam relaunches; an env var would not).
 - Endpoints: `POST /eval` (Mono.CSharp C# REPL on the main thread), `GET /speech?since=`,
   `GET /screenshot`, `POST /loadsave`, `GET /health`. `/gui` + `/input` land in Phase 2.
