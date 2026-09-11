@@ -201,24 +201,31 @@ namespace RTAccess.Screens
 
             // Initiative order — the shared tracker VM, rendered through the surface recipe so both
             // trackers read alike (faction, HP with the HideRealHealthInUI mask, current/order markers,
-            // the next-round divider). Rows are keyed by unit, so focus follows a ship as the order shifts.
-            var tracker = svc?.InitiativeTrackerVM?.Value;
-            if (tracker?.Units != null)
+            // the next-round divider). Rows are keyed by unit (a multi-initiative unit's repeat slots get
+            // their occurrence appended — InGameScreen.InitiativeRowKey), so focus follows a ship as the
+            // order shifts. Guarded as its own zone: a throw here must not blank the whole battle graph.
+            try
             {
-                var units = tracker.Units;
-                for (int i = 0; i < units.Count; i++)
+                var tracker = svc?.InitiativeTrackerVM?.Value;
+                if (tracker?.Units != null)
                 {
-                    var row = units[i];
-                    if (row == null) continue;
-                    if (i == tracker.RoundIndex + 1)
-                        b.AddItem(ControlId.Structural("battle:round"), GraphNodes.Text(
-                            () => InGameScreen.RoundDividerLabel(Component()?.SpaceCombatServicePanelVM?.InitiativeTrackerVM?.Value)));
-                    if (row.IsInSquad.Value && !row.IsSquadLeader.Value && !row.NeedToShow.Value) continue;
-                    var vmRow = row; // loop-local for the closure
-                    b.AddItem(ControlId.Referenced(vmRow, "battle:init:" + (vmRow.Unit?.UniqueId ?? "slot" + i)),
-                        GraphNodes.Text(() => InGameScreen.InitiativeLabel(vmRow)));
+                    var units = tracker.Units;
+                    var seen = new Dictionary<string, int>();
+                    for (int i = 0; i < units.Count; i++)
+                    {
+                        var row = units[i];
+                        if (row == null) continue;
+                        if (i == tracker.RoundIndex + 1)
+                            b.AddItem(ControlId.Structural("battle:round"), GraphNodes.Text(
+                                () => InGameScreen.RoundDividerLabel(Component()?.SpaceCombatServicePanelVM?.InitiativeTrackerVM?.Value)));
+                        if (row.IsInSquad.Value && !row.IsSquadLeader.Value && !row.NeedToShow.Value) continue;
+                        var vmRow = row; // loop-local for the closure
+                        b.AddItem(ControlId.Referenced(vmRow, InGameScreen.InitiativeRowKey("battle:init:", vmRow, i, seen)),
+                            GraphNodes.Text(() => InGameScreen.InitiativeLabel(vmRow)));
+                    }
                 }
             }
+            catch (Exception e) { InGameScreen.LogZoneFailureOnce("battle:init", e); }
 
             b.AddItem(ControlId.Structural("battle:log"), GraphNodes.Button(
                 () => Loc.T("hud.log"), LogReviewScreen.Open));

@@ -532,36 +532,67 @@ namespace RTAccess.Screens
                 ActivateSound = null,
             });
 
-            var tracker = SurfaceHUD()?.InitiativeTrackerVM?.Value;
-            if (tracker?.Units != null)
+            // The tracker is guarded as its own zone: the navigator drops the WHOLE render when Build throws, and
+            // one bad row here once blanked the entire HUD graph (Tab dead, End Turn gone) for a full boss fight.
+            try
             {
-                var units = tracker.Units;
-                for (int i = 0; i < units.Count; i++)
+                var tracker = SurfaceHUD()?.InitiativeTrackerVM?.Value;
+                if (tracker?.Units != null)
                 {
-                    var vm = units[i];
-                    if (vm == null) continue;
-                    // #10 Next-round divider. InitiativeTrackerVM sets RoundIndex to the index of the LAST
-                    // current-turn unit (InitiativeTrackerVM.UpdateUnits: RoundIndex = num after the current-turn
-                    // loop, before next-turn units get ++num), so units[0..RoundIndex] act this round and
-                    // units[RoundIndex+1..] act next round. The divider therefore belongs BEFORE the first
-                    // next-turn unit (i == RoundIndex+1), not before the last current one. Labelled with the
-                    // upcoming round number — or "surprise round" (round 0). The label re-fetches the tracker
-                    // VM (it's swapped between rounds), so it never reads a stale capture under focus.
-                    if (i == tracker.RoundIndex + 1)
-                        b.AddItem(ControlId.Structural("hud:round"), GraphNodes.Text(
-                            () => RoundDividerLabel(SurfaceHUD()?.InitiativeTrackerVM?.Value)));
-                    // #17 squads render collapsed on the tracker: a member's card is hidden behind the leader's
-                    // (which carries the alive-count badge) unless the player expands the squad — the NeedToShow
-                    // toggle InitiativeTrackerSquadLeaderVM propagates leader→members. Mirror the exact
-                    // InitiativeTrackerVerticalView filter so the review speaks one entry per squad, after the
-                    // divider check above so a skipped member can't swallow the round boundary.
-                    if (vm.IsInSquad.Value && !vm.IsSquadLeader.Value && !vm.NeedToShow.Value) continue;
-                    var row = vm; // loop-local copy for the closure
-                    b.AddItem(ControlId.Referenced(row, "hud:init:" + (row.Unit?.UniqueId ?? "slot" + i)),
-                        GraphNodes.Text(() => InitiativeLabel(row)));
+                    var units = tracker.Units;
+                    var seen = new Dictionary<string, int>();
+                    for (int i = 0; i < units.Count; i++)
+                    {
+                        var vm = units[i];
+                        if (vm == null) continue;
+                        // #10 Next-round divider. InitiativeTrackerVM sets RoundIndex to the index of the LAST
+                        // current-turn unit (InitiativeTrackerVM.UpdateUnits: RoundIndex = num after the current-turn
+                        // loop, before next-turn units get ++num), so units[0..RoundIndex] act this round and
+                        // units[RoundIndex+1..] act next round. The divider therefore belongs BEFORE the first
+                        // next-turn unit (i == RoundIndex+1), not before the last current one. Labelled with the
+                        // upcoming round number — or "surprise round" (round 0). The label re-fetches the tracker
+                        // VM (it's swapped between rounds), so it never reads a stale capture under focus.
+                        if (i == tracker.RoundIndex + 1)
+                            b.AddItem(ControlId.Structural("hud:round"), GraphNodes.Text(
+                                () => RoundDividerLabel(SurfaceHUD()?.InitiativeTrackerVM?.Value)));
+                        // #17 squads render collapsed on the tracker: a member's card is hidden behind the leader's
+                        // (which carries the alive-count badge) unless the player expands the squad — the NeedToShow
+                        // toggle InitiativeTrackerSquadLeaderVM propagates leader→members. Mirror the exact
+                        // InitiativeTrackerVerticalView filter so the review speaks one entry per squad, after the
+                        // divider check above so a skipped member can't swallow the round boundary.
+                        if (vm.IsInSquad.Value && !vm.IsSquadLeader.Value && !vm.NeedToShow.Value) continue;
+                        var row = vm; // loop-local copy for the closure
+                        b.AddItem(ControlId.Referenced(row, InitiativeRowKey("hud:init:", row, i, seen)),
+                            GraphNodes.Text(() => InitiativeLabel(row)));
+                    }
                 }
             }
+            catch (Exception e) { LogZoneFailureOnce("hud:init", e); }
             b.PopContext();
+        }
+
+        // internal: SpaceCombatScreen keys its rows through this too. A unit with PartMultiInitiative holds several
+        // slots per round: the turn order fills the extra ones with InitiativePlaceholderEntity stand-ins (id = the
+        // unit's id + "_ip<n>"), which InitiativeTrackerUnitVM unwraps back to the real unit — so several rows report
+        // ONE UniqueId (the C'tan Shard: three). Control ids compare by key and GraphBuilder throws on a repeat, so a
+        // repeat gets its occurrence number appended. The tracker is sorted by OrderIndex and the extra slots keep
+        // their relative order, so the keys are stable frame to frame and focus keeps following the unit; an
+        // index-only key would jump to a different unit every time the order shifts.
+        internal static string InitiativeRowKey(string prefix, InitiativeTrackerUnitVM row, int index, Dictionary<string, int> seen)
+        {
+            string id = row.Unit?.UniqueId ?? "slot" + index;
+            seen.TryGetValue(id, out int n);
+            seen[id] = ++n;
+            return n == 1 ? prefix + id : prefix + id + "#" + n;
+        }
+
+        // A zone's failure is logged once per (zone, exception type) — the same dedupe GraphNavigator applies to a
+        // whole-screen throw — so a persistent bad state can't flood the log every frame.
+        private static readonly HashSet<string> s_zoneFailures = new HashSet<string>();
+        internal static void LogZoneFailureOnce(string zone, Exception e)
+        {
+            if (s_zoneFailures.Add(zone + "|" + e.GetType().Name))
+                Main.Log?.Error("Screen zone '" + zone + "' threw: " + e);
         }
 
         // internal: SpaceCombatScreen renders the space initiative tracker (the same InitiativeTrackerUnitVM
