@@ -70,6 +70,7 @@ internal static class InteractableDescriber
 
         var verb = Verb(interaction);
         if (verb != null) Append(sb, verb);
+        Append(sb, UsedWord(interaction));
 
         // The skill-check card line a sighted hover shows (short description + "[Skill: NN%]" chance).
         var check = CheckInfo(interaction);
@@ -150,10 +151,11 @@ internal static class InteractableDescriber
             // is how a blind player finds out where its bow — and so its arcs — face. Already visibility-gated above.
             if (!unit.LifeState.IsDead) Append(sb, ShipFacing(unit));
         }
-        if (seen && TryNameMapObject(node, out var objectName, out var objectVerb))
+        if (seen && TryNameMapObject(node, out var objectName, out var objectVerb, out var objectUsed))
         {
             Append(sb, objectName);
             if (objectVerb != null) Append(sb, objectVerb);
+            Append(sb, objectUsed);
         }
         else if (seen && unit == null)
         {
@@ -269,19 +271,21 @@ internal static class InteractableDescriber
         return sb.ToString();
     }
 
-    /// <summary>Name + verb of the interactable map object nearest this tile (within <see cref="InteractReach"/>),
-    /// if any — the map-object headline for <see cref="DescribeTile"/>. Delegates to <see cref="InteractableAt"/> so
-    /// the readout names exactly the object the cursor's Enter would act on.</summary>
-    private static bool TryNameMapObject(CustomGridNodeBase node, out string name, out string verb)
+    /// <summary>Name + verb + used-mark of the interactable map object nearest this tile (within
+    /// <see cref="InteractReach"/>), if any — the map-object headline for <see cref="DescribeTile"/>. Delegates to
+    /// <see cref="InteractableAt"/> so the readout names exactly the object the cursor's Enter would act on.</summary>
+    private static bool TryNameMapObject(CustomGridNodeBase node, out string name, out string verb, out string used)
     {
         name = null;
         verb = null;
+        used = null;
         var mapObject = InteractableAt(node);
         if (mapObject?.View == null) return false;
         try
         {
             name = ResolveName(mapObject.View, out var interaction);
             verb = Verb(interaction);
+            used = UsedWord(interaction);
         }
         catch (Exception e) { Main.Log?.Error("DescribeTile map-object lookup failed: " + e); }
         return !string.IsNullOrWhiteSpace(name);
@@ -654,6 +658,16 @@ internal static class InteractableDescriber
         if (entity.Data is AbstractUnitEntity unit && !string.IsNullOrWhiteSpace(unit.CharacterName))
             return UnitNames.Of(unit);
 
+        // Map objects earn a stable ordinal while their spoken name is ambiguous in the area ("Search point 3"),
+        // the way units do — applied HERE, under every surface, so the browse list, the tile cursor, the exit
+        // cycle and the loot / choice window titles never disagree about which "Point of interest" this is.
+        return MapObjectNames.Of(entity.Data as MapObjectEntity, ResolveObjectName(entity, interaction));
+    }
+
+    /// <summary>The un-numbered spoken name of a non-unit view: the designer's name where one exists, else the
+    /// localized category singular for its primary interaction (see the per-case notes).</summary>
+    private static string ResolveObjectName(EntityViewBase entity, InteractionPart interaction)
+    {
         var tips = Game.Instance?.BlueprintRoot?.LocalizedTexts?.UserInterfacesText?.Tooltips;
         switch (interaction)
         {
@@ -761,6 +775,46 @@ internal static class InteractableDescriber
         }
         catch (Exception e) { Main.Log?.Error("CheckInfo failed: " + e); }
         return null;
+    }
+
+    /// <summary>
+    /// "already used" — the have-I-been-here mark for an object's primary interaction, per kind (September 2026
+    /// tester item 4); null when the object is untouched or its kind carries its history some other way.
+    ///
+    /// The engine keeps this history itself, and persists it: <c>InteractionPart.AlreadyUnlocked</c> is set on the
+    /// first SUCCESSFUL <c>Interact</c> of any part — not only past a restriction, the no-restriction branch sets it
+    /// too (<c>InteractionPart.CanInteract(restrictions, user)</c>) — so even the nameless bark / examine volumes
+    /// ("Point of interest"), whose <c>Settings.ActionsRan</c> lives on the shared settings object and is useless
+    /// per instance, carry a per-object, save-persisted flag. Kinds with a more specific record use it: a skill
+    /// check speaks <c>AlreadyUsed</c> + its verdict, a container the game's own viewed mark (the highlight-colour
+    /// swap a sighted player sees). Doors carry state, not history ("open" is spoken from <c>IsOpen</c>), stairs
+    /// are repeatable transit, and a spent disable-after-use lever drops out of the scanner like a looted chest —
+    /// none of those need a word. A restricted object (a lock, a key, a Tech-Use check) says "already unlocked",
+    /// since that is what its first success meant; a bark says "already examined" (its verb).
+    /// </summary>
+    public static string UsedWord(InteractionPart interaction)
+    {
+        try
+        {
+            switch (interaction)
+            {
+                case null:
+                case InteractionDoorPart:
+                case InteractionStairsPart:
+                case DisableTrapInteractionPart:
+                    return null;
+                case InteractionLootPart loot:
+                    return loot.LootViewed ? Loc.T("scan.already_opened") : null;
+                case InteractionSkillCheckPart check:
+                    return check.AlreadyUsed ? Loc.T(check.CheckPassed ? "scan.used.passed" : "scan.used.failed") : null;
+                case InteractionBarkPart bark:
+                    return bark.AlreadyUnlocked ? Loc.T("scan.used.examined") : null;
+            }
+            if (!interaction.AlreadyUnlocked) return null;
+            var restrictions = interaction.Owner?.Parts?.GetAll<InteractionRestrictionPart>();
+            return Loc.T(restrictions != null && restrictions.Any() ? "scan.used.unlocked" : "scan.used");
+        }
+        catch (Exception e) { Main.Log?.Error("UsedWord failed: " + e); return null; }
     }
 
     /// <summary>English verb for the interaction type; null when there is no meaningful verb. Public so the

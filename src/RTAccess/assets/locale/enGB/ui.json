@@ -1290,5 +1290,11 @@
   "localmap.help.verbs": "Enter plants the world cursor here, Backspace sends the party, Escape closes the map.",
   "combat.initiative_order": "Initiative order: {list}",
   "combat.initiative_more": "and {n} more",
-  "combat.initiative_none": "No initiative order."
+  "combat.initiative_none": "No initiative order.",
+  "object.numbered": "{name} {number}",
+  "scan.used": "already used",
+  "scan.used.unlocked": "already unlocked",
+  "scan.used.examined": "already examined",
+  "scan.used.passed": "already used, passed",
+  "scan.used.failed": "already used, failed"
 }

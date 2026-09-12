@@ -131,6 +131,14 @@ internal sealed class ProxyMapObject : ScanItem
                     InteractableDescriber.ResolveName(view, out var interaction);
                     var verb = InteractableDescriber.Verb(interaction);
                     if (!string.IsNullOrEmpty(verb)) bits.Add(verb);
+                    // The have-I-been-here mark for the primary interaction (already used / unlocked / examined,
+                    // a skill check's verdict). A loot part's mark is the per-part "already opened" below, which
+                    // fires for every loot part the object carries — so skip it here rather than say it twice.
+                    if (!(interaction is InteractionLootPart))
+                    {
+                        var used = InteractableDescriber.UsedWord(interaction);
+                        if (!string.IsNullOrEmpty(used)) bits.Add(used);
+                    }
                 }
                 catch { /* name/verb best-effort; position still announces */ }
             }
