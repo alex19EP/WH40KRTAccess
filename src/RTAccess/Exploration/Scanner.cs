@@ -37,7 +37,9 @@ namespace RTAccess.Exploration;
 /// I on one acts on the real interactable the pin SITS ON (a loot pin marks the corpse or container it points at)
 /// and falls back to WALKING the party toward it only when nothing actionable is under the pin.
 ///
-/// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Comma/Period/N/M = cycle
+/// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Shift+PageUp/Down = the
+/// category's state sub-categories (unopened / opened, closed / open, unused / used, can talk — see
+/// <see cref="Subcategories"/>); Comma/Period/N/M = cycle
 /// nearest party/enemy/neutral/object of interest (Shift reverses). Live area effects (hazards + buff zones) have no
 /// dedicated cycle key — they browse as the Hazards / Buff zones categories in the Ctrl+PageUp/Down list, and the
 /// tile explorer names the hazard on the cursor tile. I = interact with selection (an object; a landmark → the
@@ -102,6 +104,54 @@ internal static class Scanner
     private enum Group { Party, Enemies, Neutrals, Objects }
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
+    private static int _subIndex;          // 0 = the whole category; 1.. = index+1 into SubsOf(_categoryIndex) (Shift+PageUp/Down)
+
+    // The second browse level (September 2026 tester item 10 — Shift+PageUp/Down): per category, the STATE
+    // sub-categories a thing can sort into right now, each a HasNode filter on the sub-node its proxy stamps
+    // (ScanTaxonomy's dotted sub-nodes, read from the same engine flags the spoken used / open / talk words ride,
+    // so the filter and the word can never disagree). Index 0 of every cycle is the whole category. Categories
+    // absent here (party, enemies, exits, hazards, the special-sourced lists) simply have no second level.
+    private static readonly Dictionary<string, (string Key, Func<ScanItem, bool> Pred)[]> Subcategories =
+        new Dictionary<string, (string Key, Func<ScanItem, bool> Pred)[]>
+        {
+            // "NPCs you can talk to": the same click-interaction test that puts "talk" in the unit's detail tail.
+            ["taxonomy.units.allies"]   = new[] { Sub("taxonomy.units.talkable", it => it.HasNode(ScanTaxonomy.UnitsTalkable)) },
+            ["taxonomy.units.neutrals"] = new[] { Sub("taxonomy.units.talkable", it => it.HasNode(ScanTaxonomy.UnitsTalkable)) },
+            ["taxonomy.containers"] = new[]
+            {
+                Sub("taxonomy.containers.unopened", it => it.HasNode(ScanTaxonomy.ContainersUnopened)),
+                Sub("taxonomy.containers.opened",   it => it.HasNode(ScanTaxonomy.ContainersOpened)),
+            },
+            ["taxonomy.corpses"] = new[]
+            {
+                Sub("taxonomy.corpses.unopened", it => it.HasNode(ScanTaxonomy.CorpsesUnopened)),
+                Sub("taxonomy.corpses.opened",   it => it.HasNode(ScanTaxonomy.CorpsesOpened)),
+            },
+            ["taxonomy.doors"] = new[]
+            {
+                Sub("taxonomy.doors.closed", it => it.HasNode(ScanTaxonomy.DoorsClosed)),
+                Sub("taxonomy.doors.open",   it => it.HasNode(ScanTaxonomy.DoorsOpen)),
+            },
+            ["taxonomy.searchpoints"] = new[]
+            {
+                Sub("taxonomy.searchpoints.unused", it => it.HasNode(ScanTaxonomy.SearchPointsUnused)),
+                Sub("taxonomy.searchpoints.used",   it => it.HasNode(ScanTaxonomy.SearchPointsUsed)),
+            },
+            // The nameless bark volumes ("Point of interest") live here — "points already inspected".
+            ["taxonomy.mechanisms"] = new[]
+            {
+                Sub("taxonomy.mechanisms.unused", it => it.HasNode(ScanTaxonomy.MechanismsUnused)),
+                Sub("taxonomy.mechanisms.used",   it => it.HasNode(ScanTaxonomy.MechanismsUsed)),
+            },
+        };
+
+    private static (string Key, Func<ScanItem, bool> Pred) Sub(string key, Func<ScanItem, bool> pred) => (key, pred);
+
+    private static (string Key, Func<ScanItem, bool> Pred)[] SubsOf(int categoryIndex)
+        => Subcategories.TryGetValue(Categories[categoryIndex].Key, out var subs)
+            ? subs
+            : Array.Empty<(string Key, Func<ScanItem, bool> Pred)>();
+
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
     private static int _selectedFrame = -1; // Time.frameCount of the last selection write — a pick OR a clear
 
@@ -126,6 +176,8 @@ internal static class Scanner
     internal static void ItemNext() => Safe(() => StepItem(1));
     internal static void CategoryPrev() => Safe(() => StepCategory(-1));
     internal static void CategoryNext() => Safe(() => StepCategory(1));
+    internal static void SubPrev() => Safe(() => StepSub(-1));
+    internal static void SubNext() => Safe(() => StepSub(1));
     internal static void ReviewParty(bool back) => Safe(() => Review(Group.Party, back ? -1 : 1));
     // The enemy key has a second gear. While an AREA ability is armed, the useful question stops being "which
     // enemy" and becomes "where do I put the template" — so the same key cycles ranked blast positions instead
@@ -234,8 +286,8 @@ internal static class Scanner
         if (anchor == null) { Speak(Loc.T("status.no_selection")); return; }
         var refPos = ScanFrom();
 
-        var list = CategoryList(_categoryIndex, refPos);
-        if (list.Count == 0) { SetSelection(null); Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
+        var list = CategoryList(_categoryIndex, _subIndex, refPos);
+        if (list.Count == 0) { SetSelection(null); Speak(Loc.T("scan.category_empty", new { label = BrowseLabel })); return; }
 
         int idx = IndexOfSelected(list);
         idx = idx < 0 ? 0 : Wrap(idx + dir, list.Count);
@@ -255,8 +307,36 @@ internal static class Scanner
         if (next < 0) { SetSelection(null); Speak(Loc.T("scan.nothing_to_scan")); return; }
 
         _categoryIndex = next;
+        _subIndex = 0;   // a new category always opens on its whole list
         var list = CategoryList(_categoryIndex, refPos);
         Select(list, 0, refPos, CategoryLabel + ", " + list.Count + ". ");
+    }
+
+    /// <summary>Shift+PageUp/Down — step the current category's second level: the whole category, then each of
+    /// its state sub-categories (unopened / opened, closed / open, unused / used, can talk), skipping the empty
+    /// ones exactly as the category step does (WrathAccess's NextSubcategoryIndex). A category with no second
+    /// level says so. Ctrl+PageUp/Down returns to the whole list of the next category.</summary>
+    private static void StepSub(int dir)
+    {
+        var anchor = Anchor();
+        if (anchor == null) { Speak(Loc.T("status.no_selection")); return; }
+        var refPos = ScanFrom();
+        var subs = SubsOf(_categoryIndex);
+        if (subs.Length == 0) { Speak(Loc.T("scan.no_subcategories", new { label = CategoryLabel })); return; }
+
+        int n = subs.Length + 1;
+        int next = -1;
+        for (int step = 1; step <= n; step++)
+        {
+            int i = Wrap(_subIndex + dir * step, n);
+            if (CategoryList(_categoryIndex, i, refPos).Count > 0) { next = i; break; }
+        }
+        if (next < 0) { SetSelection(null); Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
+
+        _subIndex = next;
+        var list = CategoryList(_categoryIndex, _subIndex, refPos);
+        string label = _subIndex == 0 ? CategoryLabel + ", " + Loc.T("taxonomy.all") : BrowseLabel;
+        Select(list, 0, refPos, label + ", " + list.Count + ". ");
     }
 
     /// <summary>The index of the next category (from <paramref name="from"/>, stepping by <paramref name="dir"/>)
@@ -790,7 +870,11 @@ internal static class Scanner
 
     // ---- list building ----
 
-    private static List<ScanItem> CategoryList(int categoryIndex, Vector3 refPos)
+    private static List<ScanItem> CategoryList(int categoryIndex, Vector3 refPos) => CategoryList(categoryIndex, 0, refPos);
+
+    // subIndex 0 = the whole category; 1.. = that sub-category's HasNode filter over the same list (the
+    // special-sourced categories have no second level, so the filter never applies to them).
+    private static List<ScanItem> CategoryList(int categoryIndex, int subIndex, Vector3 refPos)
     {
         var cat = Categories[categoryIndex];
         // Three categories aren't WorldModel entities: local-map pins, fog-frontier openings and cover positions
@@ -799,6 +883,8 @@ internal static class Scanner
         if (cat.Src == Source.Frontier) return FrontierList(refPos);
         if (cat.Src == Source.Cover) return CoverList(refPos);
 
+        var subs = SubsOf(categoryIndex);
+        var sub = subIndex > 0 && subIndex <= subs.Length ? subs[subIndex - 1].Pred : null;
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Items)
         {
@@ -806,7 +892,7 @@ internal static class Scanner
             // game lets you loot: it flips its Primary to Corpses (so it never matches a faction category) and shows
             // in the Corpses category instead. An emptied/lootless corpse stays hidden. Object categories are
             // unaffected (a map object is never dead). Corpses also stay under the tile cursor, labelled dead.
-            if (it.IsVisible && (!it.IsDead || it.LootableCorpse) && cat.Pred(it)) list.Add(it);
+            if (it.IsVisible && (!it.IsDead || it.LootableCorpse) && cat.Pred(it) && (sub == null || sub(it))) list.Add(it);
         }
         SortByReachThenDistance(list, refPos);
         return list;
@@ -1105,6 +1191,18 @@ internal static class Scanner
     }
 
     private static string CategoryLabel => Loc.T(Categories[_categoryIndex].Key);
+
+    /// <summary>The spoken browse position: the category, plus its sub-category while one is active.</summary>
+    private static string BrowseLabel
+    {
+        get
+        {
+            var subs = SubsOf(_categoryIndex);
+            return _subIndex > 0 && _subIndex <= subs.Length
+                ? CategoryLabel + ", " + Loc.T(subs[_subIndex - 1].Key)
+                : CategoryLabel;
+        }
+    }
 
     private static string GroupLabel(Group group)
     {

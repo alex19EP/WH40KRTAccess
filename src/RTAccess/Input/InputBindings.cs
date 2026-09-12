@@ -412,6 +412,14 @@ namespace RTAccess.Input
             // where to stand to see it.
             InputManager.Register("cursor.firing_spot", "Cursor: nearest spot with line of sight to the tile", InputCategory.Exploration,
                 Ex.Scanner.CycleCellFiring).AddBinding(KeyCode.Delete, ctrl: true).Grouped("cursor");
+            // Shift+PageUp/Down — the scanner's second browse level (item 10): step the current category's state
+            // sub-categories (whole category, unopened / opened, closed / open, unused / used, can talk), empty ones
+            // skipped; Ctrl+PageUp/Down still steps categories and reopens on the whole list. Shift+PageUp/Down
+            // were unclaimed in the mod's Exploration category and are unbound in the game's keymap.
+            InputManager.Register("scan.sub_prev", "Scanner: previous sub-category", InputCategory.Exploration,
+                Ex.Scanner.SubPrev).AddBinding(KeyCode.PageUp, shift: true).Grouped("scanner");
+            InputManager.Register("scan.sub_next", "Scanner: next sub-category", InputCategory.Exploration,
+                Ex.Scanner.SubNext).AddBinding(KeyCode.PageDown, shift: true).Grouped("scanner");
 
             // ---- WorldMap: the sector-map LINK WALK (declared ONLY by SectorMapScreen, so these letters are free
             // there — the game's bare-letter openers are relocated to Ctrl+letter, and the Exploration scanner's

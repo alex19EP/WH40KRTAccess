@@ -70,7 +70,19 @@ internal sealed class ProxyUnit : ScanItem
 
     public override IEnumerable<string> Nodes
     {
-        get { yield return Primary; }
+        get
+        {
+            var primary = Primary;
+            yield return primary;
+            // The state sub-node (tester item 10, Shift+PageUp/Down): a lootable corpse is opened / unopened (the
+            // same session-scoped viewed flag Detail voices); a living unit the game offers a conversation on
+            // RIGHT NOW is talkable — the same click-interaction test the "talk" word in Detail rides, so the
+            // sub-category and the spoken tail can never disagree.
+            if (primary == ScanTaxonomy.Corpses)
+                yield return _unit.LootViewed ? ScanTaxonomy.CorpsesOpened : ScanTaxonomy.CorpsesUnopened;
+            else if (HasClickInteraction && HasDialogInteraction)
+                yield return ScanTaxonomy.UnitsTalkable;
+        }
     }
 
     // Actionable via the scanner's generic I: a lootable corpse (loots like a chest), OR a living unit the game itself

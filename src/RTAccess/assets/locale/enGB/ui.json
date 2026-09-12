@@ -1311,5 +1311,18 @@
   "vantage.out_of_reach": "{count} out of reach",
   "firing.cell_spot": "Line of sight to the tile, {cover}",
   "firing.route": "route: {legs}",
-  "firing.none_cell": "No reachable spot with line of sight to that tile this turn."
+  "firing.none_cell": "No reachable spot with line of sight to that tile this turn.",
+  "taxonomy.all": "all",
+  "taxonomy.units.talkable": "Can talk",
+  "taxonomy.containers.unopened": "Unopened",
+  "taxonomy.containers.opened": "Opened",
+  "taxonomy.corpses.unopened": "Unopened",
+  "taxonomy.corpses.opened": "Opened",
+  "taxonomy.doors.closed": "Closed",
+  "taxonomy.doors.open": "Open",
+  "taxonomy.searchpoints.unused": "Unused",
+  "taxonomy.searchpoints.used": "Used",
+  "taxonomy.mechanisms.unused": "Unused",
+  "taxonomy.mechanisms.used": "Used",
+  "scan.no_subcategories": "{label} has no sub-categories."
 }

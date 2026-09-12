@@ -231,7 +231,12 @@ internal static class Sonar
             case ScanTaxonomy.Traps:         return "trap";
             case ScanTaxonomy.Mechanisms:    return "mechanism";
             case ScanTaxonomy.Scenery:       return null; // WA: scenery is silent
-            default:                         return null; // unmapped → not pinged
+            default:
+                // A sub-node ("doors.open", "containers.opened" — tester item 10) sounds as its category: strip
+                // the last segment and retry, so a leaf that ever reaches here never silently drops out of the
+                // sweep. Anything still unmapped → not pinged.
+                int dot = primary != null ? primary.LastIndexOf('.') : -1;
+                return dot > 0 ? StemFor(primary.Substring(0, dot)) : null;
         }
     }
 }

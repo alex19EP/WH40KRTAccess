@@ -241,5 +241,7 @@
   "bind.combat.initiative": "Read initiative order",
   "bind.cursor.route": "Cursor: read the route to the tile",
   "bind.read.vantage_cursor": "Read who I can attack from the cursor tile",
-  "bind.cursor.firing_spot": "Cursor: nearest spot with line of sight to the tile"
+  "bind.cursor.firing_spot": "Cursor: nearest spot with line of sight to the tile",
+  "bind.scan.sub_prev": "Scanner: previous sub-category",
+  "bind.scan.sub_next": "Scanner: next sub-category"
 }
