@@ -17,7 +17,9 @@ using Kingmaker.Stores;                            // StoreManager (the augmenta
 using Kingmaker.Stores.DlcInterfaces;              // DlcNameEnum
 using Kingmaker.UI.Common;                         // ItemsFilterType, ItemsSorterType
 using Kingmaker.UI.Models.Tooltip;                 // TooltipElement (the game's own weapon-stat labels)
+using Kingmaker.UnitLogic.Parts;                   // UnitPartPetOwner (the pet doll's weapon-set gate)
 using Owlcat.Runtime.UI.Tooltips;                  // TooltipBaseTemplate
+using Owlcat.Runtime.UniRx;                        // DelayedInvoker (the post-switch availability re-run)
 using RTAccess.Accessibility;                       // ViewedCharacter (switch announce + header + pet swap)
 using RTAccess.UI;
 using Access.Core.Graph;
@@ -29,8 +31,8 @@ namespace RTAccess.Screens
     /// The inventory service window (<see cref="InventoryVM"/>) as a graph-native screen — one labelled
     /// Tab-STOP per pane the game window binds: character (name/level/XP/careers/level-up), characteristics,
     /// skills, weapons (attack modes), the equipment doll (+ carry weight + the visual-settings opener),
-    /// a defensive-stat readout, the party-load summary, and the shared party stash with its search +
-    /// filter/sort chrome — all declared IMMEDIATE-MODE from the live VM on every render (no content
+    /// a defensive-stat readout, and the shared party stash with its search + filter/sort chrome — all
+    /// declared IMMEDIATE-MODE from the live VM on every render (no content
     /// signature, no focus-capture/restore dance). Tab cycles the panes (wrapping; arrows never leave one).
     /// The characteristics/skills stops reuse <see cref="CharacterInfoScreen.BuildStatSection"/> — the game
     /// binds the SAME CharInfo block VMs into this window's left panel, so the speech matches the sheet.
@@ -73,7 +75,23 @@ namespace RTAccess.Screens
         // header's prev/next buttons: SelectedUnitInUI changes but nothing speaks it; our doll/defenses
         // re-key, but only ViewedCharacter voices WHO). OnUpdate runs each frame on the focused screen.
         public override void OnPush() => ViewedCharacter.Reset();
-        public override void OnUpdate() => ViewedCharacter.Tick(Vm()?.Unit?.Value);
+        public override void OnUpdate()
+        {
+            var vm = Vm();
+            if (ViewedCharacter.Tick(vm?.Unit?.Value)) RefreshAvailability(vm?.StashVM?.ItemSlotsGroup);
+        }
+
+        // With "hide unsuitable" on, the stash pass drops what the VIEWED unit can't equip — and the game
+        // re-runs that pass on filter / sort / search / toggle / collection changes only, never on a
+        // character switch (SlotsGroupVM subscribes to none of the unit reactives; the per-slot CanUse
+        // flags do follow the unit, one frame late). The sighted window shows the same stale list, but a
+        // blind player reads the "unusable" badge and the missing rows as contradictory facts, so re-run
+        // the game's own pass a couple of frames after the switch — after the slots' own unit refresh.
+        internal static void RefreshAvailability(SlotsGroupVM<ItemSlotVM> group)
+        {
+            if (group == null || group.ShowUnavailable.Value) return;
+            DelayedInvoker.InvokeInFrames(group.UpdateVisibleCollection, 2);
+        }
 
         // Back (Escape) closes the whole service-window stack — the same call the window's own close uses.
         public override IEnumerable<ElementAction> GetActions()
@@ -112,7 +130,9 @@ namespace RTAccess.Screens
             }
             BuildEquipment(b, k, uk, vm.DollVM); // stop: equip
             BuildDefenses(b, k, uk, vm);         // stop: defenses
-            BuildSummary(b, k, vm.StashVM);      // stop: summary
+            // No party-load summary: RT has no carry-weight system (item weights are vestigial, so the
+            // stash's EncumbranceVM always reads 0/N) and the game binds that VM to NO view — the old
+            // "Party encumbrance" stop spoke a number no sighted player ever sees.
 
             // The stash pane is ONE stop — the search + filter/sort chrome belongs with the list it
             // operates on. Within it the chrome and the list are Ctrl+arrow REGIONS, so Ctrl+Up from
@@ -258,22 +278,38 @@ namespace RTAccess.Screens
         // across an equip. After the slots: the character's own carry weight (the doll pane's encumbrance
         // bar) and the visual-settings opener (the doll's cosmetics button — VisualSettingsScreen mirrors
         // the CharacterVisualSettingsVM it raises).
+        //
+        // The roster is PER KIND OF UNIT, mirroring the sighted doll's slot groups
+        // (CharInfoNameAndPortraitPCView: m_LeftCommonSlots / m_CommonWeaponSet / m_PetSlots):
+        //  - a hero shows the common slots + the weapon sets, and NOT the pet-protocol slot (m_PetSlots is
+        //    faded out) — the protocol is worn by the FAMILIAR (BlueprintItemEquipmentPetProtocol.CanBeEquippedBy
+        //    needs a Master), even though every body carries the slot;
+        //  - a familiar shows the protocol slot, plus the weapon sets only for the pet kinds that fight with
+        //    weapons (Mastiff / Eagle — the view's petType 1..2 gate), and none of the common slots.
+        // The old unconditional roster spoke nine permanently-empty, unequippable slots on a familiar and a
+        // "Protocol: empty" slot on every hero that no item could ever fill from there.
         private static void BuildEquipment(GraphBuilder b, string k, string uk, InventoryDollVM doll)
         {
             if (doll == null) return;
+            var unit = doll.Unit?.Value;
+            bool pet = unit != null && unit.IsPet;
             b.BeginStop("equip");
             b.PushContext(Loc.T("inv.equipment"), Loc.T("role.list"));
-            BuildWeaponSets(b, uk, doll);
-            AddDollSlot(b, uk, "armor", Loc.T("slot.armor"), doll.Armor, doll);
-            AddDollSlot(b, uk, "head", Loc.T("slot.head"), doll.Head, doll);
-            AddDollSlot(b, uk, "gloves", Loc.T("slot.gloves"), doll.Gloves, doll);
-            AddDollSlot(b, uk, "feet", Loc.T("slot.feet"), doll.Feet, doll);
-            AddDollSlot(b, uk, "back", Loc.T("slot.back"), doll.Shoulders, doll);
-            AddDollSlot(b, uk, "neck", Loc.T("slot.neck"), doll.Neck, doll);
-            AddDollSlot(b, uk, "ring1", Loc.T("slot.ring1"), doll.Ring1, doll);
-            AddDollSlot(b, uk, "ring2", Loc.T("slot.ring2"), doll.Ring2, doll);
-            AddDollSlot(b, uk, "protocol", Loc.T("slot.protocol"), doll.Protocol, doll);
-            if (doll.QuickSlots != null)
+            if (!pet || PetFightsWithWeapons(unit)) BuildWeaponSets(b, uk, doll);
+            if (!pet)
+            {
+                AddDollSlot(b, uk, "armor", Loc.T("slot.armor"), doll.Armor, doll);
+                AddDollSlot(b, uk, "head", Loc.T("slot.head"), doll.Head, doll);
+                AddDollSlot(b, uk, "gloves", Loc.T("slot.gloves"), doll.Gloves, doll);
+                AddDollSlot(b, uk, "feet", Loc.T("slot.feet"), doll.Feet, doll);
+                AddDollSlot(b, uk, "back", Loc.T("slot.back"), doll.Shoulders, doll);
+                AddDollSlot(b, uk, "neck", Loc.T("slot.neck"), doll.Neck, doll);
+                AddDollSlot(b, uk, "ring1", Loc.T("slot.ring1"), doll.Ring1, doll);
+                AddDollSlot(b, uk, "ring2", Loc.T("slot.ring2"), doll.Ring2, doll);
+            }
+            else
+                AddDollSlot(b, uk, "protocol", Loc.T("slot.protocol"), doll.Protocol, doll);
+            if (!pet && doll.QuickSlots != null)
                 for (int i = 0; i < doll.QuickSlots.Length; i++)
                     AddDollSlot(b, uk, "quick:" + i, Loc.T("slot.quick", new { index = i + 1 }), doll.QuickSlots[i], doll);
             var enc = doll.EncumbranceVM;
@@ -332,6 +368,14 @@ namespace RTAccess.Screens
                 AddDollSlot(b, uk, "primary", Loc.T("slot.primary_hand"), only?.Primary, doll);
                 AddDollSlot(b, uk, "secondary", Loc.T("slot.secondary_hand"), only?.Secondary, doll);
             }
+        }
+
+        // The pet kinds whose doll shows the weapon-set block (CharInfoNameAndPortraitPCView's
+        // `(uint)(petType - 1) <= 1u` → Mastiff, Eagle); the pet kind lives on the MASTER's pet-owner part.
+        private static bool PetFightsWithWeapons(BaseUnitEntity pet)
+        {
+            var kind = pet?.Master?.GetOptional<UnitPartPetOwner>()?.PetType;
+            return kind == Kingmaker.Enums.PetType.Mastiff || kind == Kingmaker.Enums.PetType.Eagle;
         }
 
         private static void AddDollSlot(GraphBuilder b, string uk, string posKey, string name,
@@ -486,27 +530,6 @@ namespace RTAccess.Screens
             return vt;
         }
 
-        // Party-wide readout: carry weight + load status. Lives on the shared stash, so it sits between the
-        // per-character equipment and the stash list; keyed party-wide (not on the viewed unit). The old
-        // "Gold" line was a Pathfinder leftover — RT has no player currency UI (Player.Money feeds only
-        // designer script conditions; no UIStrings names it), so the number was never shown to a sighted
-        // player and is dropped.
-        private static void BuildSummary(GraphBuilder b, string k, InventoryStashVM stash)
-        {
-            if (stash == null) return;
-            b.BeginStop("summary");
-            b.PushContext(Loc.T("inv.inventory"), Loc.T("role.list"));
-            var enc = stash.EncumbranceVM;
-            if (enc != null)
-                b.AddItem(ControlId.Structural(k + "sum:enc"), GraphNodes.Text(() =>
-                {
-                    var status = enc.LoadStatus?.Value;
-                    var load = (enc.LoadWeight?.Value ?? "") + (string.IsNullOrEmpty(status) ? "" : ", " + status);
-                    return Loc.T("inv.encumbrance", new { value = load });
-                }));
-            b.PopContext();
-        }
-
         // The filter + sort control bar above the stash — the real chrome a sighted player uses to operate a
         // 120-slot list. The filter and sorter are combo boxes (Enter → a submenu of localized options) that
         // drive the game's OWN filter VM / sort command; both persist to UISettings and rebuild the visible
@@ -540,10 +563,14 @@ namespace RTAccess.Screens
             b.AddItem(ControlId.Structural(k + "sortnow"), GraphNodes.Button(
                 () => Loc.T("inv.sort_now"), () => stash.ItemSlotsGroup?.SortItems()));
 
+            // The checkbox's tick is the INVERSE of the reactive it drives: the game binds it as
+            // m_Toggle.Set(!ShowUnavailable) / ShowUnavailable = !value (ItemsFilterPCView.SetupToggleGroup)
+            // under a "hide unsuitable" label, so a fresh save (ShowUnavailable = true) shows an UNTICKED box.
+            // Speak the tick the sighted player sees, not the raw field.
             if (ShowsUnavailableToggle(stash))
                 b.AddItem(ControlId.Structural(k + "unavail"), GraphNodes.Toggle(
                     () => UIStrings.Instance.InventoryScreen.ShowUnavailableItems.Text,
-                    () => filter.ShowUnavailable.Value,
+                    () => !filter.ShowUnavailable.Value,
                     () => filter.ShowUnavailable.Value = !filter.ShowUnavailable.Value));
 
             b.EndRow();

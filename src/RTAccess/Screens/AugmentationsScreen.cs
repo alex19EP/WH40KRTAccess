@@ -57,8 +57,13 @@ namespace RTAccess.Screens
         public override bool IsActive() => Vm() != null;
 
         // Announce each character switch (SelectedUnitInUI changes silently otherwise); re-baseline on open.
+        // A switch also re-runs the stash's hide-unsuitable pass (see InventoryScreen.RefreshAvailability).
         public override void OnPush() => ViewedCharacter.Reset();
-        public override void OnUpdate() => ViewedCharacter.Tick(Vm()?.Unit?.Value);
+        public override void OnUpdate()
+        {
+            var vm = Vm();
+            if (ViewedCharacter.Tick(vm?.Unit?.Value)) InventoryScreen.RefreshAvailability(vm?.StashVM?.ItemSlotsGroup);
+        }
 
         // Back (Escape) closes the whole service-window stack. With a dirty (equipped-but-not-installed)
         // slot the game silently reverts the augment to the inventory — speak that first (we cannot block
@@ -315,10 +320,12 @@ namespace RTAccess.Screens
             b.AddItem(ControlId.Structural(k + "sortnow"), GraphNodes.Button(
                 () => Loc.T("inv.sort_now"), () => stash.ItemSlotsGroup?.SortItems()));
 
+            // The tick is the inverse of the reactive (the game binds Set(!ShowUnavailable) under a "hide"
+            // label — see InventoryScreen.BuildStashControls); speak the tick the sighted player sees.
             if (ShowsUnavailableToggle(stash))
                 b.AddItem(ControlId.Structural(k + "unavail"), GraphNodes.Toggle(
                     () => UIStrings.Instance.InventoryScreen.ShowUnavailableItems.Text,
-                    () => filter.ShowUnavailable.Value,
+                    () => !filter.ShowUnavailable.Value,
                     () => filter.ShowUnavailable.Value = !filter.ShowUnavailable.Value));
 
             b.EndRow();
@@ -348,8 +355,8 @@ namespace RTAccess.Screens
         }
 
         // The augment stash: one row per item (equip on Enter through the window's own handler), keyed by
-        // the item ENTITY so an equipped augment's row vanishes and focus slides to a real neighbour. The
-        // party carry weight closes the pane (the stash panel shows the encumbrance bar).
+        // the item ENTITY so an equipped augment's row vanishes and focus slides to a real neighbour. No
+        // carry-weight line: RT has no weight system and the stash's EncumbranceVM is bound to no view.
         private static void BuildStash(GraphBuilder b, string k, AugmentationsInventoryStashVM stash)
         {
             b.SetRegion(k + "stash");
@@ -366,14 +373,6 @@ namespace RTAccess.Screens
                     any = true;
                 }
             if (!any) b.AddItem(ControlId.Structural(k + "stash:empty"), GraphNodes.Text(() => Loc.T("inv.no_items")));
-            var enc = stash?.EncumbranceVM;
-            if (enc != null)
-                b.AddItem(ControlId.Structural(k + "stash:enc"), GraphNodes.Text(() =>
-                {
-                    var status = enc.LoadStatus?.Value;
-                    var load = (enc.LoadWeight?.Value ?? "") + (string.IsNullOrEmpty(status) ? "" : ", " + status);
-                    return Loc.T("inv.encumbrance", new { value = load });
-                }));
             b.PopContext();
         }
     }

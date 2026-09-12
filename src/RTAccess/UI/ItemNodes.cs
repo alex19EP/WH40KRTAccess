@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using Kingmaker;                                              // Game (favorite command)
 using Kingmaker.Blueprints.Items.Augments;                    // BlueprintItemAugment (equip guard)
+using Kingmaker.Blueprints.Items.Equipment;                   // BlueprintItemEquipmentPetProtocol (the "for {pet}" badge)
 using Kingmaker.Blueprints.Root.Strings;                      // UIStrings (context-menu labels)
+using Kingmaker.EntitySystem.Entities;                        // BaseUnitEntity (the party familiar lookup)
 using Kingmaker.Cargo;                                        // CargoHelper (auto-add-to-cargo gate)
 using Kingmaker.Code.UI.MVVM.VM.ContextMenu;                  // ContextMenuCollectionEntity (the game's menu model)
 using Kingmaker.Code.UI.MVVM.VM.Loot;    // InsertableLootSlotVM, InteractionSlotPartVM
@@ -15,6 +17,7 @@ using Kingmaker.Items.Slots;              // HandSlot (HeldInTwoHands)
 using Kingmaker.PubSubSystem.Core;       // EventBus
 using Kingmaker.UI.Common;               // InventoryHelper
 using Kingmaker.UI.MVVM.VM.ServiceWindows.Inventory;          // EquipSelectorSlotVM (the OTHER namespace)
+using Kingmaker.UnitLogic.Parts;                              // UnitPartPetOwner (the familiar's kind)
 using Warhammer.SpaceCombat.Blueprints;                       // BlueprintStarshipItem (equip guard)
 using Owlcat.Runtime.UI.Tooltips;        // TooltipBaseTemplate
 using RTAccess.Accessibility;                                 // TooltipReader, GlossaryLinks
@@ -59,6 +62,16 @@ namespace RTAccess.UI
             var flags = new List<string>();
             if (slot.IsNotable.Value) flags.Add(Loc.T("item.notable"));
             if (!slot.CanUse.Value) flags.Add(Loc.T("item.unusable"));
+            // A familiar's protocol is worn by the FAMILIAR (BlueprintItemEquipmentPetProtocol.CanBeEquippedBy
+            // wants a unit whose Master owns a pet of that kind), so in a hero's stash it always reads
+            // "unusable" — and the card's Unsuitable badge says no more, which reads as a broken item. Say
+            // whom it is for: the party familiar of that kind by name (switch to it to equip), or just
+            // "familiar item" when no such familiar is in the party.
+            if (slot.Item.Value?.Blueprint is BlueprintItemEquipmentPetProtocol protocol)
+            {
+                var pet = PartyPetOfKind(protocol.PetType);
+                flags.Add(pet != null ? Loc.T("item.for_pet", new { name = pet.CharacterName }) : Loc.T("item.pet_item"));
+            }
             var grade = slot.ItemGrade.Value;
             if (grade != ItemGrade.Common)
                 flags.Add(Loc.T("item.grade." + grade.ToString().ToLowerInvariant()));
@@ -87,20 +100,58 @@ namespace RTAccess.UI
             return string.IsNullOrEmpty(name) ? Loc.T("item.unknown") : name;
         }
 
-        /// <summary>One item in an open loot window. Enter TAKES it to the party inventory via the game's
-        /// own single-slot collect (<see cref="InventoryHelper.TryCollectLootSlot"/> →
-        /// <c>GameCommandQueue.CollectLoot</c> — the same command the window's take-all uses per item),
-        /// confirming "{name} taken." on success.</summary>
+        // The party familiar of a given kind (the kind lives on the MASTER's pet-owner part), if one is in
+        // the controllable group right now.
+        private static BaseUnitEntity PartyPetOfKind(Kingmaker.Enums.PetType kind)
+        {
+            var group = Game.Instance?.SelectionCharacter?.ActualGroup;
+            if (group == null) return null;
+            foreach (var u in group)
+                if (u != null && u.IsPet && u.Master?.GetOptional<UnitPartPetOwner>()?.PetType == kind) return u;
+            return null;
+        }
+
+        /// <summary>One item in an open loot window. Enter TAKES it via the game's own single-slot collect
+        /// (<see cref="InventoryHelper.TryCollectLootSlot"/> → <c>GameCommandQueue.CollectLoot</c> — the
+        /// same command the window's take-all uses per item). That helper answers true whenever the slot
+        /// HAS an item, not whether the take will happen: the command runs frames later and
+        /// <c>GameCommandHelper.TryCollect</c> silently SKIPS an item it cannot place — junk with no cargo
+        /// origin, an item already in a cargo hold, an item already in the party inventory. The old row
+        /// spoke "taken" for all of those and the item stayed in the chest. So the same three gates are
+        /// asked here first, on the same item: a refused take speaks its reason and fires nothing, and
+        /// "taken" is spoken only for an item the command WILL move — junk into a cargo hold (spoken as
+        /// such: it never reaches the inventory), everything else into the inventory.</summary>
         public static NodeVtable LootItem(ItemSlotVM slot)
         {
-            string taken = null; // the activation outcome, read once by StateText (see class doc)
+            string outcome = null; // the activation outcome, read once by StateText (see class doc)
             return ItemRow(slot,
                 activate: () =>
                 {
                     var name = ItemName(slot);
-                    taken = InventoryHelper.TryCollectLootSlot(slot) ? Loc.T("loot.taken", new { name }) : null;
+                    var item = slot.Item?.Value;
+                    if (item == null) return;
+                    string refusal = CollectRefusal(item);
+                    if (refusal != null) { outcome = Loc.T(refusal, new { name }); return; }
+                    bool toCargo = CargoHelper.IsTrashItem(item);
+                    outcome = InventoryHelper.TryCollectLootSlot(slot)
+                        ? Loc.T(toCargo ? "loot.to_cargo" : "loot.taken", new { name })
+                        : null;
                 },
-                stateText: () => taken);
+                stateText: () => outcome);
+        }
+
+        // Why GameCommandHelper.TryCollect would skip this item (null = it will take it): its own three
+        // gates, in its own order — junk needs a cargo origin and must not already sit in a hold; anything
+        // else must not already be in the party inventory.
+        private static string CollectRefusal(ItemEntity item)
+        {
+            if (CargoHelper.IsTrashItem(item))
+            {
+                if (!CargoHelper.CanTransferToCargo(item)) return "loot.uncollectable";
+                if (CargoHelper.IsItemInCargo(item)) return "loot.already_in_cargo";
+                return null;
+            }
+            return item.Collection == Game.Instance.Player.Inventory ? "loot.already_owned" : null;
         }
 
         /// <summary>One party item offered for insertion into a OneSlot device window. Enter INSERTS it
@@ -228,14 +279,19 @@ namespace RTAccess.UI
         /// blind spot), so a take-off settling through the deferred command queue re-speaks the emptied
         /// slot under focus. Enter takes the item off via the game's own unequip path (or, on an empty
         /// slot, opens the game's equip selector — <c>InventoryDollVM.HandleChangeItem</c>, surfaced by
-        /// EquipSelectorScreen); Backspace on a filled slot opens the selector to swap. Both selector
-        /// affordances gate on the doll's <c>CanChangeEquipment</c> — the same gate that hides the sighted
-        /// change button in combat / for pets / on non-controllable units.</summary>
+        /// EquipSelectorScreen); Backspace on a filled slot opens the selector to swap. The selector opens
+        /// UNGATED, exactly as the sighted slot click does: the doll's <c>CanChangeEquipment</c> reactive is
+        /// born true and never written (a dead flag — do not gate on it), and the game applies its real
+        /// gates inside the flow, each with its own spoken line: a slot nothing in the stash can fill
+        /// answers "nothing to insert" (the doll's warning, voiced by WarningReader), an equip in combat is
+        /// refused at equip time (<c>InventoryHelper.CanChangeEquipment</c> = not turn-based). Which slots a
+        /// unit gets at all — a familiar's protocol vs a hero's gear — is the doll roster's call
+        /// (InventoryScreen.BuildEquipment).</summary>
         public static NodeVtable EquipSlot(string slotName, EquipSlotVM slot, InventoryDollVM doll)
         {
             Func<string> label = () => EquipSlotLabel(slotName, slot);
             bool hasItem = slot.HasItem;
-            bool canChange = doll != null && doll.CanChangeEquipment.Value;
+            bool canChange = doll != null;
             Action activate = hasItem ? (Action)(() => Unequip(slot))
                 : canChange ? (Action)(() => doll.HandleChangeItem(slot))
                 : null;
