@@ -1296,5 +1296,12 @@
   "scan.used.unlocked": "already unlocked",
   "scan.used.examined": "already examined",
   "scan.used.passed": "already used, passed",
-  "scan.used.failed": "already used, failed"
+  "scan.used.failed": "already used, failed",
+  "route.line": "Route, {tiles} {tileword}: {legs}",
+  "route.cost": "costs {cost} of {budget} movement",
+  "route.shortfall": "reaches {n} of {total} tiles this turn",
+  "route.none": "No route to that tile.",
+  "route.partial": "No full route. Closest: {route}",
+  "route.passage": "through a passage",
+  "route.unexplored": "Unexplored, no route."
 }

@@ -238,5 +238,6 @@
   "audio.itd": "Interaural time delay (stereo depth)",
   "audio.front_back_filter": "Front/back muffling",
   "audio.head_shadow": "Ear shadowing (head between the ears)",
-  "bind.combat.initiative": "Read initiative order"
+  "bind.combat.initiative": "Read initiative order",
+  "bind.cursor.route": "Cursor: read the route to the tile"
 }

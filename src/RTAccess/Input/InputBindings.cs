@@ -393,6 +393,12 @@ namespace RTAccess.Input
             // is unbound in the game's keymap (F10 dump: the game's own Shift chords are Space/F10/Q/E/A/D/digits).
             InputManager.Register("combat.initiative", "Read initiative order", InputCategory.Exploration,
                 Ax.PartyHotkeys.InitiativeOrder).AddBinding(KeyCode.R, shift: true).Grouped("party");
+            // Shift+Delete — the walked route to the cursor tile as directions (item 7): Delete reads the tile, this
+            // reads the way there. Pure read; Backspace still plants/moves. Bare Delete is the tile re-announce, and
+            // exact-modifier matching keeps the two apart; Delete is unbound in the game's keymap and is not an
+            // NVDA modifier (Insert / CapsLock are).
+            InputManager.Register("cursor.route", "Cursor: read the route to the tile", InputCategory.Exploration,
+                Ax.TileExplorer.ReadRoute).AddBinding(KeyCode.Delete, shift: true).Grouped("cursor");
 
             // ---- WorldMap: the sector-map LINK WALK (declared ONLY by SectorMapScreen, so these letters are free
             // there — the game's bare-letter openers are relocated to Ctrl+letter, and the Exploration scanner's

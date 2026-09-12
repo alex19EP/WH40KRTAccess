@@ -345,6 +345,28 @@ internal static class TileExplorer
     }
 
     /// <summary>
+    /// Shift+Delete — the walked route to the cursor tile as directions ("Route, 20 tiles: 3 north, 2 east, 15
+    /// west"; September 2026 tester item 7), from the selected character — in turn-based combat the acting unit,
+    /// with the movement cost and, past this turn's reach, how far along it the turn gets. Delete reads the tile;
+    /// this reads the way there. Pure read: nothing is planted or moved (Backspace still does that). Lazy-plants
+    /// like the other cursor verbs. See <see cref="RTAccess.Exploration.RouteDirections"/>.
+    /// </summary>
+    public static void ReadRoute()
+    {
+        try
+        {
+            if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys
+            if (!EnsurePlanted(out bool fresh)) return;
+            if (fresh) { Announce(); return; }
+            var unit = GetAnchor() as BaseUnitEntity;
+            if (unit == null) { Speaker.Speak(Loc.T("path.no_character"), interrupt: true); return; }
+            var line = RTAccess.Exploration.RouteDirections.Describe(unit, MapCursor.Node);
+            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("route.none") : line, interrupt: true);
+        }
+        catch (Exception e) { Main.Log?.Error("TileExplorer.ReadRoute failed: " + e); }
+    }
+
+    /// <summary>
     /// Z — the movement-options summary for the acting unit's turn-based turn: surface units get the
     /// reachable-area extent (<see cref="RTAccess.Exploration.PathInfo.MoveAreaSummary"/> — the spoken blue
     /// move-highlight), starships get the end-position fan grouped by resulting facing
