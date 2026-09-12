@@ -188,7 +188,7 @@
 
   "bind.inspect.cursor": "Inspect: cursor occupant",
   "bind.inspect.review": "Inspect: review selection",
-  "bind.read.vantage": "Read vantage from cursor tile",
+  "bind.read.vantage": "Read who I can attack from my position",
   "bind.quest.tracked": "Read the tracked quest objective",
   "bind.hud.gauges": "Read HUD gauges (momentum / veil / profit factor / timers)",
   "bind.log.review": "Toggle the message log",
@@ -239,5 +239,6 @@
   "audio.front_back_filter": "Front/back muffling",
   "audio.head_shadow": "Ear shadowing (head between the ears)",
   "bind.combat.initiative": "Read initiative order",
-  "bind.cursor.route": "Cursor: read the route to the tile"
+  "bind.cursor.route": "Cursor: read the route to the tile",
+  "bind.read.vantage_cursor": "Read who I can attack from the cursor tile"
 }

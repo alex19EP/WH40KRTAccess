@@ -576,9 +576,6 @@
   "vantage.threatened": "threatened by {count}",
   "vantage.no_enemies": "No visible enemies.",
   "vantage.not_in_combat": "Not in combat.",
-  "vantage.los_line": "{name}, {tiles} {tileword}, {pct}% to hit, {cover}",
-  "vantage.los_line_nopct": "{name}, {tiles} {tileword}, {cover}",
-  "vantage.los_line_hidden": "{name}, {tiles} {tileword}, no line of sight",
   "vantage.more": "and {count} more",
   "deploy.arm": "Reposition up to {cells} cells. Step the cursor and press Enter to place the selected character, or Space to start the battle.",
   "deploy.arm_nocount": "Step the cursor and press Enter to place the selected character, or Space to start the battle.",
@@ -1303,5 +1300,13 @@
   "route.none": "No route to that tile.",
   "route.partial": "No full route. Closest: {route}",
   "route.passage": "through a passage",
-  "route.unexplored": "Unexplored, no route."
+  "route.unexplored": "Unexplored, no route.",
+  "vantage.melee_list": "Melee, {weapon}: {list}",
+  "vantage.ranged_list": "Ranged, {weapon}: {list}",
+  "vantage.target": "{name}, {pct} percent",
+  "vantage.target_cover": "{name}, {pct} percent, {cover}",
+  "vantage.target_nopct": "{name}",
+  "vantage.no_targets": "no targets",
+  "vantage.unarmed": "unarmed",
+  "vantage.out_of_reach": "{count} out of reach"
 }

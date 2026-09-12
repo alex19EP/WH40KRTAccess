@@ -1,5 +1,4 @@
 using Kingmaker;
-using Kingmaker.EntitySystem;                             // DistanceToInCells (EntityHelper ext)
 using Kingmaker.EntitySystem.Entities;                   // BaseUnitEntity, MechanicEntity, UnitEntity
 using Kingmaker.Items;                                    // ItemEntityWeapon (the LOS line's ranged-preferred pick)
 using Kingmaker.Pathfinding;                              // CustomGridNodeBase
@@ -151,88 +150,172 @@ internal static class CombatReads
             if (fromNode == null || !ability.CanTargetFromNode(fromNode, null, tw, out int _, out var _, out var _))
                 return 0;
             var best = ability.GetBestShootingPositionForDesiredPosition(tw) ?? fromNode;
-            AbilityTargetUIData ui;
-            if (ability.IsScatter && !ability.IsMelee)
-            {
-                // Scatter sprays a pattern — per-target chance comes from the oriented pattern, not the pair cache.
-                var targetNode = AoEPatternHelper.GetGridNode(target.Position);
-                var pattern = ability.GetPatternSettings().GetOrientedPattern(ability, best, targetNode);
-                var list = new List<AbilityTargetUIData>();
-                ability.GatherAffectedTargetsData(pattern, best.Vector3Position, tw, in list, target);
-                ui = list.FirstOrDefault(t => t.Target == target);
-            }
-            else
-            {
-                ui = AbilityTargetUIDataCache.Instance.GetOrCreate(ability, target, best.Vector3Position);
-            }
-            return Mathf.RoundToInt(ui.HitWithAvoidanceChance);
+            return HitChanceAt(ability, target, best);
         }
         catch (Exception e) { Main.Log?.Error("CombatReads.LosHitChance failed: " + e); return -1; }
     }
 
+    /// <summary>The reticle's own number for <paramref name="ability"/> on <paramref name="target"/> fired from
+    /// <paramref name="shootNode"/> (already the engine's lean-around-cover cell): the pair cache for an ordinary
+    /// shot, the oriented pattern's per-target entry for a scatter weapon (LineOfSightVM's own split). −1 when the
+    /// cache has nothing for the pair.</summary>
+    private static int HitChanceAt(AbilityData ability, BaseUnitEntity target, CustomGridNodeBase shootNode)
+    {
+        var tw = new TargetWrapper(target);
+        AbilityTargetUIData ui;
+        if (ability.IsScatter && !ability.IsMelee)
+        {
+            // Scatter sprays a pattern — per-target chance comes from the oriented pattern, not the pair cache.
+            var targetNode = AoEPatternHelper.GetGridNode(target.Position);
+            var pattern = ability.GetPatternSettings().GetOrientedPattern(ability, shootNode, targetNode);
+            var list = new List<AbilityTargetUIData>();
+            ability.GatherAffectedTargetsData(pattern, shootNode.Vector3Position, tw, in list, target);
+            ui = list.FirstOrDefault(t => t.Target == target);
+        }
+        else
+        {
+            ui = AbilityTargetUIDataCache.Instance.GetOrCreate(ability, target, shootNode.Vector3Position);
+        }
+        return Mathf.RoundToInt(ui.HitWithAvoidanceChance);
+    }
+
+    // ---- the hands, and who each can reach (September 2026 tester item 6) ----
+
+    /// <summary>One live weapon hand: the attack the game would fire with it, the weapon's name, and whether it
+    /// is a melee hand — the split the tester asked for ("melee list, ranged list, both when dual-wielding").</summary>
+    internal readonly struct HandAttack
+    {
+        public readonly AbilityData Ability;
+        public readonly string Weapon;
+        public readonly bool Melee;
+        public HandAttack(AbilityData ability, string weapon, bool melee) { Ability = ability; Weapon = weapon; Melee = melee; }
+    }
+
+    /// <summary>The unit's live weapon hands — the current weapon set's two hands plus any additional limbs —
+    /// each as its first (basic) attack ability, classed melee / ranged by the weapon blueprint. A two-handed
+    /// weapon appears once. Empty when unarmed.</summary>
+    public static List<HandAttack> HandAttacks(BaseUnitEntity me)
+    {
+        var hands = new List<HandAttack>();
+        try
+        {
+            var body = (me as UnitEntity)?.Body;
+            if (body == null) return hands;
+            var seen = new HashSet<ItemEntityWeapon>();
+            void Add(Kingmaker.Items.Slots.WeaponSlot slot)
+            {
+                var w = slot?.MaybeWeapon;
+                if (w == null || !seen.Add(w)) return;
+                var abilities = w.Abilities;
+                if (abilities == null || abilities.Count == 0) return;
+                var data = abilities[0].Data;
+                if (data == null) return;
+                hands.Add(new HandAttack(data, w.Name, w.Blueprint.IsMelee));
+            }
+            var set = body.CurrentHandsEquipmentSet;
+            Add(set?.PrimaryHand);
+            Add(set?.SecondaryHand);
+            foreach (var limb in body.AdditionalLimbs) Add(limb);
+        }
+        catch (Exception e) { Main.Log?.Error("CombatReads.HandAttacks failed: " + e); }
+        return hands;
+    }
+
+    /// <summary>Every living, in-combat, VISIBLE enemy of <paramref name="me"/>, nearest to <paramref name="from"/>
+    /// first — the one enemy set every read in this file runs over (parity lens: never an unseen enemy).</summary>
+    public static List<BaseUnitEntity> VisibleEnemies(BaseUnitEntity me, Vector3 from)
+    {
+        var foes = new List<BaseUnitEntity>();
+        var state = Game.Instance?.State;
+        if (me == null || state == null) return foes;
+        foreach (var o in (System.Collections.IEnumerable)state.AllBaseAwakeUnits)
+        {
+            if (!(o is BaseUnitEntity u) || u == me) continue;
+            if (!u.IsInCombat || u.LifeState.IsDead || !u.IsPlayerEnemy || !u.IsVisibleForPlayer) continue;
+            foes.Add(u);
+        }
+        foes.Sort((a, b) => (a.Position - from).sqrMagnitude.CompareTo((b.Position - from).sqrMagnitude));
+        return foes;
+    }
+
     /// <summary>
-    /// The spoken fan of LOS lines — every visible in-combat enemy, nearest first: name, distance in tiles, the
-    /// line's hit% (when the game would show one), and the enemy's cover badge; "no line of sight" when there is
-    /// none. Anchored where the game anchors the lines: MY DESIRED position (hover-sim / planted holo unit / real
-    /// tile), so the sweep answers "from the plan" exactly as the on-screen fan does. Caps at
-    /// <paramref name="max"/> lines then counts the rest. Null when no visible enemies (caller speaks its own
-    /// no-enemies line).
+    /// "Who can I attack from here", in full: the cover the nearest visible enemy gives me and how many threaten
+    /// the cell, then one named list per weapon hand — "Melee, chainsword: Cultist 1, 78 percent; Cultist 2, 65
+    /// percent. Ranged, laspistol: Cultist 3, 54 percent, half cover" — each enemy tested with the game's own
+    /// pointer-decal predicate (<c>CanTargetFromNode</c>) from <paramref name="from"/>, with the reticle's hit
+    /// chance and, for a ranged hand, the target's cover; a hand that reaches nobody is silent, and visible
+    /// enemies no hand reaches are counted as "out of reach". Every half of the line is answered from the ONE
+    /// cell passed in (the old key mixed the cursor cell with the desired position — the reported anchor bug).
+    /// Known engine caveat: abilities carrying <c>IAbilityOverrideCasterForRange</c> measure range from the
+    /// unit's real tile whatever cell is passed. A "no enemies" line when the field is clear; null on bad input.
     /// </summary>
-    public static string LosSweep(BaseUnitEntity me, int max = 8)
+    public static string AttackReadout(Vector3 from, BaseUnitEntity me, int maxPerHand = 8)
     {
         try
         {
             if (me == null) return null;
-            var state = Game.Instance?.State;
-            if (state == null) return null;
-            var vpc = Game.Instance?.VirtualPositionController;
-            Vector3 anchor = vpc != null ? vpc.GetDesiredPosition(me) : me.Position;
-
-            var foes = new List<BaseUnitEntity>();
-            foreach (var o in (System.Collections.IEnumerable)state.AllBaseAwakeUnits)
-            {
-                if (!(o is BaseUnitEntity u) || u == me) continue;
-                if (!u.IsInCombat || u.LifeState.IsDead || !u.IsPlayerEnemy || !u.IsVisibleForPlayer) continue;
-                foes.Add(u);
-            }
-            if (foes.Count == 0) return null;
-            foes.Sort((a, b) => (a.Position - anchor).sqrMagnitude.CompareTo((b.Position - anchor).sqrMagnitude));
+            var node = AoEPatternHelper.GetGridNode(from);
+            if (node == null) return null;
+            var foes = VisibleEnemies(me, from);
+            if (foes.Count == 0) return Loc.T("vantage.no_enemies");
 
             var sb = new System.Text.StringBuilder();
-            int spoken = 0;
-            foreach (var u in foes)
+            var cover = CoverTo(from, me, foes[0]);
+            sb.Append(Loc.T("vantage.cover_from", new { cover = CoverWord(cover), name = UnitNames.Of(foes[0]) }));
+            int threats = 0;
+            foreach (var u in foes) if (u.IsThreat(node, me.SizeRect)) threats++;
+            if (threats > 0) sb.Append(", ").Append(Loc.T("vantage.threatened", new { count = threats }));
+
+            var hands = HandAttacks(me);
+            var reached = new HashSet<BaseUnitEntity>();
+            var lists = new List<string>();
+            foreach (var hand in hands)
             {
-                if (spoken == max)
+                var rows = new List<string>();
+                int more = 0;
+                foreach (var u in foes)
                 {
-                    sb.Append(", ").Append(Loc.T("vantage.more", new { count = foes.Count - max }));
-                    break;
+                    if (!hand.Ability.CanTargetFromNode(node, null, new TargetWrapper(u), out int _, out var _, out var _)) continue;
+                    reached.Add(u);
+                    if (rows.Count >= maxPerHand) { more++; continue; }
+                    rows.Add(TargetRow(hand, me, u, node, from));
                 }
-                int tiles = u.DistanceToInCells(anchor, me.SizeRect);
-                string tileword = Loc.T(tiles == 1 ? "path.preview.tile_one" : "path.preview.tile_many");
-                var cover = CoverTo(anchor, me, u);
-                string line;
-                if (cover == LosCalculations.CoverType.Invisible)
-                {
-                    line = Loc.T("vantage.los_line_hidden", new { name = UnitNames.Of(u), tiles, tileword });
-                }
-                else
-                {
-                    string coverWord = cover == LosCalculations.CoverType.Half ? Loc.T("cover.half")
-                        : cover == LosCalculations.CoverType.Full ? Loc.T("cover.full")
-                        : Loc.T("cover.none");
-                    int pct = LosHitChance(me, u);
-                    line = pct > 0
-                        ? Loc.T("vantage.los_line", new { name = UnitNames.Of(u), tiles, tileword, pct, cover = coverWord })
-                        : Loc.T("vantage.los_line_nopct", new { name = UnitNames.Of(u), tiles, tileword, cover = coverWord });
-                }
-                if (sb.Length > 0) sb.Append(". ");
-                sb.Append(line);
-                spoken++;
+                if (rows.Count == 0) continue;
+                string list = string.Join("; ", rows);
+                if (more > 0) list += "; " + Loc.T("vantage.more", new { count = more });
+                lists.Add(Loc.T(hand.Melee ? "vantage.melee_list" : "vantage.ranged_list", new { weapon = hand.Weapon, list }));
             }
+            if (lists.Count == 0) sb.Append(", ").Append(Loc.T(hands.Count == 0 ? "vantage.unarmed" : "vantage.no_targets"));
+            else sb.Append(". ").Append(string.Join(". ", lists));
+            int unreached = foes.Count - reached.Count;
+            if (lists.Count > 0 && unreached > 0) sb.Append(", ").Append(Loc.T("vantage.out_of_reach", new { count = unreached }));
             return sb.ToString();
         }
-        catch (Exception e) { Main.Log?.Error("CombatReads.LosSweep failed: " + e); return null; }
+        catch (Exception e) { Main.Log?.Error("CombatReads.AttackReadout failed: " + e); return null; }
     }
+
+    // One list entry: name + the reticle's odds from the engine's lean cell, plus the target's cover for a ranged hand
+    // (cover is a to-hit input; for melee it is meaningless and the game shows none).
+    private static string TargetRow(HandAttack hand, BaseUnitEntity me, BaseUnitEntity target, CustomGridNodeBase node, Vector3 from)
+    {
+        int pct = -1;
+        try
+        {
+            var shootNode = hand.Ability.GetBestShootingPosition(node, new TargetWrapper(target)) ?? node;
+            pct = HitChanceAt(hand.Ability, target, shootNode);
+        }
+        catch (Exception e) { Main.Log?.Log("CombatReads.TargetRow odds failed: " + e.Message); }
+        string name = UnitNames.Of(target);
+        if (pct < 0) return Loc.T("vantage.target_nopct", new { name });
+        if (hand.Melee) return Loc.T("vantage.target", new { name, pct });
+        return Loc.T("vantage.target_cover", new { name, pct, cover = CoverWord(CoverTo(from, me, target)) });
+    }
+
+    private static string CoverWord(LosCalculations.CoverType cover)
+        => cover == LosCalculations.CoverType.Invisible ? Loc.T("vantage.hidden")
+         : cover == LosCalculations.CoverType.Half ? Loc.T("cover.half")
+         : cover == LosCalculations.CoverType.Full ? Loc.T("cover.full")
+         : Loc.T("cover.none");
 
     /// <summary>The weapon whose ability prices the LOS line — the game prefers a RANGED hand over the primary
     /// (LineOfSightVM.TryGetCurrentWeapon), so a sword-and-pistol unit reads the pistol's numbers.</summary>
@@ -246,11 +329,11 @@ internal static class CombatReads
         return w1;
     }
 
-    /// <summary>The "if I stood on this cell" tactical read for <paramref name="me"/> — the holographic positional
-    /// preview a sighted player gets from the move/deploy ghost, but read from an arbitrary candidate cell without
-    /// moving the unit. All pure reads from <paramref name="from"/>: cover vs the nearest visible enemy, how many
-    /// enemies I'd be in range of, and how many would threaten that cell. Returns a "no enemies" line when the field
-    /// is clear (or the caller's fallback), null on bad input. NOTE the in-range count uses
+    /// <summary>The SHORT "if I stood on this cell" read for <paramref name="me"/> — the per-step deployment tail and
+    /// the cover cycle's suffix, where the full per-hand lists of <see cref="AttackReadout"/> would drown the step:
+    /// cover vs the nearest visible enemy, how many enemies ANY weapon hand could reach from there, and how many
+    /// would threaten that cell. All pure reads from <paramref name="from"/>. Returns a "no enemies" line when the
+    /// field is clear (or the caller's fallback), null on bad input. NOTE the in-range count uses
     /// <c>CanTargetFromNode(candidate cell)</c>, which for some abilities measures from the unit's ACTUAL tile
     /// (<c>TryGetCasterForDistanceCalculation</c>) — cover and threat transfer exactly, in-range is best-effort.</summary>
     public static string VantageFrom(Vector3 from, BaseUnitEntity me)
@@ -258,34 +341,23 @@ internal static class CombatReads
         try
         {
             if (me == null) return null;
-            var state = Game.Instance?.State;
             var node = AoEPatternHelper.GetGridNode(from);
-            if (state == null || node == null) return null;
+            if (node == null) return null;
+            var foes = VisibleEnemies(me, from);
+            if (foes.Count == 0) return Loc.T("vantage.no_enemies");
 
-            var atk = DefaultAttack(me);
-            BaseUnitEntity nearest = null;
-            float bestDist = float.MaxValue;
-            int enemies = 0, threats = 0, inRange = 0;
-            foreach (var o in (System.Collections.IEnumerable)state.AllBaseAwakeUnits)
+            var hands = HandAttacks(me);
+            int threats = 0, inRange = 0;
+            foreach (var u in foes)
             {
-                if (!(o is BaseUnitEntity u) || u == me) continue;
-                if (!u.IsInCombat || u.LifeState.IsDead || !u.IsPlayerEnemy || !u.IsVisibleForPlayer) continue;
-                enemies++;
                 if (u.IsThreat(node, me.SizeRect)) threats++;   // does this enemy threaten the CANDIDATE cell (AoO reach)
-                if (atk != null && atk.CanTargetFromNode(node, null, new TargetWrapper(u), out int _, out var _, out var _)) inRange++;
-                float d = (u.Position - from).sqrMagnitude;
-                if (d < bestDist) { bestDist = d; nearest = u; }
+                var tw = new TargetWrapper(u);
+                foreach (var hand in hands)
+                    if (hand.Ability.CanTargetFromNode(node, null, tw, out int _, out var _, out var _)) { inRange++; break; }
             }
-            if (enemies == 0 || nearest == null) return Loc.T("vantage.no_enemies");
-
-            var cover = CoverTo(from, me, nearest);
-            string coverWord = cover == LosCalculations.CoverType.Invisible ? Loc.T("vantage.hidden")
-                : cover == LosCalculations.CoverType.Half ? Loc.T("cover.half")
-                : cover == LosCalculations.CoverType.Full ? Loc.T("cover.full")
-                : Loc.T("cover.none");
 
             var sb = new System.Text.StringBuilder();
-            sb.Append(Loc.T("vantage.cover_from", new { cover = coverWord, name = UnitNames.Of(nearest) }));
+            sb.Append(Loc.T("vantage.cover_from", new { cover = CoverWord(CoverTo(from, me, foes[0])), name = UnitNames.Of(foes[0]) }));
             sb.Append(", ").Append(Loc.T("vantage.in_range", new { count = inRange }));
             if (threats > 0) sb.Append(", ").Append(Loc.T("vantage.threatened", new { count = threats }));
             return sb.ToString();
