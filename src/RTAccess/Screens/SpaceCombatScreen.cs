@@ -441,9 +441,8 @@ namespace RTAccess.Screens
                     mp = Mathf.RoundToInt(cs?.ActionPointsBlue ?? 0f),
                     max = Mathf.RoundToInt(cs?.ActionPointsBlueMax ?? 0f),
                 }));
-                if (Exploration.Geo.CompassSector(ship.Forward.x, ship.Forward.z, out int sector))
-                    sb.Append(", ").Append(Loc.T("spacecombat.facing",
-                        new { dir = Loc.T(Accessibility.InteractableDescriber.Compass8[sector]) }));
+                var facing = Accessibility.InteractableDescriber.ShipFacing(ship);
+                if (facing != null) sb.Append(", ").Append(facing);
                 return sb.ToString();
             }
             catch (Exception e) { Main.Log?.Error("SpaceCombatScreen.SpeedLine: " + e); return ""; }

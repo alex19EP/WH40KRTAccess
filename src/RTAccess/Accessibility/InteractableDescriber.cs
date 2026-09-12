@@ -41,6 +41,24 @@ internal static class InteractableDescriber
     internal static readonly string[] Compass8 =
         { "aim.dir_n", "aim.dir_ne", "aim.dir_e", "aim.dir_se", "aim.dir_s", "aim.dir_sw", "aim.dir_w", "aim.dir_nw" };
 
+    /// <summary>"facing north" for a starship — the way its nose points on the battle grid, read from the entity's
+    /// live heading (<c>MechanicEntity.Forward</c>, yaw off its orientation; +Z = north like every compass here).
+    /// Null for anything that is not a ship. A sighted player reads a hull's heading off the model at a glance,
+    /// and every arc and broadside hangs off it; one helper so the review browse, the tile cursor's occupant
+    /// line and the player's own speed row all speak the same word. Callers own the visibility gate.</summary>
+    public static string ShipFacing(MechanicEntity entity)
+    {
+        if (!(entity is StarshipEntity ship)) return null;
+        try
+        {
+            var f = ship.Forward;
+            return RTAccess.Exploration.Geo.CompassSector(f.x, f.z, out int sector, 0.01f)
+                ? Loc.T("spacecombat.facing", new { dir = Loc.T(Compass8[sector]) })
+                : null;
+        }
+        catch (Exception e) { Main.Log?.Error("ShipFacing failed: " + e); return null; }
+    }
+
     /// <summary>Full spoken line for a chosen interactable view. Never throws; returns "" if nothing readable.</summary>
     public static string Describe(EntityViewBase entity)
     {
@@ -128,6 +146,9 @@ internal static class InteractableDescriber
             // enemy target cycle), so it must be the surface that says why the attack will bounce — the tag a
             // sighted player infers from the missing overtip / unclickable cursor. See UnitFaction.Untargetable.
             else if (RTAccess.Exploration.UnitFaction.Untargetable(unit)) Append(sb, Loc.T("unit.untargetable"));
+            // A starship occupant also says which way its nose points (space combat): the cursor landing on a hull
+            // is how a blind player finds out where its bow — and so its arcs — face. Already visibility-gated above.
+            if (!unit.LifeState.IsDead) Append(sb, ShipFacing(unit));
         }
         if (seen && TryNameMapObject(node, out var objectName, out var objectVerb))
         {

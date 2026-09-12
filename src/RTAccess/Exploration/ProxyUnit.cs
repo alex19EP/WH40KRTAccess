@@ -170,6 +170,14 @@ internal sealed class ProxyUnit : ScanItem
                         bits.Add(_unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
                             ? Loc.T("scan.unit_hp_hidden")
                             : Loc.T("scan.unit_hp", new { current = health.HitPointsLeft, max = health.MaxHitPoints }));
+                    // A starship's heading (space combat) — which way its nose points, the thing its arcs and
+                    // broadsides hang off; a sighted player reads it off the hull at a glance. Every ship, ours
+                    // included, gated like the other tactical words so an unseen enemy never leaks.
+                    if (_unit.IsPlayerFaction || _unit.IsVisibleForPlayer)
+                    {
+                        var facing = InteractableDescriber.ShipFacing(_unit);
+                        if (facing != null) bits.Add(facing);
+                    }
                     // Where this character is currently walking to. The local map draws a second pin per party
                     // member for a pending move order (LocalMapDestinationMarkerVM off
                     // ClickPointerManager.UnitMarksLocalMap) and the world draws a click marker on the ground —
