@@ -1308,5 +1308,8 @@
   "vantage.target_nopct": "{name}",
   "vantage.no_targets": "no targets",
   "vantage.unarmed": "unarmed",
-  "vantage.out_of_reach": "{count} out of reach"
+  "vantage.out_of_reach": "{count} out of reach",
+  "firing.cell_spot": "Line of sight to the tile, {cover}",
+  "firing.route": "route: {legs}",
+  "firing.none_cell": "No reachable spot with line of sight to that tile this turn."
 }

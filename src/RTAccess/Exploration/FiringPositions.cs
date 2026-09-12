@@ -5,6 +5,7 @@ using Kingmaker.UI.SurfaceCombatHUD;                      // AbilityTargetUIData
 using Kingmaker.UnitLogic.Abilities;                      // AbilityData
 using Kingmaker.Utility;                                  // TargetWrapper
 using Kingmaker.View.Covers;                              // LosCalculations
+using Pathfinding;                                        // IntRect (the one-cell footprint of a target tile)
 using RTAccess.Accessibility;                             // CombatReads
 using UnityEngine;                                        // Vector3, Mathf
 
@@ -164,6 +165,65 @@ internal static class FiringPositions
             });
         }
         catch (Exception e) { Main.Log?.Error("FiringPositions.Find failed: " + e); }
+        return result;
+    }
+
+    /// <summary>
+    /// "Where is the nearest cell I could see THAT cell from?" — the cell-target twin of <see cref="Find"/>
+    /// (September 2026 tester item 8), for a shooter planning around a spot rather than an enemy: every reachable,
+    /// standable cell this turn with a clear line of sight to <paramref name="cell"/> (the engine's own LOS oracle,
+    /// a one-cell footprint at the target) and, when a ranged attack is to hand, within its range — ranked NEAREST
+    /// FIRST (movement cost, then straight distance to the spot), not safest first: with no enemy to hide from there
+    /// is no cover to rank by, and the request was the closest such cell. <see cref="Spot.Cover"/> is the cover the
+    /// cell would give me FROM the target cell (its line to me); <see cref="Spot.HitChance"/> is 0 (nothing to hit).
+    /// The target cell itself is never an answer. Empty when nothing reachable can see the cell.
+    /// </summary>
+    public static List<Spot> FindForCell(BaseUnitEntity me, CustomGridNodeBase cell)
+    {
+        var result = new List<Spot>();
+        try
+        {
+            if (me == null || cell == null || me.View == null) return result;
+            var area = Game.Instance?.UnitMovableAreaController?.CurrentUnitMovableArea;
+            if (area == null || area.Count == 0) return result;
+            var dict = PathfindingService.Instance?.FindAllReachableTiles_Blocking(
+                me.View.MovementAgent, me.Position, me.CombatState.ActionPointsBlue);
+
+            // Range: the armed ability, else the first RANGED hand — a melee hand's one-cell reach would reject
+            // everything, and "for shooters" was the request. Unarmed → line of sight alone.
+            var atk = Game.Instance?.SelectedAbilityHandler?.Ability;
+            if (atk == null)
+                foreach (var hand in CombatReads.HandAttacks(me)) if (!hand.Melee) { atk = hand.Ability; break; }
+            int rangeCells = atk != null ? atk.RangeCells : int.MaxValue;
+
+            var one = new IntRect(0, 0, 0, 0);
+            Vector3 target = cell.Vector3Position;
+            foreach (var n in area)
+            {
+                if (!(n is CustomGridNodeBase node) || ReferenceEquals(node, cell)) continue;
+                int cost = 0;
+                if (dict != null)
+                {
+                    if (!dict.TryGetValue(node, out var priced) || !priced.IsCanStand) continue;
+                    cost = Mathf.RoundToInt(priced.Length);
+                }
+                Vector3 pos = node.Vector3Position;
+                if (rangeCells != int.MaxValue
+                    && WarhammerGeometryUtils.DistanceToInCells(pos, me.SizeRect, target, one) > rangeCells) continue;
+                if (LosCalculations.GetWarhammerLos(pos, me.SizeRect, target, one).CoverType == LosCalculations.CoverType.Invisible) continue;
+                var mine = LosCalculations.CoverType.None;
+                try { mine = LosCalculations.GetWarhammerLos(target, one, pos, me.SizeRect).CoverType; }
+                catch (Exception e) { Main.Log?.Log("FiringPositions cell cover read failed: " + e.Message); }
+                result.Add(new Spot(node, mine, 0, cost));
+            }
+            result.Sort((a, b) =>
+            {
+                int byCost = a.Cost.CompareTo(b.Cost);
+                if (byCost != 0) return byCost;
+                return Geo.Distance(a.Position, target).CompareTo(Geo.Distance(b.Position, target));
+            });
+        }
+        catch (Exception e) { Main.Log?.Error("FiringPositions.FindForCell failed: " + e); }
         return result;
     }
 

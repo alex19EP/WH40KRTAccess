@@ -406,6 +406,12 @@ namespace RTAccess.Input
             // be. Exact-modifier matching keeps the pair apart.
             InputManager.Register("read.vantage_cursor", "Read who I can attack from the cursor tile", InputCategory.Exploration,
                 Ax.TileExplorer.ReadVantageCursor).AddBinding(KeyCode.Semicolon, shift: true).Grouped("cursor");
+            // Ctrl+Delete — the nearest reachable cell with line of sight to the cursor tile (item 8), planted like
+            // the J firing cycle so Backspace commits; a repeat press steps to the next-nearest for the same tile.
+            // The third member of the Delete family: Delete reads the tile, Shift+Delete the way there, Ctrl+Delete
+            // where to stand to see it.
+            InputManager.Register("cursor.firing_spot", "Cursor: nearest spot with line of sight to the tile", InputCategory.Exploration,
+                Ex.Scanner.CycleCellFiring).AddBinding(KeyCode.Delete, ctrl: true).Grouped("cursor");
 
             // ---- WorldMap: the sector-map LINK WALK (declared ONLY by SectorMapScreen, so these letters are free
             // there — the game's bare-letter openers are relocated to Ctrl+letter, and the Exploration scanner's

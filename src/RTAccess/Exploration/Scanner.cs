@@ -1179,9 +1179,74 @@ internal static class Scanner
             ? Loc.T("firing.here")
             : InteractableDescriber.DirectionAndDistance(me.Position, spot.Position));
         int budget = UnityEngine.Mathf.RoundToInt(me.CombatState.ActionPointsBlue);
-        if (spot.Cost > 0) sb.Append(", ").Append(Loc.T("firing.cost", new { cost = spot.Cost, budget }));
+        if (spot.Cost > 0)
+        {
+            sb.Append(", ").Append(Loc.T("firing.cost", new { cost = spot.Cost, budget }));
+            // The walk itself as directions (tester item 7 slotted in): the bearing above says where the stance
+            // is, this says how the legs get there around whatever is in the way.
+            var legs = RouteDirections.LegsTo(me, spot.Node);
+            if (legs != null) sb.Append(", ").Append(Loc.T("firing.route", new { legs }));
+        }
         return sb.ToString();
     }
+
+    // ---- cell-target firing positions (Ctrl+Delete; see FiringPositions.FindForCell) ----
+
+    private static CustomGridNodeBase _cellTarget;   // the tile the spots were found for
+    private static CustomGridNodeBase _cellSpotNode; // the spot last planted, so a repeat press cycles on
+
+    /// <summary>
+    /// Ctrl+Delete — "where is the nearest spot I could see the cursor tile from" (September 2026 tester item 8):
+    /// the cell-target twin of the J firing cycle, for a shooter planning around a spot rather than an enemy.
+    /// Nearest first; plants the cursor on the spot silently, like J, so Backspace commits the move, and speaks
+    /// the walk there as directions. A repeat press with the cursor still on the planted spot steps to the
+    /// next-nearest for the SAME tile; moving the cursor anywhere else re-targets. Own turn only (the acting-unit
+    /// guard speaks the refusal); lazy-plants like the other cursor verbs.
+    /// </summary>
+    internal static void CycleCellFiring() => Safe(() =>
+    {
+        if (RTAccess.UI.Navigation.HasFocus) return;
+        var me = RTAccess.Combat.CommandDispatch.ActingUnit();
+        if (me == null) return;   // refusal already spoken
+        if (me is StarshipEntity) { Speak(Loc.T("firing.none_cell")); return; }
+        if (!TileExplorer.EnsurePlanted(out bool fresh)) return;
+        if (fresh) { TileExplorer.Announce(); return; }
+
+        var cursor = MapCursor.Node;
+        bool resume = _cellTarget != null && ReferenceEquals(cursor, _cellSpotNode);
+        var target = resume ? _cellTarget : cursor;
+        if (target == null) return;
+        if (target == me.CurrentUnwalkableNode) { Speak(Loc.T("path.preview.here")); return; }
+
+        var list = FiringPositions.FindForCell(me, target);
+        if (list.Count == 0) { _cellTarget = null; _cellSpotNode = null; Speak(Loc.T("firing.none_cell")); return; }
+
+        int idx = -1;
+        if (resume)
+            for (int i = 0; i < list.Count; i++)
+                if (ReferenceEquals(list[i].Node, _cellSpotNode)) { idx = i; break; }
+        idx = idx < 0 ? 0 : Wrap(idx + 1, list.Count);
+
+        var spot = list[idx];
+        _cellTarget = target;
+        _cellSpotNode = spot.Node;
+        TileExplorer.PlantOn(spot.Position, announce: false);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(Loc.T("firing.cell_spot", new { cover = FiringPositions.CoverWord(spot.Cover) }));
+        sb.Append(", ").Append(spot.Cost == 0
+            ? Loc.T("firing.here")
+            : InteractableDescriber.DirectionAndDistance(me.Position, spot.Position));
+        if (spot.Cost > 0)
+        {
+            int budget = UnityEngine.Mathf.RoundToInt(me.CombatState.ActionPointsBlue);
+            sb.Append(", ").Append(Loc.T("firing.cost", new { cost = spot.Cost, budget }));
+            var legs = RouteDirections.LegsTo(me, spot.Node);
+            if (legs != null) sb.Append(", ").Append(Loc.T("firing.route", new { legs }));
+        }
+        sb.Append(", ").Append(Loc.T("nav.position", new { index = idx + 1, count = list.Count }));
+        Speak(sb.ToString());
+    });
 
     // ---- blast positions (the enemy key's area-ability gear; see BlastPlan) ----
 

@@ -240,5 +240,6 @@
   "audio.head_shadow": "Ear shadowing (head between the ears)",
   "bind.combat.initiative": "Read initiative order",
   "bind.cursor.route": "Cursor: read the route to the tile",
-  "bind.read.vantage_cursor": "Read who I can attack from the cursor tile"
+  "bind.read.vantage_cursor": "Read who I can attack from the cursor tile",
+  "bind.cursor.firing_spot": "Cursor: nearest spot with line of sight to the tile"
 }
