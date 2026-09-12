@@ -752,7 +752,10 @@ internal static class InteractableDescriber
             case UIInteractionType.Action: return Loc.T("verb.activate");
             case UIInteractionType.Move: return Loc.T("verb.approach");
             case UIInteractionType.Info: return Loc.T("verb.examine");
-            case UIInteractionType.Credits: return Loc.T("verb.collect");
+            // Credits = the Lord-Captain's Infolog terminal (it opens the backer memorial, the game's
+            // Credits window in bakers-only mode); the game's overtip shows a plain interact icon for it —
+            // nothing is picked up, so "collect" promised loot that never comes.
+            case UIInteractionType.Credits: return Loc.T("verb.interact");
             case UIInteractionType.Pets: return Loc.T("verb.interact");
             default: return null;
         }
