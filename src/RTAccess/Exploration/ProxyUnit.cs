@@ -70,7 +70,19 @@ internal sealed class ProxyUnit : ScanItem
 
     public override IEnumerable<string> Nodes
     {
-        get { yield return Primary; }
+        get
+        {
+            var primary = Primary;
+            yield return primary;
+            // The state sub-node (tester item 10, Shift+PageUp/Down): a lootable corpse is opened / unopened (the
+            // same session-scoped viewed flag Detail voices); a living unit the game offers a conversation on
+            // RIGHT NOW is talkable — the same click-interaction test the "talk" word in Detail rides, so the
+            // sub-category and the spoken tail can never disagree.
+            if (primary == ScanTaxonomy.Corpses)
+                yield return _unit.LootViewed ? ScanTaxonomy.CorpsesOpened : ScanTaxonomy.CorpsesUnopened;
+            else if (HasClickInteraction && HasDialogInteraction)
+                yield return ScanTaxonomy.UnitsTalkable;
+        }
     }
 
     // Actionable via the scanner's generic I: a lootable corpse (loots like a chest), OR a living unit the game itself
@@ -170,6 +182,14 @@ internal sealed class ProxyUnit : ScanItem
                         bits.Add(_unit.HasMechanicFeature(MechanicsFeatureType.HideRealHealthInUI)
                             ? Loc.T("scan.unit_hp_hidden")
                             : Loc.T("scan.unit_hp", new { current = health.HitPointsLeft, max = health.MaxHitPoints }));
+                    // A starship's heading (space combat) — which way its nose points, the thing its arcs and
+                    // broadsides hang off; a sighted player reads it off the hull at a glance. Every ship, ours
+                    // included, gated like the other tactical words so an unseen enemy never leaks.
+                    if (_unit.IsPlayerFaction || _unit.IsVisibleForPlayer)
+                    {
+                        var facing = InteractableDescriber.ShipFacing(_unit);
+                        if (facing != null) bits.Add(facing);
+                    }
                     // Where this character is currently walking to. The local map draws a second pin per party
                     // member for a pending move order (LocalMapDestinationMarkerVM off
                     // ClickPointerManager.UnitMarksLocalMap) and the world draws a click marker on the ground —

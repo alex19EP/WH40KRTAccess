@@ -46,4 +46,21 @@ internal static class ScanTaxonomy
     // Cover positions — walkable cells whose edges give half/full cover (CoverModel), surfaced by ProxyCover in
     // the "Cover" category and the J cycle. Level geometry rather than an entity, like Unexplored above.
     public const string Cover = "cover";
+
+    // ---- sub-nodes (September 2026 tester item 10): the second level under a category, browsed with
+    // Shift+PageUp/Down. A thing carries its category node AND the one state sub-node that fits it right now, so a
+    // sub-category is just a HasNode filter over the category's list (WrathAccess's Node-tree shape, flattened to
+    // dotted keys). Primary never points at a sub-node: sounds and the review cycles keep keying on the category,
+    // and Sonar.StemFor falls back to the parent for any leaf that does reach it.
+    public const string UnitsTalkable = "units.talkable";           // a living unit the game offers a conversation on, now
+    public const string ContainersUnopened = "containers.unopened";
+    public const string ContainersOpened = "containers.opened";
+    public const string CorpsesUnopened = "corpses.unopened";
+    public const string CorpsesOpened = "corpses.opened";
+    public const string DoorsClosed = "doors.closed";
+    public const string DoorsOpen = "doors.open";
+    public const string SearchPointsUnused = "searchpoints.unused";
+    public const string SearchPointsUsed = "searchpoints.used";
+    public const string MechanismsUnused = "mechanisms.unused";
+    public const string MechanismsUsed = "mechanisms.used";
 }

@@ -37,7 +37,9 @@ namespace RTAccess.Exploration;
 /// I on one acts on the real interactable the pin SITS ON (a loot pin marks the corpse or container it points at)
 /// and falls back to WALKING the party toward it only when nothing actionable is under the pin.
 ///
-/// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Comma/Period/N/M = cycle
+/// Keys: PageUp/Down = previous/next item; Ctrl+PageUp/Down = previous/next category; Shift+PageUp/Down = the
+/// category's state sub-categories (unopened / opened, closed / open, unused / used, can talk — see
+/// <see cref="Subcategories"/>); Comma/Period/N/M = cycle
 /// nearest party/enemy/neutral/object of interest (Shift reverses). Live area effects (hazards + buff zones) have no
 /// dedicated cycle key — they browse as the Hazards / Buff zones categories in the Ctrl+PageUp/Down list, and the
 /// tile explorer names the hazard on the cursor tile. I = interact with selection (an object; a landmark → the
@@ -102,6 +104,54 @@ internal static class Scanner
     private enum Group { Party, Enemies, Neutrals, Objects }
 
     private static int _categoryIndex;     // index into Categories (Ctrl+PageUp/Down)
+    private static int _subIndex;          // 0 = the whole category; 1.. = index+1 into SubsOf(_categoryIndex) (Shift+PageUp/Down)
+
+    // The second browse level (September 2026 tester item 10 — Shift+PageUp/Down): per category, the STATE
+    // sub-categories a thing can sort into right now, each a HasNode filter on the sub-node its proxy stamps
+    // (ScanTaxonomy's dotted sub-nodes, read from the same engine flags the spoken used / open / talk words ride,
+    // so the filter and the word can never disagree). Index 0 of every cycle is the whole category. Categories
+    // absent here (party, enemies, exits, hazards, the special-sourced lists) simply have no second level.
+    private static readonly Dictionary<string, (string Key, Func<ScanItem, bool> Pred)[]> Subcategories =
+        new Dictionary<string, (string Key, Func<ScanItem, bool> Pred)[]>
+        {
+            // "NPCs you can talk to": the same click-interaction test that puts "talk" in the unit's detail tail.
+            ["taxonomy.units.allies"]   = new[] { Sub("taxonomy.units.talkable", it => it.HasNode(ScanTaxonomy.UnitsTalkable)) },
+            ["taxonomy.units.neutrals"] = new[] { Sub("taxonomy.units.talkable", it => it.HasNode(ScanTaxonomy.UnitsTalkable)) },
+            ["taxonomy.containers"] = new[]
+            {
+                Sub("taxonomy.containers.unopened", it => it.HasNode(ScanTaxonomy.ContainersUnopened)),
+                Sub("taxonomy.containers.opened",   it => it.HasNode(ScanTaxonomy.ContainersOpened)),
+            },
+            ["taxonomy.corpses"] = new[]
+            {
+                Sub("taxonomy.corpses.unopened", it => it.HasNode(ScanTaxonomy.CorpsesUnopened)),
+                Sub("taxonomy.corpses.opened",   it => it.HasNode(ScanTaxonomy.CorpsesOpened)),
+            },
+            ["taxonomy.doors"] = new[]
+            {
+                Sub("taxonomy.doors.closed", it => it.HasNode(ScanTaxonomy.DoorsClosed)),
+                Sub("taxonomy.doors.open",   it => it.HasNode(ScanTaxonomy.DoorsOpen)),
+            },
+            ["taxonomy.searchpoints"] = new[]
+            {
+                Sub("taxonomy.searchpoints.unused", it => it.HasNode(ScanTaxonomy.SearchPointsUnused)),
+                Sub("taxonomy.searchpoints.used",   it => it.HasNode(ScanTaxonomy.SearchPointsUsed)),
+            },
+            // The nameless bark volumes ("Point of interest") live here — "points already inspected".
+            ["taxonomy.mechanisms"] = new[]
+            {
+                Sub("taxonomy.mechanisms.unused", it => it.HasNode(ScanTaxonomy.MechanismsUnused)),
+                Sub("taxonomy.mechanisms.used",   it => it.HasNode(ScanTaxonomy.MechanismsUsed)),
+            },
+        };
+
+    private static (string Key, Func<ScanItem, bool> Pred) Sub(string key, Func<ScanItem, bool> pred) => (key, pred);
+
+    private static (string Key, Func<ScanItem, bool> Pred)[] SubsOf(int categoryIndex)
+        => Subcategories.TryGetValue(Categories[categoryIndex].Key, out var subs)
+            ? subs
+            : Array.Empty<(string Key, Func<ScanItem, bool> Pred)>();
+
     private static object _selectedKey;     // the backing entity of the current selection (survives rebuilds)
     private static int _selectedFrame = -1; // Time.frameCount of the last selection write — a pick OR a clear
 
@@ -126,6 +176,8 @@ internal static class Scanner
     internal static void ItemNext() => Safe(() => StepItem(1));
     internal static void CategoryPrev() => Safe(() => StepCategory(-1));
     internal static void CategoryNext() => Safe(() => StepCategory(1));
+    internal static void SubPrev() => Safe(() => StepSub(-1));
+    internal static void SubNext() => Safe(() => StepSub(1));
     internal static void ReviewParty(bool back) => Safe(() => Review(Group.Party, back ? -1 : 1));
     // The enemy key has a second gear. While an AREA ability is armed, the useful question stops being "which
     // enemy" and becomes "where do I put the template" — so the same key cycles ranked blast positions instead
@@ -234,8 +286,8 @@ internal static class Scanner
         if (anchor == null) { Speak(Loc.T("status.no_selection")); return; }
         var refPos = ScanFrom();
 
-        var list = CategoryList(_categoryIndex, refPos);
-        if (list.Count == 0) { SetSelection(null); Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
+        var list = CategoryList(_categoryIndex, _subIndex, refPos);
+        if (list.Count == 0) { SetSelection(null); Speak(Loc.T("scan.category_empty", new { label = BrowseLabel })); return; }
 
         int idx = IndexOfSelected(list);
         idx = idx < 0 ? 0 : Wrap(idx + dir, list.Count);
@@ -255,8 +307,36 @@ internal static class Scanner
         if (next < 0) { SetSelection(null); Speak(Loc.T("scan.nothing_to_scan")); return; }
 
         _categoryIndex = next;
+        _subIndex = 0;   // a new category always opens on its whole list
         var list = CategoryList(_categoryIndex, refPos);
         Select(list, 0, refPos, CategoryLabel + ", " + list.Count + ". ");
+    }
+
+    /// <summary>Shift+PageUp/Down — step the current category's second level: the whole category, then each of
+    /// its state sub-categories (unopened / opened, closed / open, unused / used, can talk), skipping the empty
+    /// ones exactly as the category step does (WrathAccess's NextSubcategoryIndex). A category with no second
+    /// level says so. Ctrl+PageUp/Down returns to the whole list of the next category.</summary>
+    private static void StepSub(int dir)
+    {
+        var anchor = Anchor();
+        if (anchor == null) { Speak(Loc.T("status.no_selection")); return; }
+        var refPos = ScanFrom();
+        var subs = SubsOf(_categoryIndex);
+        if (subs.Length == 0) { Speak(Loc.T("scan.no_subcategories", new { label = CategoryLabel })); return; }
+
+        int n = subs.Length + 1;
+        int next = -1;
+        for (int step = 1; step <= n; step++)
+        {
+            int i = Wrap(_subIndex + dir * step, n);
+            if (CategoryList(_categoryIndex, i, refPos).Count > 0) { next = i; break; }
+        }
+        if (next < 0) { SetSelection(null); Speak(Loc.T("scan.category_empty", new { label = CategoryLabel })); return; }
+
+        _subIndex = next;
+        var list = CategoryList(_categoryIndex, _subIndex, refPos);
+        string label = _subIndex == 0 ? CategoryLabel + ", " + Loc.T("taxonomy.all") : BrowseLabel;
+        Select(list, 0, refPos, label + ", " + list.Count + ". ");
     }
 
     /// <summary>The index of the next category (from <paramref name="from"/>, stepping by <paramref name="dir"/>)
@@ -790,7 +870,11 @@ internal static class Scanner
 
     // ---- list building ----
 
-    private static List<ScanItem> CategoryList(int categoryIndex, Vector3 refPos)
+    private static List<ScanItem> CategoryList(int categoryIndex, Vector3 refPos) => CategoryList(categoryIndex, 0, refPos);
+
+    // subIndex 0 = the whole category; 1.. = that sub-category's HasNode filter over the same list (the
+    // special-sourced categories have no second level, so the filter never applies to them).
+    private static List<ScanItem> CategoryList(int categoryIndex, int subIndex, Vector3 refPos)
     {
         var cat = Categories[categoryIndex];
         // Three categories aren't WorldModel entities: local-map pins, fog-frontier openings and cover positions
@@ -799,6 +883,8 @@ internal static class Scanner
         if (cat.Src == Source.Frontier) return FrontierList(refPos);
         if (cat.Src == Source.Cover) return CoverList(refPos);
 
+        var subs = SubsOf(categoryIndex);
+        var sub = subIndex > 0 && subIndex <= subs.Length ? subs[subIndex - 1].Pred : null;
         var list = new List<ScanItem>();
         foreach (var it in WorldModel.Items)
         {
@@ -806,7 +892,7 @@ internal static class Scanner
             // game lets you loot: it flips its Primary to Corpses (so it never matches a faction category) and shows
             // in the Corpses category instead. An emptied/lootless corpse stays hidden. Object categories are
             // unaffected (a map object is never dead). Corpses also stay under the tile cursor, labelled dead.
-            if (it.IsVisible && (!it.IsDead || it.LootableCorpse) && cat.Pred(it)) list.Add(it);
+            if (it.IsVisible && (!it.IsDead || it.LootableCorpse) && cat.Pred(it) && (sub == null || sub(it))) list.Add(it);
         }
         SortByReachThenDistance(list, refPos);
         return list;
@@ -1106,6 +1192,18 @@ internal static class Scanner
 
     private static string CategoryLabel => Loc.T(Categories[_categoryIndex].Key);
 
+    /// <summary>The spoken browse position: the category, plus its sub-category while one is active.</summary>
+    private static string BrowseLabel
+    {
+        get
+        {
+            var subs = SubsOf(_categoryIndex);
+            return _subIndex > 0 && _subIndex <= subs.Length
+                ? CategoryLabel + ", " + Loc.T(subs[_subIndex - 1].Key)
+                : CategoryLabel;
+        }
+    }
+
     private static string GroupLabel(Group group)
     {
         switch (group)
@@ -1179,9 +1277,74 @@ internal static class Scanner
             ? Loc.T("firing.here")
             : InteractableDescriber.DirectionAndDistance(me.Position, spot.Position));
         int budget = UnityEngine.Mathf.RoundToInt(me.CombatState.ActionPointsBlue);
-        if (spot.Cost > 0) sb.Append(", ").Append(Loc.T("firing.cost", new { cost = spot.Cost, budget }));
+        if (spot.Cost > 0)
+        {
+            sb.Append(", ").Append(Loc.T("firing.cost", new { cost = spot.Cost, budget }));
+            // The walk itself as directions (tester item 7 slotted in): the bearing above says where the stance
+            // is, this says how the legs get there around whatever is in the way.
+            var legs = RouteDirections.LegsTo(me, spot.Node);
+            if (legs != null) sb.Append(", ").Append(Loc.T("firing.route", new { legs }));
+        }
         return sb.ToString();
     }
+
+    // ---- cell-target firing positions (Ctrl+Delete; see FiringPositions.FindForCell) ----
+
+    private static CustomGridNodeBase _cellTarget;   // the tile the spots were found for
+    private static CustomGridNodeBase _cellSpotNode; // the spot last planted, so a repeat press cycles on
+
+    /// <summary>
+    /// Ctrl+Delete — "where is the nearest spot I could see the cursor tile from" (September 2026 tester item 8):
+    /// the cell-target twin of the J firing cycle, for a shooter planning around a spot rather than an enemy.
+    /// Nearest first; plants the cursor on the spot silently, like J, so Backspace commits the move, and speaks
+    /// the walk there as directions. A repeat press with the cursor still on the planted spot steps to the
+    /// next-nearest for the SAME tile; moving the cursor anywhere else re-targets. Own turn only (the acting-unit
+    /// guard speaks the refusal); lazy-plants like the other cursor verbs.
+    /// </summary>
+    internal static void CycleCellFiring() => Safe(() =>
+    {
+        if (RTAccess.UI.Navigation.HasFocus) return;
+        var me = RTAccess.Combat.CommandDispatch.ActingUnit();
+        if (me == null) return;   // refusal already spoken
+        if (me is StarshipEntity) { Speak(Loc.T("firing.none_cell")); return; }
+        if (!TileExplorer.EnsurePlanted(out bool fresh)) return;
+        if (fresh) { TileExplorer.Announce(); return; }
+
+        var cursor = MapCursor.Node;
+        bool resume = _cellTarget != null && ReferenceEquals(cursor, _cellSpotNode);
+        var target = resume ? _cellTarget : cursor;
+        if (target == null) return;
+        if (target == me.CurrentUnwalkableNode) { Speak(Loc.T("path.preview.here")); return; }
+
+        var list = FiringPositions.FindForCell(me, target);
+        if (list.Count == 0) { _cellTarget = null; _cellSpotNode = null; Speak(Loc.T("firing.none_cell")); return; }
+
+        int idx = -1;
+        if (resume)
+            for (int i = 0; i < list.Count; i++)
+                if (ReferenceEquals(list[i].Node, _cellSpotNode)) { idx = i; break; }
+        idx = idx < 0 ? 0 : Wrap(idx + 1, list.Count);
+
+        var spot = list[idx];
+        _cellTarget = target;
+        _cellSpotNode = spot.Node;
+        TileExplorer.PlantOn(spot.Position, announce: false);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(Loc.T("firing.cell_spot", new { cover = FiringPositions.CoverWord(spot.Cover) }));
+        sb.Append(", ").Append(spot.Cost == 0
+            ? Loc.T("firing.here")
+            : InteractableDescriber.DirectionAndDistance(me.Position, spot.Position));
+        if (spot.Cost > 0)
+        {
+            int budget = UnityEngine.Mathf.RoundToInt(me.CombatState.ActionPointsBlue);
+            sb.Append(", ").Append(Loc.T("firing.cost", new { cost = spot.Cost, budget }));
+            var legs = RouteDirections.LegsTo(me, spot.Node);
+            if (legs != null) sb.Append(", ").Append(Loc.T("firing.route", new { legs }));
+        }
+        sb.Append(", ").Append(Loc.T("nav.position", new { index = idx + 1, count = list.Count }));
+        Speak(sb.ToString());
+    });
 
     // ---- blast positions (the enemy key's area-ability gear; see BlastPlan) ----
 

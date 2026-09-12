@@ -307,16 +307,24 @@ internal static class TileExplorer
     }
 
     /// <summary>
-    /// V — the holographic vantage read: for the acting unit, the cover / in-range / threat it would have if it stood
-    /// on the CURSOR tile (the "if I stood here" tactical preview a sighted player reads off the move ghost), computed
-    /// as a pure read from the candidate cell (<see cref="RTAccess.Accessibility.CombatReads.VantageFrom"/>) —
-    /// followed for surface units by the spoken fan of LOS lines
-    /// (<see cref="RTAccess.Accessibility.CombatReads.LosSweep"/>): every visible enemy, nearest first, with
-    /// distance, the line's hit% and its cover badge, answered from the DESIRED position exactly as the on-screen
-    /// lines are (so it tracks the hover-sim / planted holo unit). Combat only; out of combat or with no acting
-    /// unit it says so. Lazy-plants like the other cursor verbs.
+    /// Semicolon — "who can I attack from here" (September 2026 tester item 6): for the acting unit, the cover and
+    /// threat it has where it stands, then one named list per weapon hand (melee / ranged, both when
+    /// dual-wielding) of the visible enemies that hand can reach, with the reticle's odds and the target's cover
+    /// (<see cref="RTAccess.Accessibility.CombatReads.AttackReadout"/>). "Here" is the unit's DESIRED position —
+    /// the cell every on-screen line and overtip answers from: its real tile, the planted move plan while one is
+    /// pinned (the "planned but unconfirmed move" case), or the cursor cell while the hover-sim carries it (the
+    /// cursor inside this turn's movable area). Every half of the line comes from that one cell — the old read
+    /// mixed the cursor cell with the desired position and answered from two places at once.
+    /// <see cref="ReadVantageCursor"/> (Shift+Semicolon) is the same read from the cursor cell wherever it is.
+    /// A ship's "what if I went here" is the inertial path verdict for the cursor cell instead. Combat only.
     /// </summary>
-    public static void ReadVantage()
+    public static void ReadVantage() => ReadVantage(fromCursor: false);
+
+    /// <summary>Shift+Semicolon — <see cref="ReadVantage"/> from the CURSOR cell even when it is out of this
+    /// turn's reach: "if I could stand there" (the hover-sim only carries reachable cells).</summary>
+    public static void ReadVantageCursor() => ReadVantage(fromCursor: true);
+
+    private static void ReadVantage(bool fromCursor)
     {
         try
         {
@@ -326,22 +334,54 @@ internal static class TileExplorer
                      ?? game?.SelectionCharacter?.SelectedUnit?.Value as BaseUnitEntity;
             if (game?.Player?.IsInCombat != true || me == null)
             { Speaker.Speak(Loc.T("vantage.not_in_combat"), interrupt: true); return; }
-            if (!EnsurePlanted(out bool fresh)) return;
-            if (fresh) { Announce(); return; }
             // Cover/threat is surface tactics; a ship's "what if I went here" is the inertial path verdict
             // (cost, arrival facing, stop legality) — the same line the move-to arming press speaks.
-            var line = me is StarshipEntity ship
-                ? RTAccess.Exploration.ShipPathInfo.Preview(ship, MapCursor.Node, out _)
-                : CombatReads.VantageFrom(MapCursor.Position, me);
-            string text = string.IsNullOrWhiteSpace(line) ? Loc.T("vantage.no_enemies") : line;
-            if (!(me is StarshipEntity))
+            if (me is StarshipEntity ship)
             {
-                var sweep = CombatReads.LosSweep(me);
-                if (!string.IsNullOrWhiteSpace(sweep)) text += ". " + sweep + ".";
+                if (!EnsurePlanted(out bool freshShip)) return;
+                if (freshShip) { Announce(); return; }
+                var verdict = RTAccess.Exploration.ShipPathInfo.Preview(ship, MapCursor.Node, out _);
+                Speaker.Speak(string.IsNullOrWhiteSpace(verdict) ? Loc.T("vantage.no_enemies") : verdict, interrupt: true);
+                return;
             }
-            Speaker.Speak(text, interrupt: true);
+            Vector3 from;
+            if (fromCursor)
+            {
+                if (!EnsurePlanted(out bool fresh)) return;
+                if (fresh) { Announce(); return; }
+                from = MapCursor.Position;
+            }
+            else
+            {
+                var vpc = game.VirtualPositionController;
+                from = vpc != null ? vpc.GetDesiredPosition(me) : me.Position;
+            }
+            var line = CombatReads.AttackReadout(from, me);
+            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("vantage.no_enemies") : line, interrupt: true);
         }
         catch (Exception e) { Main.Log?.Error("TileExplorer.ReadVantage failed: " + e); }
+    }
+
+    /// <summary>
+    /// Shift+Delete — the walked route to the cursor tile as directions ("Route, 20 tiles: 3 north, 2 east, 15
+    /// west"; September 2026 tester item 7), from the selected character — in turn-based combat the acting unit,
+    /// with the movement cost and, past this turn's reach, how far along it the turn gets. Delete reads the tile;
+    /// this reads the way there. Pure read: nothing is planted or moved (Backspace still does that). Lazy-plants
+    /// like the other cursor verbs. See <see cref="RTAccess.Exploration.RouteDirections"/>.
+    /// </summary>
+    public static void ReadRoute()
+    {
+        try
+        {
+            if (RTAccess.UI.Navigation.HasFocus) return;   // HUD owns the keys
+            if (!EnsurePlanted(out bool fresh)) return;
+            if (fresh) { Announce(); return; }
+            var unit = GetAnchor() as BaseUnitEntity;
+            if (unit == null) { Speaker.Speak(Loc.T("path.no_character"), interrupt: true); return; }
+            var line = RTAccess.Exploration.RouteDirections.Describe(unit, MapCursor.Node);
+            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("route.none") : line, interrupt: true);
+        }
+        catch (Exception e) { Main.Log?.Error("TileExplorer.ReadRoute failed: " + e); }
     }
 
     /// <summary>

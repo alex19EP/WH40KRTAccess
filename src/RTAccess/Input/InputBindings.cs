@@ -323,11 +323,13 @@ namespace RTAccess.Input
                 Ax.TileExplorer.MoveToCursor).AddBinding(KeyCode.Backspace).Grouped("cursor");
             InputManager.Register("cursor.interact", "Cursor: interact at cursor", InputCategory.Exploration,
                 Ax.TileExplorer.InteractAtCursor).AddBinding(KeyCode.Return).AddBinding(KeyCode.KeypadEnter).Grouped("cursor");
-            // Semicolon — holographic vantage: read the cover / in-range / threat the acting unit would have FROM the
-            // cursor tile (the sighted move-ghost read). Combat only; self-gates otherwise. Relocated here from bare V
-            // so V/Shift+V can take the room-exit cycle (WrathAccess parity); Semicolon is a free bare key next to the
-            // home row. See RTAccess.Accessibility.TileExplorer.ReadVantage.
-            InputManager.Register("read.vantage", "Read vantage from cursor tile", InputCategory.Exploration,
+            // Semicolon — "who can I attack from here": the acting unit's cover / threat where it stands (its desired
+            // position — the planted plan, or the hover-simulated cursor cell inside the movable area) and, per
+            // weapon hand, the visible enemies it can reach with odds and cover. Shift+Semicolon (registered in the
+            // appended block below) asks the same from the cursor cell wherever it is. Combat only; self-gates
+            // otherwise. Relocated here from bare V so V/Shift+V can take the room-exit cycle (WrathAccess parity);
+            // Semicolon is a free bare key next to the home row. See RTAccess.Accessibility.TileExplorer.ReadVantage.
+            InputManager.Register("read.vantage", "Read who I can attack from my position", InputCategory.Exploration,
                 Ax.TileExplorer.ReadVantage).AddBinding(KeyCode.Semicolon).Grouped("cursor");
             // Z — the turn's movement-options summary: surface = reachable-area extent (PathInfo.MoveAreaSummary,
             // previously unwired), starship = the end-position fan grouped by resulting facing (the spoken
@@ -385,6 +387,39 @@ namespace RTAccess.Input
             // uses for its sonar-mode toggle. Ships Off; per-type recorded stems, live-tracked in 3D. See Sonar.
             InputManager.Register("sonar.toggle", "Toggle sonar (off / when moving / continuous)",
                 InputCategory.Exploration, Ex.Sonar.ToggleMode).AddBinding(KeyCode.F2, ctrl: true).Grouped("scanner");
+
+            // ---- September 2026 tester features (docs/feedback/2026-09-tester-triage.md), kept as one appended
+            // block so the concurrent bug-fix edits above merge cleanly. ----
+            // Shift+R — the whole initiative queue in one press (item 9): the rows the HUD's Combat zone renders
+            // (Ctrl+Shift+A, Tab), enemies included, capped with "and N more". Bare R stays the status line. Shift+R
+            // is unbound in the game's keymap (F10 dump: the game's own Shift chords are Space/F10/Q/E/A/D/digits).
+            InputManager.Register("combat.initiative", "Read initiative order", InputCategory.Exploration,
+                Ax.PartyHotkeys.InitiativeOrder).AddBinding(KeyCode.R, shift: true).Grouped("party");
+            // Shift+Delete — the walked route to the cursor tile as directions (item 7): Delete reads the tile, this
+            // reads the way there. Pure read; Backspace still plants/moves. Bare Delete is the tile re-announce, and
+            // exact-modifier matching keeps the two apart; Delete is unbound in the game's keymap and is not an
+            // NVDA modifier (Insert / CapsLock are).
+            InputManager.Register("cursor.route", "Cursor: read the route to the tile", InputCategory.Exploration,
+                Ax.TileExplorer.ReadRoute).AddBinding(KeyCode.Delete, shift: true).Grouped("cursor");
+            // Shift+Semicolon — the Semicolon attack readout (item 6) answered from the CURSOR cell even when it is
+            // out of this turn's reach ("if I could stand there"); bare Semicolon answers from where the unit would
+            // be. Exact-modifier matching keeps the pair apart.
+            InputManager.Register("read.vantage_cursor", "Read who I can attack from the cursor tile", InputCategory.Exploration,
+                Ax.TileExplorer.ReadVantageCursor).AddBinding(KeyCode.Semicolon, shift: true).Grouped("cursor");
+            // Ctrl+Delete — the nearest reachable cell with line of sight to the cursor tile (item 8), planted like
+            // the J firing cycle so Backspace commits; a repeat press steps to the next-nearest for the same tile.
+            // The third member of the Delete family: Delete reads the tile, Shift+Delete the way there, Ctrl+Delete
+            // where to stand to see it.
+            InputManager.Register("cursor.firing_spot", "Cursor: nearest spot with line of sight to the tile", InputCategory.Exploration,
+                Ex.Scanner.CycleCellFiring).AddBinding(KeyCode.Delete, ctrl: true).Grouped("cursor");
+            // Shift+PageUp/Down — the scanner's second browse level (item 10): step the current category's state
+            // sub-categories (whole category, unopened / opened, closed / open, unused / used, can talk), empty ones
+            // skipped; Ctrl+PageUp/Down still steps categories and reopens on the whole list. Shift+PageUp/Down
+            // were unclaimed in the mod's Exploration category and are unbound in the game's keymap.
+            InputManager.Register("scan.sub_prev", "Scanner: previous sub-category", InputCategory.Exploration,
+                Ex.Scanner.SubPrev).AddBinding(KeyCode.PageUp, shift: true).Grouped("scanner");
+            InputManager.Register("scan.sub_next", "Scanner: next sub-category", InputCategory.Exploration,
+                Ex.Scanner.SubNext).AddBinding(KeyCode.PageDown, shift: true).Grouped("scanner");
 
             // ---- WorldMap: the sector-map LINK WALK (declared ONLY by SectorMapScreen, so these letters are free
             // there — the game's bare-letter openers are relocated to Ctrl+letter, and the Exploration scanner's

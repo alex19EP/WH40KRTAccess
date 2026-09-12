@@ -652,6 +652,60 @@ namespace RTAccess.Screens
             catch (Exception e) { Main.Log?.Error("InGameScreen.RoundDividerLabel: " + e); return ""; }
         }
 
+        // ---- one-shot initiative readout (Shift+R — PartyHotkeys.InitiativeOrder) ----
+
+        /// <summary>The live initiative tracker VM of whichever battle is up: the space-combat service panel's while
+        /// the space HUD component is mounted, else the surface HUD's. Null out of turn-based combat. The VM, not
+        /// <c>TurnOrderQueue</c>: the VM applies the game's own visibility filter, so an unseen enemy is absent
+        /// from the readout exactly as it is from the on-screen tracker.</summary>
+        internal static InitiativeTrackerVM ActiveInitiativeTracker()
+        {
+            try
+            {
+                var space = SpaceCombatScreen.Component()?.SpaceCombatServicePanelVM?.InitiativeTrackerVM?.Value;
+                return space ?? SurfaceHUD()?.InitiativeTrackerVM?.Value;
+            }
+            catch (Exception e) { Main.Log?.Error("InGameScreen.ActiveInitiativeTracker: " + e); return null; }
+        }
+
+        /// <summary>Rows spoken before the readout folds the rest into "and N more" — a boss fight's tracker can
+        /// run past twenty entries, and a one-shot readout that long is unreviewable; the Combat zone (Tab) still
+        /// walks every row.</summary>
+        internal const int InitiativeReadoutCap = 12;
+
+        /// <summary>The whole queue in one line — the same rows the Combat zone renders (same squad collapse, same
+        /// round divider placed before the first next-round unit, same per-row label), so what Shift+R says and
+        /// what Tab walks can never disagree. Null when no tracker is live or it lists nobody.</summary>
+        internal static string InitiativeOrderLine()
+        {
+            try
+            {
+                var tracker = ActiveInitiativeTracker();
+                var units = tracker?.Units;
+                if (units == null || units.Count == 0) return null;
+                var rows = new List<string>();
+                int spoken = 0, more = 0;
+                for (int i = 0; i < units.Count; i++)
+                {
+                    var vm = units[i];
+                    if (vm == null) continue;
+                    // The divider rides free of the cap: a cut-off readout should still say where the round turns
+                    // if the boundary falls inside the spoken prefix.
+                    if (i == tracker.RoundIndex + 1 && spoken < InitiativeReadoutCap) rows.Add(RoundDividerLabel(tracker));
+                    if (vm.IsInSquad.Value && !vm.IsSquadLeader.Value && !vm.NeedToShow.Value) continue;
+                    if (spoken >= InitiativeReadoutCap) { more++; continue; }
+                    var label = InitiativeLabel(vm);
+                    if (string.IsNullOrEmpty(label)) continue;
+                    rows.Add(label);
+                    spoken++;
+                }
+                if (rows.Count == 0) return null;
+                var line = Loc.T("combat.initiative_order", new { list = string.Join("; ", rows) });
+                return more > 0 ? line + ", " + Loc.T("combat.initiative_more", new { n = more }) : line;
+            }
+            catch (Exception e) { Main.Log?.Error("InGameScreen.InitiativeOrderLine: " + e); return null; }
+        }
+
         // ---- shared reads (null-propagating) ----
 
         private static BaseUnitEntity SelectedUnit()

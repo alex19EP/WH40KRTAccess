@@ -214,6 +214,27 @@ internal static class PathInfo
         return best;
     }
 
+    /// <summary>
+    /// The walk this turn's move would take to <paramref name="dest"/> — origin first — read off the game's own
+    /// reachable set (the per-cell parent chain of <see cref="PathfindingService.FindAllReachableTiles_Blocking"/>,
+    /// the same chain <see cref="Preview"/> hands to the attack-of-opportunity check), with its movement cost. Null
+    /// when the cell is not in the current unit's movable area, cannot be priced, or is the origin itself — the
+    /// caller then falls back to an unbudgeted pathfind (see <see cref="RouteDirections"/>).
+    /// </summary>
+    internal static List<GraphNode> ReachableChain(BaseUnitEntity unit, CustomGridNodeBase dest, out float cost)
+    {
+        cost = -1f;
+        if (unit?.View == null || dest == null) return null;
+        var area = Game.Instance?.UnitMovableAreaController?.CurrentUnitMovableArea;
+        if (area == null || area.Count == 0 || !area.Contains(dest)) return null;
+        var dict = PathfindingService.Instance?.FindAllReachableTiles_Blocking(
+            unit.View.MovementAgent, unit.Position, unit.CombatState.ActionPointsBlue);
+        if (dict == null || !dict.TryGetValue(dest, out var cell)) return null;
+        cost = cell.Length;
+        var nodes = PathNodes(dest, dict);
+        return nodes.Count >= 2 ? nodes : null;
+    }
+
     /// <summary>The traversed node list origin→dest, from the priced dict's parent chain — fed to the engine's
     /// path-AoO API. Includes the origin (the AoO check compares consecutive nodes, so it needs the full walk).</summary>
     private static List<GraphNode> PathNodes(GraphNode dest, Dictionary<GraphNode, WarhammerPathPlayerCell> dict)

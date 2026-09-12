@@ -174,4 +174,23 @@ internal static class PartyHotkeys
         }
         catch (Exception e) { Main.Log?.Error("PartyHotkeys.CombatStatus failed: " + e); }
     }
+
+    /// <summary>
+    /// Shift+R — the whole initiative queue in one press, enemies included: the rows the HUD's Combat zone renders
+    /// (<see cref="RTAccess.Screens.InGameScreen.InitiativeOrderLine"/> — faction, squad strength, masked HP,
+    /// "current" / "order N", the next-round divider), capped with "and N more". Bare R stays the one-unit status
+    /// line; this answers "who acts after whom" without a trip through HUD focus. Out of turn-based combat it says so.
+    /// </summary>
+    public static void InitiativeOrder()
+    {
+        try
+        {
+            var tc = Game.Instance?.TurnController;
+            if (tc == null || !tc.TurnBasedModeActive)
+            { Speaker.Speak(Loc.T("combat.not_turn_based"), interrupt: true); return; }
+            var line = RTAccess.Screens.InGameScreen.InitiativeOrderLine();
+            Speaker.Speak(string.IsNullOrWhiteSpace(line) ? Loc.T("combat.initiative_none") : line, interrupt: true);
+        }
+        catch (Exception e) { Main.Log?.Error("PartyHotkeys.InitiativeOrder failed: " + e); }
+    }
 }

@@ -6,6 +6,7 @@ using Kingmaker.GameCommands;                             // AreaTransitionHelpe
 using Kingmaker.PubSubSystem;                             // IVariativeInteractionUIHandler
 using Kingmaker.PubSubSystem.Core;                        // EventBus
 using Kingmaker.View.MapObjects;                          // InteractionDoorPart/LootPart/SkillCheckPart, AreaTransitionPart
+using Kingmaker.View.MapObjects.InteractionComponentBase; // InteractionPart (the AlreadyUnlocked history flag)
 using Kingmaker.View.MapObjects.Traps;                    // TrapObjectView (trap ↔ disarm-device link)
 using RTAccess.Accessibility;                             // InteractableDescriber (name/verb reuse)
 using UnityEngine;
@@ -131,6 +132,14 @@ internal sealed class ProxyMapObject : ScanItem
                     InteractableDescriber.ResolveName(view, out var interaction);
                     var verb = InteractableDescriber.Verb(interaction);
                     if (!string.IsNullOrEmpty(verb)) bits.Add(verb);
+                    // The have-I-been-here mark for the primary interaction (already used / unlocked / examined,
+                    // a skill check's verdict). A loot part's mark is the per-part "already opened" below, which
+                    // fires for every loot part the object carries — so skip it here rather than say it twice.
+                    if (!(interaction is InteractionLootPart))
+                    {
+                        var used = InteractableDescriber.UsedWord(interaction);
+                        if (!string.IsNullOrEmpty(used)) bits.Add(used);
+                    }
                 }
                 catch { /* name/verb best-effort; position still announces */ }
             }
@@ -281,6 +290,10 @@ internal sealed class ProxyMapObject : ScanItem
     // part type name (the same heuristic InteractableDescriber uses). There is deliberately NO "scenery" fallback:
     // an object with no live interaction / exit produces no node and so is not scannable (see IsScannable /
     // IsVisible) — it never reaches a browse category.
+    // Each category node is paired with the one STATE sub-node that fits the part right now (tester item 10 —
+    // the Shift+PageUp/Down sub-categories: opened / unopened, open / closed, used / unused), read from the same
+    // engine flags the spoken used-marks ride (InteractableDescriber.UsedWord), so the browse filter and the
+    // spoken word can never disagree.
     private HashSet<string> NodeSet()
     {
         var nodes = new HashSet<string>();
@@ -289,34 +302,57 @@ internal sealed class ProxyMapObject : ScanItem
             if (part == null) continue;
             if (part is InteractionDoorPart door)
             {
-                if (part.Enabled || door.IsOpen) nodes.Add(ScanTaxonomy.Doors);
+                if (part.Enabled || door.IsOpen)
+                {
+                    nodes.Add(ScanTaxonomy.Doors);
+                    nodes.Add(door.IsOpen ? ScanTaxonomy.DoorsOpen : ScanTaxonomy.DoorsClosed);
+                }
                 continue;
             }
             if (!part.Enabled) continue;
-            if (part is InteractionLootPart) nodes.Add(ScanTaxonomy.Containers);
+            if (part is InteractionLootPart loot)
+            {
+                nodes.Add(ScanTaxonomy.Containers);
+                nodes.Add(loot.LootViewed ? ScanTaxonomy.ContainersOpened : ScanTaxonomy.ContainersUnopened);
+            }
             // Level changers before the generic skill-check bucket: a climb/jump/vault check is how RT moves you
             // between floors (see ScanTaxonomy.LevelChanges), so it must not be lost among the search points.
             else if (part is InteractionStairsPart) nodes.Add(ScanTaxonomy.LevelChanges);
             else if (part is InteractionSkillCheckPart check)
-                nodes.Add(InteractableDescriber.IsLevelChange(check)
-                    ? ScanTaxonomy.LevelChanges
-                    : ScanTaxonomy.SearchPoints);
+            {
+                if (InteractableDescriber.IsLevelChange(check)) nodes.Add(ScanTaxonomy.LevelChanges);
+                else
+                {
+                    nodes.Add(ScanTaxonomy.SearchPoints);
+                    nodes.Add(check.AlreadyUsed ? ScanTaxonomy.SearchPointsUsed : ScanTaxonomy.SearchPointsUnused);
+                }
+            }
             // A lever/button whose actions teleport the party (a lift call button, a hatch) is a way between
             // floors too — everything else in this family stays a mechanism.
             else if (part is InteractionActionPart actionPart)
-                nodes.Add(InteractableDescriber.IsLevelChange(actionPart)
-                    ? ScanTaxonomy.LevelChanges
-                    : ScanTaxonomy.Mechanisms);
+            {
+                if (InteractableDescriber.IsLevelChange(actionPart)) nodes.Add(ScanTaxonomy.LevelChanges);
+                else AddMechanism(nodes, part);
+            }
             // Only an ARMED trap is a live "trap" node. A disarmed/triggered trap keeps its part Enabled but flips
             // TrapActive=false, so it contributes NO node — dropping out of the Traps category and Sonar exactly like a
             // looted container leaves the Containers category (mirrors the TrapActive gate in Detail). Any other
             // trap-ish part (name heuristic) with no TrapActive to read still classifies as a trap.
             else if (part is DisableTrapInteractionPart trapPart) { if (trapPart.Owner?.TrapActive == true) nodes.Add(ScanTaxonomy.Traps); }
             else if (part.GetType().Name.IndexOf("Trap", StringComparison.OrdinalIgnoreCase) >= 0) nodes.Add(ScanTaxonomy.Traps);
-            else nodes.Add(ScanTaxonomy.Mechanisms);
+            else AddMechanism(nodes, part);
         }
         if (_obj.GetOptional<AreaTransitionPart>() != null) nodes.Add(ScanTaxonomy.Exits);
         return nodes;
+    }
+
+    // A mechanism's used / unused state rides the engine's own per-part history flag — InteractionPart.AlreadyUnlocked,
+    // set on the first successful interaction whether or not the part has restrictions, and saved — which is what
+    // makes a nameless bark volume ("Point of interest") sortable into "already inspected" (see UsedWord).
+    private static void AddMechanism(HashSet<string> nodes, InteractionPart part)
+    {
+        nodes.Add(ScanTaxonomy.Mechanisms);
+        nodes.Add(part.AlreadyUnlocked ? ScanTaxonomy.MechanismsUsed : ScanTaxonomy.MechanismsUnused);
     }
 
     // The game's own actionability gate — an available interaction, or an area-transition exit (which carries no
