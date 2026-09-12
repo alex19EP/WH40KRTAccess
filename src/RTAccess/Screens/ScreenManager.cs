@@ -181,7 +181,9 @@ namespace RTAccess.Screens
             Register(new FormationScreen());
             // New Game wizard (MainMenuVM.NewGameVM) — layer 5, above the menu sidebar it's launched from.
             Register(new NewGameScreen());
-            // Character generation (MainMenuVM.CharGenContextVM.CharGenVM) — layer 15, full-screen flow.
+            // Character generation (CharGenContextVM.CharGenVM on MainMenuVM for a new game, on
+            // SurfaceStaticPartVM for the in-play custom-companion hire) — layer 16, Exclusive, full-screen
+            // flow above the Factotum conversation (15) that raises the in-play one.
             Register(new CharGenScreen());
             // Standalone Change Appearance (CharGenContextVM.ChangeAppearanceVM — the in-play appearance
             // service) — layer 16, Exclusive: the chargen Appearance phase on its own, above dialogue (15)

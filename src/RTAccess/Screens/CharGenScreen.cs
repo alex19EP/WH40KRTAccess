@@ -12,8 +12,9 @@ namespace RTAccess.Screens
     /// strip (one live entry per phase, each a jump target) as the leading Tab-stop (<see cref="BuildLead"/>),
     /// the current phase's content under the phase name as context (<see cref="BuildContent"/>), then Back/Next
     /// stops — the wizard shell owns the phase-change detector (page-turn + focus re-seat), the "wiz:" phase
-    /// keys, the footer, InitialFocusStop=content, and Wrap. Reached from the main menu (new game); the same VM
-    /// later hosts in-game custom-companion creation. Next advances the phase (or Complete on the last), Back
+    /// keys, the footer, InitialFocusStop=content, and Wrap. Reached from the main menu (new game) OR in play
+    /// (hiring a custom companion at the Factotum) — the same <c>CharGenVM</c> shape, but hosted by a different
+    /// context each time (see <see cref="Vm"/>). Next advances the phase (or Complete on the last), Back
     /// retreats (or Close on the first); Next is gated by the current phase's completion. The phase SET is
     /// dynamic (picking custom adds Homeworld/Occupation/Career/… phases) — immediate mode just renders the live
     /// collection. Per-phase content comes from <see cref="CharGenPhaseContent"/>; a phase change plays the
@@ -24,13 +25,24 @@ namespace RTAccess.Screens
     public sealed class CharGenScreen : WizardScreen
     {
         public override string Key => "ctx.chargen";
-        public override int Layer => 15; // full-screen flow: above the menu/in-game contexts + service windows
+        // Full-screen flow above the menu/in-game contexts + service windows. 16, not 15: the in-play hire is
+        // raised FROM a Factotum conversation, so the chargen must outrank DialogueScreen (15) — the stack
+        // sort is stable and dialogue registers later, so a tie left the dialogue focused over the wizard.
+        // Exclusive for the same reason: while the wizard is up the keyboard is its (the conversation and
+        // the HUD beneath must not keep answering keys).
+        public override int Layer => 16;
+        public override bool Exclusive => true;
         // No ScreenName — the content context is labeled with the current phase's name.
 
-        private static CharGenVM Vm()
+        /// <summary>The live chargen, whichever context hosts it: the main menu's <c>CharGenContextVM</c> for a new
+        /// game, the surface static part's for the in-play custom-companion hire (<c>MainMenuVM</c> is null in play,
+        /// <c>SurfaceVM</c> in the menu — the game's own <c>RootUIContext.IsChargenShown</c> checks both).</summary>
+        internal static CharGenVM Vm()
         {
-            // Same VM whether reached from the main menu (new game) or, later, in-game (custom companion).
-            return Game.Instance?.RootUiContext?.MainMenuVM?.CharGenContextVM?.CharGenVM?.Value;
+            var rc = Game.Instance?.RootUiContext;
+            if (rc == null) return null;
+            return rc.SurfaceVM?.StaticPartVM?.CharGenContextVM?.CharGenVM?.Value
+                ?? rc.MainMenuVM?.CharGenContextVM?.CharGenVM?.Value;
         }
 
         private static CharGenPhaseBaseVM CurrentPhaseVm() => Vm()?.CurrentPhaseVM.Value;

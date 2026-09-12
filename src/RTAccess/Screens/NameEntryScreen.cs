@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Kingmaker;
 using Kingmaker.Code.UI.MVVM.VM.MessageBox;
 using Kingmaker.UI.MVVM.VM.CharGen;
 using Kingmaker.UI.MVVM.VM.CharGen.Phases.Ship;
@@ -31,7 +30,7 @@ namespace RTAccess.Screens
         // or the level-up name-your-familiar box.
         private static MessageBoxVM Box()
         {
-            var cg = Game.Instance?.RootUiContext?.MainMenuVM?.CharGenContextVM?.CharGenVM?.Value;
+            var cg = CharGenScreen.Vm(); // menu-hosted OR in-play (Factotum hire) chargen
             var phase = cg?.CurrentPhaseVM.Value;
             if (phase is CharGenSummaryPhaseVM s) return s.CharGenNameVM?.MessageBoxVM?.Value;
             if (phase is CharGenShipPhaseVM sh) return sh.MessageBoxVM?.Value;
