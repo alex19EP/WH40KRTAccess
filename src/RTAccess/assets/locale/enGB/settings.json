@@ -237,5 +237,6 @@
   "audio.master_volume": "Master volume",
   "audio.itd": "Interaural time delay (stereo depth)",
   "audio.front_back_filter": "Front/back muffling",
-  "audio.head_shadow": "Ear shadowing (head between the ears)"
+  "audio.head_shadow": "Ear shadowing (head between the ears)",
+  "bind.combat.initiative": "Read initiative order"
 }

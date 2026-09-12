@@ -1287,5 +1287,8 @@
   "localmap.group.exits": "exits",
   "localmap.help.move": "Arrows sweep the map, Shift plus arrows step one cell, C recenters on the party, Delete re-reads the spot, X says where the cursor is.",
   "localmap.help.review": "Comma cycles party, period enemies, N neutrals, B map markers, M exits; hold Shift to cycle backwards. Home or slash jumps the cursor to the selection.",
-  "localmap.help.verbs": "Enter plants the world cursor here, Backspace sends the party, Escape closes the map."
+  "localmap.help.verbs": "Enter plants the world cursor here, Backspace sends the party, Escape closes the map.",
+  "combat.initiative_order": "Initiative order: {list}",
+  "combat.initiative_more": "and {n} more",
+  "combat.initiative_none": "No initiative order."
 }

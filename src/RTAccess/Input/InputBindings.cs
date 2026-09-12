@@ -386,6 +386,14 @@ namespace RTAccess.Input
             InputManager.Register("sonar.toggle", "Toggle sonar (off / when moving / continuous)",
                 InputCategory.Exploration, Ex.Sonar.ToggleMode).AddBinding(KeyCode.F2, ctrl: true).Grouped("scanner");
 
+            // ---- September 2026 tester features (docs/feedback/2026-09-tester-triage.md), kept as one appended
+            // block so the concurrent bug-fix edits above merge cleanly. ----
+            // Shift+R — the whole initiative queue in one press (item 9): the rows the HUD's Combat zone renders
+            // (Ctrl+Shift+A, Tab), enemies included, capped with "and N more". Bare R stays the status line. Shift+R
+            // is unbound in the game's keymap (F10 dump: the game's own Shift chords are Space/F10/Q/E/A/D/digits).
+            InputManager.Register("combat.initiative", "Read initiative order", InputCategory.Exploration,
+                Ax.PartyHotkeys.InitiativeOrder).AddBinding(KeyCode.R, shift: true).Grouped("party");
+
             // ---- WorldMap: the sector-map LINK WALK (declared ONLY by SectorMapScreen, so these letters are free
             // there — the game's bare-letter openers are relocated to Ctrl+letter, and the Exploration scanner's
             // M / Slash aren't live on the sector map). Walk the warp-route graph off the current selection:
