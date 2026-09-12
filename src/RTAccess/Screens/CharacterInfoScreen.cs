@@ -226,8 +226,9 @@ namespace RTAccess.Screens
                 () => Loc.T("char.prev_member"), () => ViewedCharacter.SwitchMember(next: false)));
             b.AddItem(ControlId.Structural("chinfo:switch:next"), GraphNodes.Button(
                 () => Loc.T("char.next_member"), () => ViewedCharacter.SwitchMember(next: true)));
-            // Pet/master swap (the game's m_PetButton) — a pet is off the Shift+A/D roster, so it needs
-            // its own control; only shown when this unit has a pet or is one.
+            // Pet/master swap (the game's m_PetButton) — the one-press hop between a familiar and its
+            // master (the familiar is also on the Shift+A/D walk, right after its master); only shown when
+            // this unit has a pet or is one.
             if (ViewedCharacter.HasPetAxis(unit))
                 b.AddItem(ControlId.Structural(k + "petswap"), GraphNodes.Button(
                     () => ViewedCharacter.PetLabel(unit),

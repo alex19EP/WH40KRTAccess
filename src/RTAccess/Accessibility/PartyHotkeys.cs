@@ -48,8 +48,8 @@ internal static class PartyHotkeys
         else if (ViewedCharacter.WindowActive) ViewedCharacter.SwitchMember(next: false);
     }
 
-    /// <summary>Alt+1..6 — select that party slot directly (index is 0-based); in a service window,
-    /// shows that roster slot instead.</summary>
+    /// <summary>Alt+1..6 — select that HERO slot directly (index is 0-based); in a service window, shows
+    /// that hero instead. Familiars are not in the digit map (see <see cref="SelectIndex"/>).</summary>
     public static void SelectMember(int index)
     {
         if (RTAccess.Screens.InGameScreen.ExplorationActive) SelectIndex(index);
@@ -76,11 +76,15 @@ internal static class PartyHotkeys
         Select(list[target]);
     }
 
+    // The digit map counts HEROES only. The controllable group lists a familiar right after its master
+    // (UIUtility.GetGroup), so counting it would shift every later hero's digit and drop the sixth hero off
+    // Alt+6 — vanilla's own six-slot ceiling, which a keyboard player has no reason to inherit. Shift+A/D
+    // still step the full roster, pet included (that is how the pet gets selected).
     private static void SelectIndex(int index)
     {
-        var list = Controllable();
-        if (list == null || index < 0 || index >= list.Count) return;
-        Select(list[index]);
+        var heroes = Controllable()?.Where(u => u != null && !u.IsPet).ToList();
+        if (heroes == null || index < 0 || index >= heroes.Count) return;
+        Select(heroes[index]);
     }
 
     /// <summary>The one world-selection switch (Alt+1..6 / Shift+A/D steps, and the HUD party rows'

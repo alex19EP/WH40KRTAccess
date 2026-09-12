@@ -16,8 +16,10 @@ namespace RTAccess.Accessibility
     /// <para><see cref="Tick"/> speaks the newly-viewed character on a switch: the game never announces it,
     /// and <see cref="SelectionAnnouncer"/> only watches the WORLD selection (<c>SelectedUnit</c>), not the
     /// fullscreen UI preview — so without this a Shift+A/D switch is silent. <see cref="HeaderLine"/> is the
-    /// focusable header readout both screens show. Pet swap mirrors the game's own m_PetButton (a pet lives
-    /// off <c>ActualGroup</c>, so the roster switch keys never reach it — it's a separate axis).</para>
+    /// focusable header readout both screens show. Pet swap mirrors the game's own m_PetButton — the
+    /// one-press hop between a familiar and its master. A familiar IS in <c>ActualGroup</c> (inserted right
+    /// after its master by <c>UIUtility.GetGroup</c>), so Shift+A/D reach it like the game's own portrait
+    /// arrows do; only the digit map skips it (<see cref="SwitchTo"/>).</para>
     /// </summary>
     internal static class ViewedCharacter
     {
@@ -25,14 +27,17 @@ namespace RTAccess.Accessibility
 
         /// <summary>Announce the viewed unit when it CHANGES (a Shift+A/D switch). Silent on the first
         /// observation after <see cref="Reset"/> (window just opened — its name is already spoken by the
-        /// ServiceWindowAnnounce patch). Interrupt: the switch was a keypress the player expects feedback for.</summary>
-        public static void Tick(BaseUnitEntity unit)
+        /// ServiceWindowAnnounce patch). Interrupt: the switch was a keypress the player expects feedback for.
+        /// Returns true on an announced switch, so a window can react to it (the inventory re-runs its
+        /// hide-unsuitable pass, which the game never re-runs on a unit change).</summary>
+        public static bool Tick(BaseUnitEntity unit)
         {
-            if (unit == null) { _last = null; return; }
-            if (ReferenceEquals(unit, _last)) return;
+            if (unit == null) { _last = null; return false; }
+            if (ReferenceEquals(unit, _last)) return false;
             bool first = _last == null;
             _last = unit;
             if (!first) Speaker.Speak(HeaderLine(unit), interrupt: true);
+            return !first;
         }
 
         /// <summary>Clear the guard so the next observation (a fresh window open) re-baselines silently.</summary>
@@ -62,13 +67,18 @@ namespace RTAccess.Accessibility
             sel.SetSelected(group[target]);
         }
 
-        /// <summary>Switch the viewed member to a roster slot directly (0-based; Alt+1..6).</summary>
+        /// <summary>Switch the viewed member to a HERO slot directly (0-based; Alt+1..6). Familiars are not
+        /// in the digit map: <c>ActualGroup</c> lists a pet right after its master, so counting it would
+        /// shift every later hero's digit and push the sixth hero off Alt+6 (vanilla's own ceiling). Shift+A/D
+        /// still walk the full group, pet included, and the pet-swap button is the direct route.</summary>
         public static void SwitchTo(int index)
         {
             var sel = Game.Instance?.SelectionCharacter;
             var group = sel?.ActualGroup;
-            if (group == null || index < 0 || index >= group.Count) return;
-            sel.SetSelected(group[index]);
+            if (group == null) return;
+            var heroes = group.Where(u => u != null && !u.IsPet).ToList();
+            if (index < 0 || index >= heroes.Count) return;
+            sel.SetSelected(heroes[index]);
         }
 
         /// <summary>"{name}, level {n}, {cur} of {max} wounds" — the header a sighted player reads by the portrait.</summary>
@@ -82,7 +92,7 @@ namespace RTAccess.Accessibility
             return Loc.T("char.header", new { name = unit.CharacterName, level = unit.Progression.CharacterLevel, wounds });
         }
 
-        // ---- pet / master swap (the game's m_PetButton; pets are off the Shift+A/D roster) ----
+        // ---- pet / master swap (the game's m_PetButton: the one-press hop between a familiar and its master) ----
 
         public static bool HasPetAxis(BaseUnitEntity unit) => unit != null && (unit.IsPet || unit.IsMaster);
 
