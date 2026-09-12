@@ -363,7 +363,7 @@ internal static class TileExplorer
     }
 
     /// <summary>
-    /// Shift+Delete — the walked route to the cursor tile as directions ("Route, 20 tiles: 3 north, 2 east, 15
+    /// Shift+Backslash — the walked route to the cursor tile as directions ("Route, 20 tiles: 3 north, 2 east, 15
     /// west"; September 2026 tester item 7), from the selected character — in turn-based combat the acting unit,
     /// with the movement cost and, past this turn's reach, how far along it the turn gets. Delete reads the tile;
     /// this reads the way there. Pure read: nothing is planted or moved (Backspace still does that). Lazy-plants

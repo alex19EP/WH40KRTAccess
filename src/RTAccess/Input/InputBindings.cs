@@ -395,23 +395,25 @@ namespace RTAccess.Input
             // is unbound in the game's keymap (F10 dump: the game's own Shift chords are Space/F10/Q/E/A/D/digits).
             InputManager.Register("combat.initiative", "Read initiative order", InputCategory.Exploration,
                 Ax.PartyHotkeys.InitiativeOrder).AddBinding(KeyCode.R, shift: true).Grouped("party");
-            // Shift+Delete — the walked route to the cursor tile as directions (item 7): Delete reads the tile, this
-            // reads the way there. Pure read; Backspace still plants/moves. Bare Delete is the tile re-announce, and
-            // exact-modifier matching keeps the two apart; Delete is unbound in the game's keymap and is not an
-            // NVDA modifier (Insert / CapsLock are).
+            // Shift+Backslash — the walked route to the cursor tile as directions (item 7): Delete reads the tile,
+            // this reads the way there. Pure read; Backspace still plants/moves. It sits on the "go to" key: bare
+            // Backslash walks to / plots toward the selection, Shift+Backslash tells the way to the cursor tile
+            // (the user moved it off Shift+Delete). Exact-modifier matching keeps it apart from bare Backslash;
+            // Shift+Backslash is unbound in the game's keymap and is not an NVDA modifier (Insert / CapsLock are).
             InputManager.Register("cursor.route", "Cursor: read the route to the tile", InputCategory.Exploration,
-                Ax.TileExplorer.ReadRoute).AddBinding(KeyCode.Delete, shift: true).Grouped("cursor");
+                Ax.TileExplorer.ReadRoute).AddBinding(KeyCode.Backslash, shift: true).Grouped("cursor");
             // Shift+Semicolon — the Semicolon attack readout (item 6) answered from the CURSOR cell even when it is
             // out of this turn's reach ("if I could stand there"); bare Semicolon answers from where the unit would
             // be. Exact-modifier matching keeps the pair apart.
             InputManager.Register("read.vantage_cursor", "Read who I can attack from the cursor tile", InputCategory.Exploration,
                 Ax.TileExplorer.ReadVantageCursor).AddBinding(KeyCode.Semicolon, shift: true).Grouped("cursor");
-            // Ctrl+Delete — the nearest reachable cell with line of sight to the cursor tile (item 8), planted like
-            // the J firing cycle so Backspace commits; a repeat press steps to the next-nearest for the same tile.
-            // The third member of the Delete family: Delete reads the tile, Shift+Delete the way there, Ctrl+Delete
-            // where to stand to see it.
+            // Ctrl+Backslash — the nearest reachable cell with line of sight to the cursor tile (item 8), planted
+            // like the J firing cycle so Backspace commits; a repeat press steps to the next-nearest for the same
+            // tile. The Backslash family: bare Backslash goes to the selection, Shift+Backslash the way to the cursor
+            // tile, Ctrl+Backslash where to stand to see it (the user moved it off Ctrl+Delete; Ctrl+Backslash is
+            // unbound in the game's keymap).
             InputManager.Register("cursor.firing_spot", "Cursor: nearest spot with line of sight to the tile", InputCategory.Exploration,
-                Ex.Scanner.CycleCellFiring).AddBinding(KeyCode.Delete, ctrl: true).Grouped("cursor");
+                Ex.Scanner.CycleCellFiring).AddBinding(KeyCode.Backslash, ctrl: true).Grouped("cursor");
             // Shift+PageUp/Down — the scanner's second browse level (item 10): step the current category's state
             // sub-categories (whole category, unopened / opened, closed / open, unused / used, can talk), empty ones
             // skipped; Ctrl+PageUp/Down still steps categories and reopens on the whole list. Shift+PageUp/Down

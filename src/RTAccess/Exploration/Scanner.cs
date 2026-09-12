@@ -1288,13 +1288,13 @@ internal static class Scanner
         return sb.ToString();
     }
 
-    // ---- cell-target firing positions (Ctrl+Delete; see FiringPositions.FindForCell) ----
+    // ---- cell-target firing positions (Ctrl+Backslash; see FiringPositions.FindForCell) ----
 
     private static CustomGridNodeBase _cellTarget;   // the tile the spots were found for
     private static CustomGridNodeBase _cellSpotNode; // the spot last planted, so a repeat press cycles on
 
     /// <summary>
-    /// Ctrl+Delete — "where is the nearest spot I could see the cursor tile from" (September 2026 tester item 8):
+    /// Ctrl+Backslash — "where is the nearest spot I could see the cursor tile from" (September 2026 tester item 8):
     /// the cell-target twin of the J firing cycle, for a shooter planning around a spot rather than an enemy.
     /// Nearest first; plants the cursor on the spot silently, like J, so Backspace commits the move, and speaks
     /// the walk there as directions. A repeat press with the cursor still on the planted spot steps to the
