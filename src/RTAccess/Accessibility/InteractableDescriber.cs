@@ -806,7 +806,15 @@ internal static class InteractableDescriber
                 case InteractionLootPart loot:
                     return loot.LootViewed ? Loc.T("scan.already_opened") : null;
                 case InteractionSkillCheckPart check:
-                    return check.AlreadyUsed ? Loc.T(check.CheckPassed ? "scan.used.passed" : "scan.used.failed") : null;
+                    if (!check.AlreadyUsed) return null;
+                    // A check with no skill (the bridge's sector map, most "examine" points) is not a check at all:
+                    // OnInteract's roll line is `CheckPassed = skill != Unknown && …`, so CheckPassed stays false
+                    // while the game itself runs the PASSED actions/bark/teleport and the overtip shows the after-use
+                    // name with no check text (UIUtility.GetOvertipSkillCheckText returns "" for Unknown). Reading
+                    // the raw flag pair spoke "failed" on every one of them; only a real skill has a verdict.
+                    if (check.GetSkill() == Kingmaker.EntitySystem.Stats.Base.StatType.Unknown)
+                        return Loc.T("scan.used.examined");
+                    return Loc.T(check.CheckPassed ? "scan.used.passed" : "scan.used.failed");
                 case InteractionBarkPart bark:
                     return bark.AlreadyUnlocked ? Loc.T("scan.used.examined") : null;
             }
