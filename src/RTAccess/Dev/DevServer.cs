@@ -6,7 +6,7 @@ namespace RTAccess.Dev;
 
 /// <summary>
 /// Dev-only in-process driver, gated behind the RTACCESS_DEV env var (or a marker file). Exposes a
-/// loopback HTTP server so an external driver (Claude, curl) can introspect and drive the live mod/game:
+/// loopback HTTP server so an external driver (Codex, curl) can introspect and drive the live mod/game:
 ///   POST /eval           body = C# source, run against the live game (REPL state persists across
 ///                        calls); returns captured output + result/errors.
 ///   GET  /speech?since=N lines the mod has spoken since cursor N (we can't hear the TTS, so this is

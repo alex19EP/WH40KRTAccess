@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/ensure-decompiled.ps1')\"",
+            "timeout": 15,
+            "statusMessage": "Checking decompiled game references"
+          }
+        ]
+      }
+    ]
+  }
+}

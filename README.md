@@ -426,7 +426,7 @@ dotnet msbuild src/RTAccess/RTAccess.csproj -t:Compile -p:Configuration=Debug
 ```
 
 `scripts/dev-game.ps1` (and the `/dev-game` workflow) wrap the close → build → launch → verify cycle.
-See [`CLAUDE.md`](CLAUDE.md) for the full architecture, game facts, and conventions.
+See [`AGENTS.md`](AGENTS.md) for the full architecture, game facts, and conventions.
 
 ## Credits
 

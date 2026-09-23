@@ -49,12 +49,16 @@ keyboard layer + (deferred) spatial-audio soundscape. Sibling project to **Wrath
   - `just decompile <Name>` — a single assembly (into `decompiled/<game>/<Name>/`); `just decompile-glob
     '<pattern>'` for a wildcard; `just list` / `just check` for the Managed dir.
   - **Two games are configured**, selected with `game=` (default `rt`): `rt` = Rogue Trader,
-    `dh` = Dark Heresy (Owlcat's next 40K CRPG — same framework lineage, **recon only**, see
-    `.claude/memory/dh-framework-recon.md`). Every recipe above takes it: `just game=dh support`.
+    `dh` = Dark Heresy (Owlcat's next 40K CRPG — same framework lineage, **recon only**;
+    see the DH assembly notes in `justfile`). Every recipe above takes it: `just game=dh support`.
     Output is namespaced per game because both builds ship `Code.dll` / `Kingmaker.*` /
     `Owlcat.Runtime.Core` / `RogueTrader.SharedTypes` with different contents. `just games`
     lists both Managed dirs and whether they're present.
   - Requires `ilspycmd` (`dotnet tool install --global ilspycmd`) and `just` on PATH.
+  - Codex's `SessionStart` hook (`.codex/hooks.json`) links a worktree's missing
+    `decompiled/` to the main checkout with a Windows junction. Existing paths are
+    preserved; missing source references and failures are non-fatal. Review and trust
+    the hook with `/hooks` in Codex CLI before first use (and after definition changes).
 
 ## Build & deploy
 ```

@@ -12,7 +12,7 @@ invariant below is RTAccess-correct (UMM, parallel mod-owned UI tree, Prism/stop
 
 ## Instructions
 
-1. Read `CLAUDE.md` for project context and invariants (the **Hard rules**, **Conventions &
+1. Read `AGENTS.md` for project context and invariants (the **Hard rules**, **Conventions &
    gotchas**, and **Engine & domain facts** sections are the source of truth for what follows).
 2. Scan all `.cs` files under `src/RTAccess/` and `src/Access.Core/` with Glob and Grep, plus the
    locale JSON under `src/RTAccess/assets/locale/enGB/` (`ui.json`, `settings.json`).
