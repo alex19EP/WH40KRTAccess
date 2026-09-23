@@ -2,6 +2,7 @@ using System.Linq;
 using Kingmaker;
 using Kingmaker.UI.MVVM.VM.CharGen;
 using Kingmaker.UI.MVVM.VM.CharGen.Phases;
+using Kingmaker.UI.MVVM.View.CharGen.Common;
 using RTAccess.UI;
 using Access.Core.Graph;
 
@@ -15,7 +16,7 @@ namespace RTAccess.Screens
     /// keys, the footer, InitialFocusStop=content, and Wrap. Reached from the main menu (new game) OR in play
     /// (hiring a custom companion at the Factotum) — the same <c>CharGenVM</c> shape, but hosted by a different
     /// context each time (see <see cref="Vm"/>). Next advances the phase (or Complete on the last), Back
-    /// retreats (or Close on the first); Next is gated by the current phase's completion. The phase SET is
+    /// retreats (or Close on the first); Next also allows the game's required naming dialogs. The phase SET is
     /// dynamic (picking custom adds Homeworld/Occupation/Career/… phases) — immediate mode just renders the live
     /// collection. Per-phase content comes from <see cref="CharGenPhaseContent"/>; a phase change plays the
     /// game's page-turn and lands focus on the new page's content (shell behaviour), while
@@ -100,27 +101,33 @@ namespace RTAccess.Screens
         {
             var vm = Vm();
             if (vm == null) return;
-            if (IsLastPhase(vm))
+            // The view owns the incomplete-phase prompt, its completion callback, and delayed advancement.
+            // Calling the selection group directly skips that flow; requiring completion first makes the
+            // ship-name prompt unreachable through Next. Resolve only on activation, for this exact VM.
+            foreach (var view in UnityEngine.Object.FindObjectsByType<CharGenView>(
+                UnityEngine.FindObjectsSortMode.None))
             {
-                // Drive Complete() from the VM; the game's view plays the completion sting itself, but the
-                // VM path bypasses it — replay it here (phase advances play the page-turn instead).
-                vm.Complete();
-                UiSound.ChargenComplete();
+                if (view == null || !view.isActiveAndEnabled || !ReferenceEquals(view.ViewModel, vm)) continue;
+                view.NextPressed();
+                return;
             }
-            else vm.PhasesSelectionGroupRadioVM.SelectNextValidEntity();
+            Main.Log?.Warning("CharGen Next: no active game view bound to the current character creation.");
         }
 
         // "Complete" only on the last phase; otherwise "Next".
         protected override string NextLabel() =>
             IsLastPhase(Vm()) ? Loc.T("chargen.complete") : Loc.T("wizard.next");
 
-        protected override bool NextEnabled() => Vm()?.CurrentPhaseIsCompleted.Value ?? false;
+        protected override bool NextEnabled()
+        {
+            var vm = Vm();
+            return vm != null && (vm.CurrentPhaseIsCompleted.Value || vm.CurrentPhaseCanInterrupt);
+        }
 
         // The phase's own "what's still missing" hint, which the game shows on this button
         // (CharGenPCView: phase.PhaseNextHint → m_NextButton.SetHint). Deliberately NOT
         // NotCompletedReasonTooltip — that is a single generic "this stage is not completed" string shown
-        // only on the console path. Only a couple of phases author a hint, so this is usually null and Next
-        // simply reads as disabled, exactly as the sighted button behaves.
+        // only on the console path. Only a couple of phases author a hint, so this is usually null.
         protected override Owlcat.Runtime.UI.Tooltips.TooltipBaseTemplate NextTooltip()
         {
             var hint = CurrentPhaseVm()?.PhaseNextHint?.Value;
