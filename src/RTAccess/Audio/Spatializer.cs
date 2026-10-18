@@ -25,10 +25,11 @@ namespace RTAccess.Audio
 
     /// <summary>
     /// The compass-stable audio frame. All spatial panning (sonar, object cues) is computed HERE in code from the
-    /// shared <see cref="MapCursor"/> position and a FIXED north (+Z), never from the game's Wwise listener — so a
-    /// source panned hard-left always means west, whatever the camera is doing (see the plan §3.4: the engine
-    /// <c>DefaultListener</c> is unrelated to this and stays deferred). RT map space is +Z = north, +X = east
-    /// (matching <see cref="Geo"/> / InteractableDescriber's compass).
+    /// shared <see cref="MapCursor"/> position and a FIXED north — the game's map north (<see cref="MapFrame"/>,
+    /// up on the local map) — never from the camera, so a source panned hard-left always means west, whatever the
+    /// camera is doing. Callers pass WORLD deltas (+X / +Z); <see cref="Cue"/> / <see cref="Pan"/> turn them into
+    /// the map frame, the same frame <see cref="Geo"/>'s compass words use. The game's own 3D audio is put in this
+    /// frame too, by <see cref="ListenerAnchor"/> re-pointing its Wwise listener.
     ///
     /// The current WrathAccess perceptual model, three independent channels:
     ///  - <b>east/west → capped-ILD pan + ITD (+ far-ear shadow).</b> A constant-power pan whose interaural LEVEL
@@ -86,12 +87,13 @@ namespace RTAccess.Audio
         public static bool FilterEnabled => ModSettings.GetSetting<BoolSetting>("audio.front_back_filter")?.Get() ?? true;
         public static bool ShadowEnabled => ModSettings.GetSetting<BoolSetting>("audio.head_shadow")?.Get() ?? true;
 
-        /// <summary>Constant-power pan (-1 = hard west, +1 = hard east) for a source offset from the listener,
-        /// in metres. <paramref name="dxEast"/> is +X (east), <paramref name="dzNorth"/> is +Z (north).
+        /// <summary>Constant-power pan (-1 = hard west, +1 = hard east, in the map frame) for a source offset from
+        /// the listener, in metres. <paramref name="dxEast"/> is world +X, <paramref name="dzNorth"/> is world +Z.
         /// Within <paramref name="panWidth"/> the pan opens toward the side; past it, it tracks bearing. Used by
         /// the non-tracked one-shot path (<see cref="PlayAt"/> / AudioProbe); the tracked sonar uses <see cref="Cue"/>.</summary>
         public static float Pan(float dxEast, float dzNorth, float panWidth = DefaultPanWidth)
         {
+            MapFrame.ToMap(ref dxEast, ref dzNorth);
             float dist = Mathf.Sqrt(dxEast * dxEast + dzNorth * dzNorth);
             return dist > 1e-4f ? Mathf.Clamp(dxEast / Mathf.Max(dist, panWidth), -1f, 1f) : 0f;
         }
@@ -109,6 +111,7 @@ namespace RTAccess.Audio
         /// applied in the voice via <see cref="PanGains"/>. Ported from WrathAccess's <c>Spatializer.Cue</c>.</summary>
         public static SpatialCue Cue(float dxEast, float dzNorth, float panWidth = DefaultPanWidth)
         {
+            MapFrame.ToMap(ref dxEast, ref dzNorth);
             float dist = Mathf.Sqrt(dxEast * dxEast + dzNorth * dzNorth);
             float lat = dist > 1e-4f ? Mathf.Clamp(dxEast / Mathf.Max(dist, panWidth), -1f, 1f) : 0f;
             if (lat != 0f) lat = Mathf.Sign(lat) * Mathf.Pow(Mathf.Abs(lat), PanExponent); // centre expansion

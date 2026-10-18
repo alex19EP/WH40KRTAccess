@@ -51,8 +51,9 @@ internal static class Geo
     /// the vertical readout and the reachability classifier so "up 3 metres" and "other level" never disagree.</summary>
     public const float LevelThreshold = 1.5f;
 
-    /// <summary>Map-relative 8-sector compass index (0 = north, 1 = north-east … 7 = north-west) from an
-    /// east(+X) / north(+Z) delta. Returns false with <paramref name="sector"/> = 0 when the delta is shorter
+    /// <summary>Map-relative 8-sector compass index (0 = north, 1 = north-east … 7 = north-west) from a WORLD
+    /// east(+X) / north(+Z) delta, spoken in the game's map frame (<see cref="MapFrame"/>: "north" is up on the
+    /// area's local map). Returns false with <paramref name="sector"/> = 0 when the delta is shorter
     /// than <paramref name="minDist"/> (too close to carry a meaningful bearing); callers pass their own
     /// threshold and map the sector onto their own localized direction words. One home for the Atan2→sector
     /// math the focused readout, the system map and the AoE facing all shared.</summary>
@@ -60,7 +61,8 @@ internal static class Geo
     {
         sector = 0;
         if (dx * dx + dz * dz < minDist * minDist) return false;
-        float angle = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // 0 = north (+Z), +90 = east (+X)
+        MapFrame.ToMap(ref dx, ref dz);
+        float angle = Mathf.Atan2(dx, dz) * Mathf.Rad2Deg; // 0 = map north, +90 = map east
         sector = ((Mathf.RoundToInt(angle / 45f) % 8) + 8) % 8;
         return true;
     }
@@ -89,12 +91,15 @@ internal static class Geo
     }
 
     /// <summary>A 3x3 grid over the area bounds -> the localized "centre" word or a compass region
-    /// ("{region} of the map"), +Z = north, +X = east. <paramref name="fx"/>/<paramref name="fz"/> are the
-    /// fractional position within the bounds (0..1).</summary>
+    /// ("{region} of the map") in the map frame (<see cref="MapFrame"/>). <paramref name="fx"/>/<paramref name="fz"/>
+    /// are the fractional WORLD position within the bounds (0..1, +X / +Z).</summary>
     public static string RegionWord(float fx, float fz)
     {
-        int col = fx < 1f / 3f ? -1 : fx > 2f / 3f ? 1 : 0;
-        int row = fz < 1f / 3f ? -1 : fz > 2f / 3f ? 1 : 0;
+        // Turn the offset from the centre into map terms; the map frame is a quarter turn, so the thirds stay thirds.
+        float mx = fx - 0.5f, mz = fz - 0.5f;
+        MapFrame.ToMap(ref mx, ref mz);
+        int col = mx < -1f / 6f ? -1 : mx > 1f / 6f ? 1 : 0;
+        int row = mz < -1f / 6f ? -1 : mz > 1f / 6f ? 1 : 0;
         if (col == 0 && row == 0) return Loc.T("where.center");
         string dir;
         if (row > 0) dir = col < 0 ? "geo.northwest" : col > 0 ? "geo.northeast" : "geo.north";

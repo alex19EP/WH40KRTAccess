@@ -34,7 +34,8 @@ namespace RTAccess.Exploration;
 /// </summary>
 internal static class WallTones
 {
-    // Cardinal grid-direction index (matches InteractableDescriber's cover map + CoverVisualizer): N=2 E=1 S=0 W=3.
+    // Cardinal grid-direction index (matches InteractableDescriber's cover map + CoverVisualizer): N=2 E=1 S=0 W=3,
+    // in the MAP frame (MapFrame — up on the game's local map).
     // Each voice: (grid dir, WAV file, fixed pan). N/S centred (distinguished by timbre), E right, W left.
     private static readonly (int dir, string file, float pan)[] Voices =
     {
@@ -111,7 +112,8 @@ internal static class WallTones
             for (int i = 0; i < Voices.Length; i++)
             {
                 if (_handles[i] == null) continue;
-                float target = Curve(DistanceToWall(node, Voices[i].dir)) * vol;
+                // Voices are map-frame (MapFrame): trace the world edge that points the voice's map direction.
+                float target = Curve(DistanceToWall(node, MapFrame.WorldGridDir(Voices[i].dir))) * vol;
                 _curVol[i] += (target - _curVol[i]) * k; // ~0.5 s glide — no jarring step on a tile-cursor jump
                 AudioMixer.Instance.SetVoice(_handles[i], _curVol[i], Voices[i].pan);
             }

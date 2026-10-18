@@ -444,7 +444,8 @@ internal static class InteractableDescriber
         LosCalculations.ForcedCoverCheckType checkType)
     {
         LosCalculations.CoverType cover;
-        try { cover = LosCalculations.GetCellCoverStatus(node, direction, checkType).CoverType; }
+        // direction is the MAP-frame side the word names; the engine wants the world grid edge.
+        try { cover = LosCalculations.GetCellCoverStatus(node, RTAccess.Exploration.MapFrame.WorldGridDir(direction), checkType).CoverType; }
         catch (Exception e) { Main.Log?.Error("DescribeTile cover read failed: " + e); return; }
         var dir = Loc.T(dirKey);
         switch (cover)
@@ -460,8 +461,9 @@ internal static class InteractableDescriber
     {
         var origin = anchor?.CurrentUnwalkableNode;
         if (origin == null) return null;
-        int dx = node.XCoordinateInGrid - origin.XCoordinateInGrid; // east(+) / west(-)
-        int dz = node.ZCoordinateInGrid - origin.ZCoordinateInGrid; // north(+) / south(-)
+        int dx = node.XCoordinateInGrid - origin.XCoordinateInGrid; // world +X / -X
+        int dz = node.ZCoordinateInGrid - origin.ZCoordinateInGrid; // world +Z / -Z
+        RTAccess.Exploration.MapFrame.ToMap(ref dx, ref dz);         // → map east(+) / west(-), north(+) / south(-)
         // The vertical term FIRST, because it is the one that can be true while the plan offset says "beside you":
         // the grid stores exactly one node per XZ column — the TOPMOST walkable surface (see
         // NavmeshProbe.WalkableNodeOnLevel) — so the cell one step west of a unit standing under a catwalk is the
@@ -881,6 +883,7 @@ internal static class InteractableDescriber
     private static string AxisOffset(float dx, float dz)
     {
         if (!AxisOffsetsEnabled) return null;
+        RTAccess.Exploration.MapFrame.ToMap(ref dx, ref dz);   // world delta → map east / map north
         float cell = GraphParamsMechanicsCache.GridCellSize;
         int ex = Mathf.RoundToInt(dx / cell), nz = Mathf.RoundToInt(dz / cell);
         if (ex == 0 || nz == 0) return null;   // cardinal (or co-located): the compass word already says it exactly

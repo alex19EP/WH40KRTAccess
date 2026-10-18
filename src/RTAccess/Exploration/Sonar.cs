@@ -152,7 +152,15 @@ internal static class Sonar
             if (dx * dx + dz * dz > maxDist * maxDist) continue;
             _sweep.Add(it);
         }
-        _sweep.Sort((a, b) => (a.Position.x - c.x).CompareTo(b.Position.x - c.x));
+        _sweep.Sort((a, b) => MapEast(a.Position - c).CompareTo(MapEast(b.Position - c)));
+    }
+
+    // A world offset's lateral (map-east) component — the axis the pan glides along (MapFrame).
+    private static float MapEast(Vector3 d)
+    {
+        float x = d.x, z = d.z;
+        MapFrame.ToMap(ref x, ref z);
+        return x;
     }
 
     private static void FirePing(ScanItem item)

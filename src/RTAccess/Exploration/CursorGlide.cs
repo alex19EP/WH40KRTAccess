@@ -68,7 +68,9 @@ internal static class CursorGlide
             if (!MapCursor.Has) { if (TileExplorer.EnsurePlanted(out bool fresh) && fresh) TileExplorer.Announce(); return; }
 
             var cur = MapCursor.Position;
-            var dir = new Vector3(dx, 0f, dz).normalized;
+            float wx = dx, wz = dz;
+            MapFrame.ToWorld(ref wx, ref wz);   // the arrows are map-frame (MapFrame); the glide is world
+            var dir = new Vector3(wx, 0f, wz).normalized;
             var traced = ObstacleAnalyzer.TraceAlongNavmesh(cur, cur + dir * (Speed * dt));
             if (!MapCursor.SetPoint(traced)) return;   // off-graph → stay put (matches the tile edge refusal)
             TileExplorer.ScrollTo(MapCursor.Position); // follow-cam, gated on exploration.camera_follow

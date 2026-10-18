@@ -33,7 +33,8 @@ namespace RTAccess.Exploration;
 internal static class CoverModel
 {
     // Cardinal grid-direction indices, in the order they are spoken. The game's numbering (shared with
-    // WallTones, CoverVisualizer and InteractableDescriber's per-edge readout): S=0, E=1, N=2, W=3.
+    // WallTones, CoverVisualizer and InteractableDescriber's per-edge readout): S=0, E=1, N=2, W=3 — taken in the
+    // MAP frame (MapFrame.WorldGridDir turns each into the world edge the engine is asked about).
     private static readonly (int Dir, string Key)[] Sides =
     {
         (2, "aim.dir_n"), (1, "aim.dir_e"), (0, "aim.dir_s"), (3, "aim.dir_w"),
@@ -219,9 +220,9 @@ internal static class CoverModel
                 int packed = 0;
                 for (int i = 0; i < Sides.Length; i++)
                 {
-                    int dir = Sides[i].Dir;
+                    int dir = Sides[i].Dir;   // the MAP-frame side; the signature is packed in map terms
                     LosCalculations.CoverType cover;
-                    try { cover = LosCalculations.GetCellCoverStatus(node, dir, checkType).CoverType; }
+                    try { cover = LosCalculations.GetCellCoverStatus(node, MapFrame.WorldGridDir(dir), checkType).CoverType; }
                     catch { continue; }
                     if (cover != LosCalculations.CoverType.None) packed |= (int)cover << (2 * dir);
                 }

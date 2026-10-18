@@ -147,6 +147,17 @@ namespace RTAccess.Settings
                 audioCat.Add(new BoolSetting("front_back_filter", "Front/back muffling", true, "audio.front_back_filter"));
             if (audioCat.GetByKey("head_shadow") == null)
                 audioCat.Add(new BoolSetting("head_shadow", "Ear shadowing (head between the ears)", true, "audio.head_shadow"));
+            // Where the GAME's own 3D audio is heard from (Audio/ListenerAnchor). Default = the cursor the mod's
+            // sounds pan from, facing map north, so game sounds and ours share one frame; "camera" is vanilla.
+            if (audioCat.GetByKey("listener") == null)
+                audioCat.Add(new ChoiceSetting("listener", "Game audio heard from", new[]
+                {
+                    new Choice("cursor", "Cursor, facing map north", "audio.listener.cursor"),
+                    new Choice("party", "Party, facing map north", "audio.listener.party"),
+                    new Choice("camera", "Camera (game default)", "audio.listener.camera"),
+                }, "cursor", "audio.listener"));
+            if (audioCat.GetByKey("listener_height") == null)
+                audioCat.Add(new IntSetting("listener_height", "Game audio listener height (metres)", 3, 0, 25, 1, "audio.listener_height"));
         }
     }
 }

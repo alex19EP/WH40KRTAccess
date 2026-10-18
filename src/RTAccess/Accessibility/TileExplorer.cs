@@ -51,10 +51,11 @@ internal static class TileExplorer
     // Primary arrows: tile steps — but while the FREE cursor mode owns them (exploration.cursor_mode = free,
     // outside combat/deployment) they yield to the per-frame glide (Exploration/CursorGlide), which polls the
     // same actions' HELD state instead of these press handlers.
-    public static void StepNorth() => Step(0, 1);   // +Z
-    public static void StepSouth() => Step(0, -1);  // -Z
-    public static void StepEast()  => Step(1, 0);   // +X
-    public static void StepWest()  => Step(-1, 0);  // -X
+    // Directions are the MAP frame's (MapFrame): StepTile turns them into the world grid step.
+    public static void StepNorth() => Step(0, 1);
+    public static void StepSouth() => Step(0, -1);
+    public static void StepEast()  => Step(1, 0);
+    public static void StepWest()  => Step(-1, 0);
 
     // Secondary Shift+arrows: ALWAYS tile steps, in both cursor modes (WA's two-slot idiom — the precision
     // slot). In free mode a secondary step snaps the glide point onto the grid by construction: Move() steps
@@ -101,6 +102,7 @@ internal static class TileExplorer
     {
         if (!EnsurePlanted(out bool fresh)) return;
         if (fresh) { Announce(); return; }   // the first touch reads the planted tile; it doesn't also step
+        RTAccess.Exploration.MapFrame.ToWorld(ref dx, ref dz);   // the keys are map-frame; the grid is world
         Move(dx, dz);
     }
 

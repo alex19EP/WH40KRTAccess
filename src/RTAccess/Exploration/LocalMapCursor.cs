@@ -153,6 +153,7 @@ internal static class LocalMapCursor
     {
         var before = Position;
         float cell = CellSize();
+        MapFrame.ToWorld(ref dx, ref dz);   // the keys sweep the map as drawn (MapFrame); the point is world
         SetPos(before + new Vector3(dx * cell * cells, 0f, dz * cell * cells));
         if (Geo.Distance(before, Position) < 0.01f) { Speaker.Speak(Loc.T("cursor.edge"), interrupt: true); return; }
         Announce();
