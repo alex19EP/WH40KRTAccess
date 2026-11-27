@@ -4,12 +4,13 @@ using System.Collections.Generic;
 namespace Access.Core.Graph
 {
     /// <summary>
-    /// Builds a <see cref="GraphRender"/>. Two construction styles, freely mixable in one build:
+    /// Builds a <see cref="GraphRender"/>. Ported from WrathAccess (sibling WOTR mod), which took it from
+    /// Tanglebeep (with permission). Two construction styles, freely mixable in one build:
     ///
     /// <para><b>Menu mode</b> — rows of controls, wired automatically: left/right within a row, up/down
     /// between consecutive rows (two rows sharing a non-null row key get column navigation — up/down
-    /// preserves the position instead of snapping to the first item; ported from Tanglebeep's
-    /// MenuBuilder, itself from Factorio Access's menu.lua). Items added outside an explicit row become
+    /// preserves the position instead of snapping to the first item; Tanglebeep's MenuBuilder, itself
+    /// from Factorio Access's menu.lua). Items added outside an explicit row become
     /// single-item rows (a plain vertical menu).</para>
     ///
     /// <para><b>Raw mode</b> — <see cref="AddNode"/> + <see cref="Connect"/> for arbitrary topologies.</para>

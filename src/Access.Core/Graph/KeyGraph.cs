@@ -15,8 +15,9 @@ namespace Access.Core.Graph
 
     /// <summary>
     /// The navigation engine: a directed graph of controls rebuilt from a render callback on each
-    /// operation, with focus persisting in an external <see cref="GraphState"/>. Ported from Tanglebeep
-    /// (with permission), itself from Factorio Access's key-graph.lua. Two invariants carry over:
+    /// operation, with focus persisting in an external <see cref="GraphState"/>. Ported from WrathAccess
+    /// (sibling WOTR mod), which took it from Tanglebeep (with permission), itself from Factorio Access's
+    /// key-graph.lua. Two invariants carry over:
     ///
     /// <para><b>Down-right total order</b> (<see cref="ComputeOrder"/>): from the start node, go right
     /// until stuck, queueing each down — visits a planar UI in reading order. Nodes down-right can't reach

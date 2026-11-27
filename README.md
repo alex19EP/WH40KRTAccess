@@ -430,13 +430,23 @@ See [`AGENTS.md`](AGENTS.md) for the full architecture, game facts, and conventi
 
 ## Credits
 
-- **[Wrath Access](https://github.com/bradjrenshaw/wotr-access)** — the sibling Pathfinder mod and
-  the authoritative prior art for nearly every subsystem here.
+- **[Wrath Access](https://github.com/bradjrenshaw/wotr-access)** by Bradley Renshaw (zlib) — the
+  sibling Pathfinder mod and the authoritative prior art for nearly every subsystem here. Much of
+  RTAccess's code is ported from it: the graph navigation core, settings, input, review buffers,
+  the scanner geometry and the audio engine, and all of the mod's sounds are its recordings.
+- Code that reached RTAccess through Wrath Access, from earlier accessibility mods:
+  **[Say the Spire 2](https://github.com/bradjrenshaw/say-the-spire2)** (Bradley Renshaw),
+  **OniAccess** (Rashad Naqeeb, MIT), **[Tanglebeep](https://github.com/ahicks92/tanglebeep)**
+  (Austin Hicks) and **[Factorio Access](https://github.com/Factorio-Access/FactorioAccess)** (MIT).
 - **SpeechMod** (Osmodium, MIT) — the prior-art Rogue Trader TTS mod the hook map was built from.
 - Bundled third-party components: **Prism** (`prism.dll`, screen-reader speech) and **NAudio**,
   each redistributed under its own license.
 
+Full license texts and what came from where are in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+
 ## License
 
-RTAccess is released under the **MIT License** — see [`LICENSE`](LICENSE). The bundled `prism.dll`
-and `NAudio.dll` are third-party components, redistributed under their own respective licenses.
+RTAccess is released under the **MIT License** — see [`LICENSE`](LICENSE). Code ported from other
+mods stays under its original license (zlib for Wrath Access, MIT for OniAccess and Factorio
+Access), and the bundled `prism.dll` and `NAudio.dll` are third-party components, redistributed under
+their own respective licenses — see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

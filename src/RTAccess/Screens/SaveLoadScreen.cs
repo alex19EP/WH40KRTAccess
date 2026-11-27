@@ -257,7 +257,7 @@ namespace RTAccess.Screens
         // The save's browse label mirrors what the CARD shows (minus the character — that's the parent
         // playthrough node): name, kind, when saved, where, in-game time, then any description. The required-DLC
         // NAMES stay on Space (detail); only the "DLC required" mark is on the card, and it's folded into kind.
-        private static string SlotBrowseLabel(SaveSlotVM s)
+        internal static string SlotBrowseLabel(SaveSlotVM s)
         {
             var parts = new List<string>();
             AppendIf(parts, SlotName(s));

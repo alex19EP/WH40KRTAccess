@@ -9,7 +9,8 @@ namespace RTAccess.Localization
 {
     /// <summary>
     /// Loads the mod's own speech strings from JSON locale files and resolves them for <see cref="Message"/>
-    /// (sets <see cref="Message.LocalizationResolver"/>). One file per table under
+    /// (sets <see cref="Message.LocalizationResolver"/>). Ported from WrathAccess (sibling WOTR mod), itself
+    /// from SayTheSpire2. One file per table under
     /// <c>assets/locale/&lt;lang&gt;/&lt;table&gt;.json</c> — a flat <c>{ "KEY": "template with {vars}" }</c>
     /// (the SayTheSpire2 layout). The language follows the GAME's current locale (the <c>Locale</c> enum
     /// name, e.g. "enGB"/"deDE"); English (enGB) is always loaded as a fallback, so a missing/untranslated

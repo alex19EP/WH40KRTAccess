@@ -7,7 +7,8 @@ using Newtonsoft.Json.Linq;
 namespace RTAccess.Settings
 {
     /// <summary>
-    /// The mod's settings tree + JSON persistence (ported from SayTheSpire2). Build the <see cref="Root"/>
+    /// The mod's settings tree + JSON persistence (ported from WrathAccess, the sibling WOTR mod, itself
+    /// from SayTheSpire2). Build the <see cref="Root"/>
     /// tree, then <see cref="Initialize"/> with a persistent directory: it loads <c>settings.json</c>
     /// (a flat <c>{ fullPath: value }</c> map), applies saved values over the in-code defaults, and saves
     /// back. Every <c>Set</c> auto-saves (<see cref="MarkDirty"/>). Keys from another mod version are

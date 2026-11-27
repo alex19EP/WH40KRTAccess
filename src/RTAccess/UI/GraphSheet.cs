@@ -17,7 +17,8 @@ namespace RTAccess.UI
     ///    reads the whole row, per-part filterable like any control;
     ///  - empty cells read the localized "blank".
     /// Emit rows in one region, then start the next; Finish() closes the last region. Raw mode
-    /// underneath (explicit edges), so no auto positions — matching the old sheets.
+    /// underneath (explicit edges), so no auto positions — matching the old sheets. Ported from
+    /// WrathAccess (sibling WOTR mod).
     /// </summary>
     public sealed class GraphSheet
     {

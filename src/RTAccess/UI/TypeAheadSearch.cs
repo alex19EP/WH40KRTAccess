@@ -5,8 +5,8 @@ using System.Text;
 namespace RTAccess.UI
 {
     /// <summary>
-    /// Type-ahead search engine — ported, with permission, from OniAccess (VisionNotIncluded,
-    /// C:\Users\bradj\code\VisionNotIncluded, Handlers/TypeAheadSearch.cs); adapted to RTAccess
+    /// Type-ahead search engine — ported from WrathAccess (sibling WOTR mod), which took it from
+    /// OniAccess (Handlers/TypeAheadSearch.cs; MIT, see THIRD-PARTY-NOTICES.md); adapted to RTAccess
     /// (speech + key routing live in <see cref="GraphNavigator"/>, which feeds typed characters
     /// and arrows in; this class is pure matching/result state).
     ///

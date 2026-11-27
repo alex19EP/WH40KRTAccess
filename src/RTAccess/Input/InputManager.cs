@@ -14,7 +14,8 @@ namespace RTAccess.Input
     /// keys); an identical chord in two live categories resolves to the higher-priority (deeper) one (its
     /// lower twin is SHADOWED — that's how the same arrows mean HUD nav focused and cursor movement unfocused).
     /// UI-category presses dispatch into the active navigator; every other category fires its handler
-    /// directly. With focus mode off only Global is live, so the game keeps its own keys.
+    /// directly. With focus mode off only Global is live, so the game keeps its own keys. Ported from
+    /// WrathAccess (sibling WOTR mod).
     /// </summary>
     public static class InputManager
     {

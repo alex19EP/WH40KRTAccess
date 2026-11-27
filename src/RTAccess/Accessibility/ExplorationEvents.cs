@@ -1,4 +1,5 @@
 using Kingmaker;
+using Kingmaker.Networking;
 using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
 using Kingmaker.View;
@@ -20,9 +21,26 @@ namespace RTAccess.Accessibility;
 /// </summary>
 internal sealed class ExplorationEvents :
     ISurroundingInteractableObjectsCountHandler,
+    INetRoleSetHandler,
     IAreaActivationHandler
 {
     internal static readonly ExplorationEvents Instance = new ExplorationEvents();
+
+    // NetRolesVM queues the change on close. This event runs on each peer once the game applies it.
+    public void HandleRoleSet(string entityId)
+    {
+        if (!PhotonManager.Lobby.IsActive) return;
+        var party = Game.Instance?.SelectionCharacter?.ActualGroup;
+        var unit = party?.Find(member => member?.UniqueId == entityId);
+        var roles = Game.Instance?.CoopData?.PlayerRole;
+        if (unit == null || roles == null || !roles.m_EntityRoles.ContainsKey(entityId)) return;
+        foreach (var player in PhotonManager.Instance.ActivePlayers)
+        {
+            if (!roles.Can(entityId, player.NetPlayer)) continue;
+            Tts.Speak(Loc.T("coop.assigned", new { character = unit.CharacterName, player = player.NickName }));
+            break;
+        }
+    }
 
     // Max auto-announce rate while moving (the chosen=closest object churns as you walk through a cluster).
     private const float MinIntervalSeconds = 0.4f;

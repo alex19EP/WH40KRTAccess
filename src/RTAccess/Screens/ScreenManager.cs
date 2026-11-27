@@ -131,6 +131,8 @@ namespace RTAccess.Screens
             if (_registered.Count > 0) return;
             // Phase 2: base contexts come online one screen at a time. MainMenu is first.
             Register(new MainMenuScreen());
+            Register(new NetLobbyScreen());
+            Register(new NetRolesScreen());
             // In-game surface base context (RootUiContext.IsSurface) — Layer 0, mutually exclusive with the
             // menu. StartUnfocused: exploration owns the arrows, Tab brings up the HUD (party/vitals/combat/
             // service-window openers). Hosts the re-gated exploration helpers in mouse mode.

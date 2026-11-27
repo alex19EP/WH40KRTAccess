@@ -4,8 +4,8 @@ namespace Access.Core.Graph
 {
     /// <summary>
     /// The identity of a control (graph node) — a two-tier identity so focus can be followed across
-    /// rebuilds even when the world shifts under us. Ported from Tanglebeep (with permission), which
-    /// upgraded Factorio Access's plain string node key.
+    /// rebuilds even when the world shifts under us. Ported from WrathAccess (sibling WOTR mod), which
+    /// took it from Tanglebeep (with permission), which upgraded Factorio Access's plain string node key.
     ///
     /// <para><b>Reference</b> (optional) is the game/domain object a node was derived from (a VM, a
     /// UIElement, an item), compared by reference identity. <b>StructuralKey</b> (always present) is a

@@ -52,14 +52,17 @@ namespace RTAccess.UI
             field.ActivateInputField();
             field.MoveTextEnd(false);
 
-            string current = string.IsNullOrEmpty(_last) ? Loc.T("value.blank") : _last;
+            string current = SpokenValue(field, _last);
             Tts.Speak(Loc.T("edit.begin", new { label = _label, value = current }), interrupt: true);
         }
 
         private static void OnChanged(string text)
         {
             text = text ?? "";
-            Echo(_last, text);
+            if (_field != null && _field.inputType == TMP_InputField.InputType.Password)
+                Tts.Speak(SpokenValue(_field, text), interrupt: true);
+            else
+                Echo(_last, text);
             _last = text;
         }
 
@@ -80,10 +83,18 @@ namespace RTAccess.UI
             _endedFrame = UnityEngine.Time.frameCount;
             _field = null; _onChanged = null; _onEnd = null;
 
-            string val = string.IsNullOrEmpty(finalText) ? Loc.T("value.blank") : finalText;
+            string val = SpokenValue(field, finalText);
             Tts.Speak(Loc.T("edit.end", new { label = _label, value = val }), interrupt: true);
             // Hand focus back to the nav element the user was on.
             Navigation.AnnounceCurrent();
+        }
+
+        private static string SpokenValue(TMP_InputField field, string value)
+        {
+            if (string.IsNullOrEmpty(value)) return Loc.T("value.blank");
+            return field != null && field.inputType == TMP_InputField.InputType.Password
+                ? Loc.T("edit.masked_length", new { count = value.Length })
+                : value;
         }
 
         /// <summary>Per-keystroke echo: announce the inserted run, or "deleted" + the removed run.

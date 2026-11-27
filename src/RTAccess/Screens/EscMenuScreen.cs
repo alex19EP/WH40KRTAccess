@@ -21,7 +21,7 @@ namespace RTAccess.Screens
     /// the game's own card strings (<c>UIStrings.EscapeMenu</c> — the view's <c>SetButtonsTexts</c> source,
     /// so they follow the game's language) and <c>enabled</c> funcs reading the flags — mirroring the
     /// buttons <c>EscMenuBaseView</c> wires (verified against the decompiled view). We list the
-    /// single-player entries; multiplayer/roles/bug-report are skipped. Save / Load / Options each close
+    /// game and multiplayer entries. Save / Load / Options each close
     /// this menu and open a screen we already make navigable (SaveLoad / Settings); Main Menu and Exit
     /// raise the game's confirm box (navigable via <see cref="MessageBoxScreen"/>).
     ///
@@ -62,6 +62,13 @@ namespace RTAccess.Screens
                 b.AddItem(ControlId.Structural("escmenu:formation"), GraphNodes.Button(
                     () => GameText.Or(() => UIStrings.Instance.EscapeMenu.EscMenuFormation, "hudmenu.formation"),
                     () => vm.OpenFormation(), () => vm.IsFormationAllowed));
+            b.AddItem(ControlId.Structural("escmenu:multiplayer"), GraphNodes.Button(
+                () => UIStrings.Instance.EscapeMenu.EscMenuMultiplayer.Text, vm.OnMultiplayer,
+                () => !Kingmaker.Settings.SettingsRoot.Difficulty.OnlyOneSave));
+            if (PhotonManager.Lobby.IsActive)
+                b.AddItem(ControlId.Structural("escmenu:roles"), GraphNodes.Button(
+                    () => UIStrings.Instance.EscapeMenu.EscMenuRoles.Text, vm.OnMultiplayerRoles,
+                    () => !Game.Instance.IsSpaceCombat && vm.IsSavingAllowed));
             // Options — opens our SettingsScreen.
             b.AddItem(ControlId.Structural("escmenu:options"), GraphNodes.Button(
                 () => GameText.Or(() => UIStrings.Instance.EscapeMenu.EscMenuOptions, "escmenu.options"),

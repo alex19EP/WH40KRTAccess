@@ -8,7 +8,8 @@ using RTAccess.Settings;
 namespace RTAccess.UI.Announcements
 {
     /// <summary>
-    /// Builds the announcement settings (ported from SayTheSpire2). For EVERY concrete
+    /// Builds the announcement settings (ported from WrathAccess, the sibling WOTR mod, itself from
+    /// SayTheSpire2). For EVERY concrete
     /// <see cref="Announcement"/> subclass: a global category <c>announcements.{key}</c> with an
     /// <c>enabled</c> toggle + <c>include_suffix</c> toggle (+ anything a static
     /// <c>RegisterSettings(CategorySetting)</c> on the announcement declares), hidden from the UI unless

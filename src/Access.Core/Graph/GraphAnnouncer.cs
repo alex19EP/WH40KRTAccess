@@ -12,7 +12,7 @@ namespace Access.Core.Graph
     /// prefix and read just the control; ascends likewise; and descending from a group onto its own child
     /// re-announces nothing but the child — the group is on the child's chain AND is the from-node, so the
     /// prefix swallows it. This is the original retained-path diff, reconstructed per render from parent
-    /// pointers.
+    /// pointers. Ported from WrathAccess (sibling WOTR mod).
     /// </summary>
     public static class GraphAnnouncer
     {

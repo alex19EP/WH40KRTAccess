@@ -6,15 +6,36 @@ own license. Those licenses govern only the corresponding component, not RTAcces
 
 ---
 
-## WrathAccess (inspiration and ported code)
+## WrathAccess (ported code, audio and design)
 
 RTAccess is a port of the accessibility approach pioneered by **WrathAccess**, the
 screen-reader mod for *Pathfinder: Wrath of the Righteous* (another Owlcat CRPG).
-WrathAccess was the primary design reference for this project, and portions of
-RTAccess are directly ported or adapted from its source — for example, the NAudio
-audio mixer in `src/RTAccess/Audio/AudioMixer.cs` is ported from WrathAccess's
-`NAudioEngine`. Other framework-level patterns (speech backend, settings, and
-exploration/cursor design) are adapted from it as well.
+WrathAccess was the primary design reference for this project, and a substantial
+part of RTAccess's source is ported from it, then altered for Rogue Trader. Ported
+files say so in their header comments. The main areas:
+
+- **Graph navigation core** — `src/Access.Core/Graph/` (key graph, builder, path
+  announcer, control identity), `src/RTAccess/UI/GraphNavigator.cs`, `GraphSheet.cs`,
+  `GraphNodes.cs` and `TypeAheadSearch.cs`.
+- **Settings, announcements and input** — `src/RTAccess/Settings/`,
+  `src/RTAccess/UI/Announcements/`, `UI/ModSettingNodes.cs`,
+  `Screens/ModSettingsScreen.cs`, `src/RTAccess/Input/`.
+- **Text and review buffers** — `Message.cs`, `src/RTAccess/Buffers/`,
+  `src/RTAccess/Localization/`.
+- **Exploration** — scanner bounds and frontier model, the room map
+  (`src/Access.Core/Rooms/`), sonar, wall tones, object and fog cues, the map cursor.
+- **Audio** — the NAudio mixer (`src/RTAccess/Audio/AudioMixer.cs`, from
+  WrathAccess's `NAudioEngine`) and spatializer, plus **every bundled sound** under
+  `src/RTAccess/assets/audio/` (wall tones, sonar stems, earcons), which are
+  WrathAccess's recordings.
+- **Developer tooling** — the in-process dev server (`src/RTAccess/Dev/`).
+
+Parts of that code were not written for WrathAccess but brought into it from
+earlier accessibility mods, and reached RTAccess through it; those are listed in
+their own sections below: **Say the Spire 2** (also by Bradley Renshaw — the
+settings tree, announcements, messages, buffers and localization), **OniAccess**
+(type-ahead search, diacritic folding), and **Tanglebeep**, itself derived from
+**Factorio Access** (the graph navigation core).
 
 - Copyright © 2026 Bradley Renshaw.
 - Source: https://github.com/bradjrenshaw/wotr-access
@@ -42,6 +63,102 @@ freely, subject to the following restrictions:
    misrepresented as being the original software.
 
 3. This notice may not be removed or altered from any source distribution.
+```
+
+---
+
+## Say the Spire 2 (via WrathAccess)
+
+The settings tree and its JSON persistence, the announcement registry, message
+templating, review buffers and localization loading originate in **Say the
+Spire 2**, the *Slay the Spire 2* accessibility mod by the same author as
+WrathAccess, who brought them into WrathAccess under its zlib license (above).
+
+- Copyright © 2026 Bradley Renshaw.
+- Source: https://github.com/bradjrenshaw/say-the-spire2
+
+---
+
+## OniAccess (via WrathAccess)
+
+The type-ahead search engine (`src/RTAccess/UI/TypeAheadSearch.cs`) and the
+diacritic folding in `src/Access.Core/TextUtil.cs` (`RemoveDiacritics`) are
+ported from **OniAccess**, the *Oxygen Not Included* accessibility mod, by way
+of WrathAccess.
+
+- Copyright © 2026 Rashad Naqeeb.
+- License: **MIT License.**
+
+```
+MIT License
+
+Copyright (c) 2026 Rashad Naqeeb
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## Tanglebeep (via WrathAccess)
+
+The graph navigation core in `src/Access.Core/Graph/` — the key graph, the
+two-tier control identity and the row-based menu builder — was ported into
+WrathAccess, with the author's permission, from **Tanglebeep**, a roguelike
+accessibility project, which in turn derives it from Factorio Access (below).
+
+- Copyright © Austin Hicks.
+- Source: https://github.com/ahicks92/tanglebeep
+
+---
+
+## Factorio Access (via Tanglebeep and WrathAccess)
+
+The key-graph navigation model (`key-graph.lua`) and the row-based menu layout
+(`menu.lua`) that the graph navigation core descends from come from **Factorio
+Access**, the *Factorio* accessibility mod.
+
+- Copyright © 2024 Crimso.
+- Source: https://github.com/Factorio-Access/FactorioAccess
+- License: **MIT License.**
+
+```
+MIT License
+
+Copyright (c) 2024 Crimso
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ---
