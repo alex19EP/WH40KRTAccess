@@ -77,6 +77,9 @@ internal static class Geo
     /// </summary>
     public static Vector3 SnapToWalkable(Vector3 target, Vector3 from)
     {
+        // Give the formation pathfinder the actual destination across walls and gaps.
+        // Only off-mesh landmarks need the fallback below.
+        if (NavmeshProbe.OnMesh(target, out var node) && node.Walkable) return target;
         float dist = Vector3.Distance(from, target);
         if (dist < 0.1f) return from;
         int steps = Mathf.Clamp(Mathf.RoundToInt(dist / 2f), 1, 200);

@@ -162,6 +162,45 @@ internal static class PathInfo
             : Loc.T("path.movearea", new { count });
     }
 
+    // The entity overload ends on a legal tile in melee reach, including the game's
+    // melee line-of-sight check. Search beyond this turn so a detour can start away from the enemy.
+    internal static CustomGridNodeBase EnemyApproach(BaseUnitEntity unit, BaseUnitEntity enemy,
+        out int remaining, out string refusal)
+    {
+        remaining = 0;
+        refusal = Loc.T("path.preview.out_of_movement");
+        var area = Game.Instance?.UnitMovableAreaController?.CurrentUnitMovableArea;
+        if (area == null || area.Count == 0) return null;
+
+        refusal = Loc.T("approach.no_route", new { dest = Accessibility.UnitNames.Of(enemy) });
+        var agent = unit.View?.MovementAgent;
+        if (agent == null || enemy.CurrentUnwalkableNode == null) return null;
+        var path = PathfindingService.Instance?.FindPathTB_Blocking(agent, enemy, limitRangeByActionPoints: false);
+        if (path == null) return null;
+        using (PathDisposable<WarhammerPathPlayer>.Get(path, unit))
+        {
+            if (path.error || path.CompleteState != PathCompleteState.Complete || path.path.Count == 0) return null;
+            if (path.path.Count == 1)
+            {
+                refusal = Loc.T("approach.no_closer", new { dest = Accessibility.UnitNames.Of(enemy) });
+                return null;
+            }
+
+            refusal = Loc.T("approach.no_progress");
+            for (int i = path.path.Count - 1; i > 0; i--)
+            {
+                var cell = path.CalculatedPath[i];
+                if (cell.Length > unit.CombatState.ActionPointsBlue || !cell.IsCanStand) continue;
+                if (path.path[i] is CustomGridNodeBase node && area.Contains(node))
+                {
+                    remaining = path.path.Count - 1 - i;
+                    return node;
+                }
+            }
+            return null;
+        }
+    }
+
     /// <summary>
     /// The reachable, standable tile this turn that lands CLOSEST to <paramref name="target"/> — the auto-approach
     /// core ("part of the enemies is on a different level and finding a way by hand is tedious"). Reads the same
