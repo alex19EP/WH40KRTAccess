@@ -1,5 +1,6 @@
 using Access.Core;          // TextUtil
 using Kingmaker;
+using Kingmaker.GameModes;
 using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
 using UnityEngine;
@@ -39,11 +40,18 @@ internal sealed class BarkEvents : IBarkHandler, ISubtitleBarkHandler
 
     // IBarkHandler — overhead speech bubbles. The plain variant carries no name, so recover the speaking
     // entity from the event invoker (valid here: global subscribers run inside the invoker context).
-    public void HandleOnShowBark(string text) => Speak(text, SpeakerName());
+    public void HandleOnShowBark(string text) => SpeakOverhead(text, SpeakerName());
 
-    public void HandleOnShowBarkWithName(string text, string name, Color nameColor) => Speak(text, name);
+    public void HandleOnShowBarkWithName(string text, string name, Color nameColor) => SpeakOverhead(text, name);
 
-    public void HandleOnShowLinkedBark(string text, string encyclopediaLink) => Speak(text, SpeakerName());
+    public void HandleOnShowLinkedBark(string text, string encyclopediaLink) => SpeakOverhead(text, SpeakerName());
+
+    private void SpeakOverhead(string text, string speakerName)
+    {
+        // The game hides unit and map-object overtips during dialogue.
+        if (Game.Instance?.CurrentMode == GameModeType.Dialog) return;
+        Speak(text, speakerName);
+    }
 
     // ISubtitleBarkHandler — subtitle text already includes the "Speaker: " prefix, so don't add another.
     public void HandleOnShowBark(string text, float duration) => Speak(text, null);
