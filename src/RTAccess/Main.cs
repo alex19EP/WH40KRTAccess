@@ -70,6 +70,7 @@ public static class Main {
             // Voice world-exploration state (chosen interactable + area/loading transitions). One persistent
             // subscriber for the whole session; unsubscribed in OnUnload.
             EventBus.Subscribe(ExplorationEvents.Instance);
+            EventBus.Subscribe(Exploration.CoopPings.Instance);
             // Voice barks — overhead speech bubbles + subtitles (see BarkEvents / [[rt-bark-system]]). Also a
             // persistent session subscriber; unsubscribed in OnUnload.
             EventBus.Subscribe(BarkEvents.Instance);
@@ -385,6 +386,8 @@ public static class Main {
         RTAccess.Dev.DevServer.Instance.Stop(); // release the port-8772 socket + join the listener thread (hot-reload safe)
 #endif
         EventBus.Unsubscribe(ExplorationEvents.Instance);
+        EventBus.Unsubscribe(Exploration.CoopPings.Instance);
+        Exploration.CoopPings.Clear();
         EventBus.Unsubscribe(BarkEvents.Instance);
         EventBus.Unsubscribe(WarningReader.Instance);
         EventBus.Unsubscribe(ConvictionEvents.Instance);

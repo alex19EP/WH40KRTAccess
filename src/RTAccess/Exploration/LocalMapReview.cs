@@ -43,6 +43,7 @@ internal static class LocalMapReview
 
     /// <summary>The current selection, or null when nothing has been cycled to.</summary>
     public static ScanItem Selected => _selected;
+    internal static int SelectionFrame { get; private set; } = -1;
 
     public static void Reset()
     {
@@ -113,6 +114,7 @@ internal static class LocalMapReview
             }
             _group = g;
             _selected = _cycle[_index];
+            SelectionFrame = UnityEngine.Time.frameCount;
 
             Sonar.PlayReview(_selected, from);   // positional ping from the MAP cursor, as in-area review does
             Speaker.Speak(_selected.Describe(from), interrupt: true);

@@ -101,6 +101,12 @@ namespace RTAccess.Screens
         // spoken) into a cutscene-hidden cue.
         protected override bool Deliverable(DialogVM vm) => vm.IsVisible.Value && !_dialogFaded;
 
+        internal bool ShowsAnswer(AnswerVM answer)
+        {
+            var vm = Vm();
+            return vm != null && Deliverable(vm) && vm.Answers.Value?.Contains(answer) == true;
+        }
+
         protected override ControlId HomeNode(DialogVM vm, CueVM cue) => CueId(vm, cue);
 
         // Name the speaker on the first cue and only again when it changes: a run of cues from the same NPC

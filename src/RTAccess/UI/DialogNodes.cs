@@ -9,6 +9,9 @@ using Kingmaker.Code.UI.MVVM.VM.Tooltip.Templates; // TooltipTemplateSkillCheckD
 using Kingmaker.Code.Utility;                   // UIConstsExtensions
 using Kingmaker.Controllers.Dialog;             // SkillCheckDC (the answer's own DC list)
 using Kingmaker.DialogSystem.Blueprints;        // BlueprintAnswer, DialogType
+using Kingmaker.Networking;
+using HarmonyLib;
+using RTAccess.Screens;
 using Kingmaker.UI.Common;                      // EntityLink (link-type dispatch)
 using Owlcat.Runtime.UI.Tooltips;               // TooltipBaseTemplate
 using RTAccess.Accessibility;                   // TooltipReader, GlossaryLinks, NestedTooltips
@@ -45,11 +48,46 @@ namespace RTAccess.UI
         {
             Func<bool> enabled = () => vm != null && vm.Enable.Value && (deliverable == null || deliverable());
             var vt = GraphNodes.Button(
-                () => AnswerText(vm),
+                () => BrowseAnswer(vm),
                 () => DialogChoiceGate.Choose(vm),
                 enabled);
             vt.OnTooltip = () => OpenAnswerTooltip(vm);
             return vt;
+        }
+
+        private static string BrowseAnswer(AnswerVM vm)
+        {
+            string label = AnswerText(vm);
+            if (vm == null || vm.VotedPlayers.Count == 0 || !UINetUtility.InLobbyAndPlaying) return label;
+            var names = vm.VotedPlayers.Select(VoterName).Where(name => !string.IsNullOrEmpty(name));
+            string voters = string.Join(", ", names);
+            return voters.Length == 0 ? label : label + ". " + Loc.T("dialog.voters", new { voters });
+        }
+
+        private static string VoterName(NetPlayer voter)
+        {
+            foreach (var player in PhotonManager.Instance.ActivePlayers)
+                if (player.NetPlayer.Index == voter.Index) return player.NickName;
+            return null;
+        }
+
+        [HarmonyPatch(typeof(AnswerVM), nameof(AnswerVM.HandleDialogAnswerVote))]
+        internal static class VoteAnnouncement
+        {
+            private static void Postfix(AnswerVM __instance, NetPlayer player, string answer)
+            {
+                if (!Main.Enabled || __instance.IsSystem || __instance.Answer.Value?.AssetGuid != answer ||
+                    !UINetUtility.InLobbyAndPlaying) return;
+                var screen = ScreenManager.Current;
+                var ctx = UiContexts.Dialog();
+                bool visible = screen is DialogueScreen dialogue && dialogue.ShowsAnswer(__instance)
+                    || screen is BookEventScreen && (ctx?.BookEventVM.Value ?? ctx?.EpilogVM.Value)?.Answers.Value?.Contains(__instance) == true;
+                if (!visible) return;
+                string name = VoterName(player);
+                if (string.IsNullOrEmpty(name)) return;
+                Tts.Speak(Loc.T(__instance.VotedPlayers.Contains(player) ? "dialog.vote_cast" : "dialog.vote_removed",
+                    new { player = name, number = __instance.Index }));
+            }
         }
 
         /// <summary>Space on an answer. The VM's prebuilt <see cref="AnswerVM.AnswerTooltip"/> is the body —

@@ -1,4 +1,8 @@
 {
+  "bind.coop.ping": "Send co-op ping",
+  "bind.coop.review": "Review latest map ping",
+  "bind.localmap.ping": "Send co-op ping",
+  "bind.localmap.review_ping": "Review latest map ping",
   "menu.categories": "Categories",
 
   "global.group": "Global",

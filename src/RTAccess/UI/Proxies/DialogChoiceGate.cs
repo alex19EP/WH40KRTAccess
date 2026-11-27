@@ -1,4 +1,12 @@
 using Kingmaker.Code.UI.MVVM.VM.Dialog.Dialog; // AnswerVM
+using HarmonyLib;
+using Kingmaker.Code.UI.MVVM.View.Dialog.BookEvent;
+using Kingmaker.Code.UI.MVVM.View.Dialog.Dialog;
+using Kingmaker.Networking;
+using Kingmaker.UI.Common;
+using Owlcat.Runtime.UI.MVVM;
+using RTAccess.Screens;
+using UnityEngine;
 
 namespace RTAccess.UI.Proxies
 {
@@ -26,10 +34,34 @@ namespace RTAccess.UI.Proxies
 
         public static void Choose(AnswerVM vm)
         {
-            if (vm == null) return;
+            if (vm == null || !vm.Enable.Value) return;
             MineNow = true;
-            try { vm.OnChooseAnswer(); }
+            try
+            {
+                if (vm.IsSystem || !UINetUtility.InLobbyAndPlaying || UINetUtility.IsControlMainCharacter())
+                    vm.OnChooseAnswer();
+                else if (ScreenManager.Current is BookEventScreen)
+                    FindAnswer<BookEventAnswerPCView>(vm)?.Confirm();
+                else
+                    FindAnswer<DialogAnswerPCView>(vm)?.Confirm();
+            }
             finally { MineNow = false; }
+        }
+
+        private static T FindAnswer<T>(AnswerVM vm) where T : ViewBase<AnswerVM>
+            => UnityEngine.Object.FindObjectsByType<T>(FindObjectsSortMode.None)
+                .FirstOrDefault(view => view.isActiveAndEnabled && ReferenceEquals(view.GetViewModel(), vm));
+    }
+
+    // A guest's native Confirm sends the ping immediately, before the OnChooseAnswer guard runs.
+    [HarmonyPatch(typeof(PingNetManager), nameof(PingNetManager.PingDialogAnswerVote))]
+    internal static class DialogVoteGuard
+    {
+        private static bool Prefix()
+        {
+            if (!Main.Enabled || !FocusMode.Active || DialogChoiceGate.MineNow) return true;
+            var ctx = UiContexts.Dialog();
+            return ctx?.DialogVM.Value == null && ctx?.BookEventVM.Value == null && ctx?.EpilogVM.Value == null;
         }
     }
 }

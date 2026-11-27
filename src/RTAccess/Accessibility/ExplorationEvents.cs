@@ -105,6 +105,7 @@ internal sealed class ExplorationEvents :
     // Area transition (voices the entered area).
     public void OnAreaActivated()
     {
+        Exploration.CoopPings.Clear();
         try
         {
             _lastChosen = null; // new area — drop the stale pick + throttle state

@@ -55,7 +55,7 @@ internal static class Scanner
 {
     // Where a browse category's items come from: most filter the WorldModel registry by a taxonomy predicate;
     // three are special-sourced lists with no backing registry entity (see MarkerList / FrontierList / CoverList).
-    private enum Source { Registry, Markers, Frontier, Cover }
+    private enum Source { Registry, Markers, Frontier, Cover, CoopPings }
 
     // The browse categories cycled by Ctrl+PageUp/Down. Most filter the WorldModel registry by a taxonomy predicate;
     // the "points of interest" category is instead marker-sourced — the area-wide local-map pins
@@ -95,6 +95,7 @@ internal static class Scanner
         // (see CoverModel / ProxyCover). Grid geometry, not a registry entity, and empty unless the game's own
         // cover overlay is up, so out of your turn the category simply skips like any other empty one.
         ("taxonomy.cover",          Source.Cover,    null),
+        ("coop.pings",              Source.CoopPings, null),
     };
 
     // Party/Enemies/Neutrals/Objects come from the WorldModel snapshot (units + reachable interactables). Area
@@ -243,7 +244,14 @@ internal static class Scanner
         }
 
         var list = FiringPositions.Find(me, foe);
-        if (list.Count == 0) { ApproachInCombat(foe.Position, Accessibility.UnitNames.Of(foe), Loc.T("firing.none")); return; }
+        if (list.Count == 0)
+        {
+            if (me is StarshipEntity) { Speak(Loc.T("travel.combat")); return; }
+            var node = PathInfo.EnemyApproach(me, foe, out int remaining, out string refusal);
+            if (node == null) Speak(Loc.T("firing.none") + " " + refusal);
+            else MoveApproach(me, node, Accessibility.UnitNames.Of(foe), remaining, Loc.T("firing.none"));
+            return;
+        }
 
         var spot = list[0];
         _firingNode = spot.Node;
@@ -438,21 +446,23 @@ internal static class Scanner
     /// All refusals are spoken (guards by <see cref="RTAccess.Combat.CommandDispatch.ActingUnit"/> /
     /// <c>MoveStep</c>). Starships keep the plain refusal — their inertial ShipPath movement has no
     /// "nearest tile" notion (see ShipPathInfo).</summary>
-    /// <summary><paramref name="prelude"/> leads every line this speaks, so a caller that fell through to the
-    /// plain approach can explain WHY in the same utterance ("No firing position this turn. Closest approach…")
-    /// rather than in a second one the first would interrupt.</summary>
-    private static void ApproachInCombat(Vector3 target, string label, string prelude = null)
+    private static void ApproachInCombat(Vector3 target, string label)
     {
-        void Say(string s) => Speak(string.IsNullOrEmpty(prelude) ? s : prelude + " " + s);
-
         var unit = RTAccess.Combat.CommandDispatch.ActingUnit();
         if (unit == null) return; // refusal spoken (not player turn / wrong selection)
-        if (unit is StarshipEntity) { Say(Loc.T("travel.combat")); return; }
+        if (unit is StarshipEntity) { Speak(Loc.T("travel.combat")); return; }
 
         var best = PathInfo.FindApproachNode(unit, target, out int shortTiles, out bool alreadyClosest);
-        if (best == null) { Say(Loc.T("path.preview.out_of_movement")); return; }
-        if (alreadyClosest) { Say(Loc.T("approach.no_closer", new { dest = label })); return; }
+        if (best == null) { Speak(Loc.T("path.preview.out_of_movement")); return; }
+        if (alreadyClosest) { Speak(Loc.T("approach.no_closer", new { dest = label })); return; }
 
+        MoveApproach(unit, best, label, shortTiles <= 1 ? 0 : shortTiles);
+    }
+
+    private static void MoveApproach(BaseUnitEntity unit, CustomGridNodeBase best, string label,
+        int shortTiles, string prelude = null)
+    {
+        void Say(string s) => Speak(string.IsNullOrEmpty(prelude) ? s : prelude + " " + s);
         var r = RTAccess.Combat.CommandDispatch.MoveStep(best);
         if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Committed)
         {
@@ -460,8 +470,9 @@ internal static class Scanner
         }
         else if (r == RTAccess.Combat.CommandDispatch.MoveStepResult.Planted)
         {
-            string lead = shortTiles <= 1
+            string lead = shortTiles == 0
                 ? Loc.T("approach.reaches", new { dest = label })
+                : shortTiles == 1 ? Loc.T("approach.short_one", new { dest = label })
                 : Loc.T("approach.short", new { dest = label, tiles = shortTiles });
             Say(lead + " " + PathInfo.Preview(unit, best, out _) + " " + Loc.T("path.preview.press_again"));
         }
@@ -882,6 +893,7 @@ internal static class Scanner
         if (cat.Src == Source.Markers) return MarkerList(refPos);
         if (cat.Src == Source.Frontier) return FrontierList(refPos);
         if (cat.Src == Source.Cover) return CoverList(refPos);
+        if (cat.Src == Source.CoopPings) return CoopPings.Items.OrderBy(p => p.DistanceTo(refPos)).Cast<ScanItem>().ToList();
 
         var subs = SubsOf(categoryIndex);
         var sub = subIndex > 0 && subIndex <= subs.Length ? subs[subIndex - 1].Pred : null;
@@ -1055,9 +1067,10 @@ internal static class Scanner
         return -1;
     }
 
-    private static ScanItem ResolveSelected()
+    internal static ScanItem ResolveSelected()
     {
         if (_selectedKey == null) return null;
+        if (_selectedKey is CoopPings.MapPing ping) return CoopPings.Items.Contains(ping) ? ping : null;
         // Landmark selections (the points-of-interest category) aren't in the WorldModel registry — re-wrap the live
         // marker so Home-plant and the O re-announce keep working on them; null once it leaves the current area's set.
         // Re-apply the sighted-map gate here too (main-HUD audit L3): hidden pins remain enumerable in Markers, so a

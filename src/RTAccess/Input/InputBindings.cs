@@ -451,6 +451,14 @@ namespace RTAccess.Input
             // See RTAccess.Exploration.LocalMapCursor / LocalMapReview. ----
             InputManager.Register("localmap.up", "Local map: sweep north", InputCategory.LocalMap,
                 Ex.LocalMapCursor.StepNorth).AddBinding(KeyCode.UpArrow).Repeating().Grouped("localmap");
+            InputManager.Register("coop.ping", "Send co-op ping", InputCategory.InGame,
+                Ex.CoopPings.Send).AddBinding(KeyCode.P, alt: true).Grouped("scanner");
+            InputManager.Register("coop.review", "Review latest map ping", InputCategory.InGame,
+                Ex.CoopPings.Review).AddBinding(KeyCode.P, shift: true).Grouped("scanner");
+            InputManager.Register("localmap.ping", "Send co-op ping", InputCategory.LocalMap,
+                Ex.CoopPings.Send).AddBinding(KeyCode.P, alt: true).Grouped("localmap");
+            InputManager.Register("localmap.review_ping", "Review latest map ping", InputCategory.LocalMap,
+                Ex.CoopPings.Review).AddBinding(KeyCode.P, shift: true).Grouped("localmap");
             InputManager.Register("localmap.down", "Local map: sweep south", InputCategory.LocalMap,
                 Ex.LocalMapCursor.StepSouth).AddBinding(KeyCode.DownArrow).Repeating().Grouped("localmap");
             InputManager.Register("localmap.left", "Local map: sweep west", InputCategory.LocalMap,

@@ -268,7 +268,7 @@ namespace RTAccess.Screens
         // its own section over the raw list, matching the game's per-part SetKeyBinding(i) loops; those bare
         // 1–0 hotkeys still reach the game for a blind player, so the slot node advertises them). Heroic-act,
         // desperate-measure and overdrive slots never receive a binding — null.
-        private static IEnumerable<(ActionBarSlotVM vm, string bind)> BarSlots()
+        internal static IEnumerable<(ActionBarSlotVM vm, string bind)> BarSlots()
         {
             var bar = ActionBar();
             if (bar == null) yield break;

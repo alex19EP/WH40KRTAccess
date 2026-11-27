@@ -380,14 +380,25 @@ way, and speech never interrupts itself so lines don't cut each other off. Ambie
 (barks) and narrative log messages are spoken as they happen; press **L** to open the log review and
 read past messages by channel. Tutorial popups are read out as they appear.
 
+### Co-op
+
+Use **Multiplayer** to host or join by lobby code. In game, open **Escape → Roles** to review character
+assignments. The host applies changes by closing the Roles screen.
+
+- In dialogue, **Enter** on an answer or its number key chooses it for the player controlling the
+  Rogue Trader. Other players use the same keys to vote. Vote for another answer to move your vote,
+  or vote for the same answer again to withdraw it. Browsing an answer reads its voters.
+- On the surface action bar, **Alt+P** suggests the focused ability. Both players hear the suggestion.
+- In exploration or on the local map, **Alt+P** pings the current tile or the object you last browsed.
+  **Shift+P** moves the review cursor to the latest map ping. In the scanner, use **Ctrl+Page Up/Down**
+  to find **Co-op pings**, then **Page Up/Down** to browse the latest ping from each player in this area.
+
 ## Notes and limitations
 
 - **Pre-alpha**: some screens are partial, and keys and behaviour may change between builds. Much of
   the newest coverage is built from the game's own code and compile-verified but not yet walked
   through in a real playthrough — story- and campaign-gated windows especially.
-- **Co-op / multiplayer** (the lobby and role assignment) is not covered — it's a subsystem in its
-  own right and is a deliberate open decision rather than an oversight. The same goes for the game's
-  built-in bug-report window.
+- The game's built-in bug-report window still needs keyboard and speech support.
 - **Report bugs** with as much detail as you can — where you were, what you pressed, and what you
   heard versus what you expected.
 

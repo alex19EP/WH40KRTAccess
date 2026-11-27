@@ -56,6 +56,8 @@ internal static class LocalMapCursor
 
     /// <summary>Where the cursor is; the party leader while unplanted (so a cold read still has an origin).</summary>
     public static Vector3 Position => _pos ?? LeaderPos();
+    internal static int TouchedFrame { get; private set; } = -1;
+    internal static void ReviewPing(Vector3 position) { SetPos(position); Announce(); }
 
     /// <summary>On window open: plant at the in-area cursor — the spot you were exploring — else the leader, and
     /// baseline the room/thing state so the first step doesn't narrate a change that never happened.</summary>
@@ -165,6 +167,7 @@ internal static class LocalMapCursor
     /// </summary>
     private static void SetPos(Vector3 p)
     {
+        TouchedFrame = Time.frameCount;
         var b = MapRect();
         if (b.HasValue)
         {
