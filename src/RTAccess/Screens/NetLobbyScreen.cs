@@ -136,7 +136,7 @@ public sealed class NetLobbyScreen : Screen
     {
         b.BeginStop("saves").PushContext(UIStrings.Instance.NetLobbyTexts.ChooseSaveHeader.Text);
         foreach (var slot in vm.m_SaveSlotVMs)
-            b.AddItem(ControlId.Referenced(slot, slot.Reference.Name), GraphNodes.Button(
+            b.AddItem(ControlId.Referenced(slot, "lobby-save:" + SaveLoadScreen.SlotKey(slot)), GraphNodes.Button(
                 () => SaveLoadScreen.SlotBrowseLabel(slot), () => vm.SetSelectSaveAction(slot.Reference)));
         if (vm.ShowWaitingSaveAnim.Value)
             b.AddLabel(ControlId.Structural("loading"), () => Loc.T("coop.loading_saves"));

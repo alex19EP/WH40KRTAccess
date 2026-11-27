@@ -60,6 +60,14 @@ namespace RTAccess.Screens
 
         public override bool IsActive() => Vm() != null;
 
+        public override IEnumerable<ElementAction> GetActions()
+        {
+            yield return new ElementAction(ActionIds.Back, Message.Localized("ui", "tutorial.dismiss"), _ => Dismiss());
+            if (Exploration.DeploymentMode.Active)
+                yield return new ElementAction(ActionIds.Space, Message.Localized("ui", "deploy.tutorial"),
+                    _ => Tts.Speak(Loc.T("deploy.tutorial"), interrupt: true));
+        }
+
         public override void OnPush() { _banOnClose = false; }
         public override void OnPop() { _banOnClose = false; _spokenVm = null; _spokenPage = null; }
 
@@ -94,14 +102,22 @@ namespace RTAccess.Screens
             string k = "tutorial:" + vm.GetHashCode() + ":" + page + ":";
 
             // The same labeled level the old ListContainer provided ("Tutorial, list").
-            b.PushContext(Loc.T("tutorial.title"), Loc.T("role.list"));
-            b.AddItem(ControlId.Structural(k + "text"), GraphNodes.Text(() => PageText(Vm())));
+            var textId = ControlId.Structural(k + "text");
+            b.BeginStop("text").PushContext(Loc.T("tutorial.title"), Loc.T("role.list"));
+            b.AddItem(textId, GraphNodes.Text(() => PageText(vm)));
+            b.BeginStop("controls");
+            // Land directly on the available primary action. Keep Down from the text working too.
+            bool hasNext = CanNext();
+            var firstButton = ControlId.Structural(k + (hasNext ? "next" : "dismiss"));
+            b.Connect(textId, GraphDir.Down, firstButton).Connect(firstButton, GraphDir.Up, textId);
+            if (hasNext)
+                b.AddItem(firstButton, GraphNodes.Button(() => Loc.T("tutorial.next_page"), () => StepPage(1)));
+            b.AddItem(ControlId.Structural(k + "dismiss"),
+                GraphNodes.Button(() => Loc.T("tutorial.dismiss"), Dismiss));
             if (modal != null && modal.MultiplePages)
             {
                 b.AddItem(ControlId.Structural(k + "prev"),
                     GraphNodes.Button(() => Loc.T("tutorial.prev_page"), () => StepPage(-1), CanPrev));
-                b.AddItem(ControlId.Structural(k + "next"),
-                    GraphNodes.Button(() => Loc.T("tutorial.next_page"), () => StepPage(1), CanNext));
             }
             if (vm.CanBeBanned)
                 // The game silences this "don't show again" checkbox's hover (TutorialWindowBaseView NoSound)
@@ -112,8 +128,6 @@ namespace RTAccess.Screens
                     () => _banOnClose, () => _banOnClose = !_banOnClose,
                     hoverSound: Kingmaker.UI.Sound.UISounds.ButtonSoundsEnum.NoSound,
                     activateSound: Kingmaker.UI.Sound.UISounds.Instance?.Sounds?.Tutorial?.BanTutorialType));
-            b.AddItem(ControlId.Structural(k + "dismiss"),
-                GraphNodes.Button(() => Loc.T("tutorial.dismiss"), Dismiss));
             b.PopContext();
         }
 

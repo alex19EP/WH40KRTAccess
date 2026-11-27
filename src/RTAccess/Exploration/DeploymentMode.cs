@@ -1,6 +1,8 @@
 using Kingmaker;                                          // Game
 using Kingmaker.Controllers.Clicks.Handlers;              // ClickSurfaceDeploymentHandler (deploy-cell legality)
 using Kingmaker.EntitySystem.Entities;                    // BaseUnitEntity
+using Kingmaker.Networking;
+using Kingmaker.UI.Common;
 using Kingmaker.Pathfinding;                              // CustomGridNodeBase
 using RTAccess.Accessibility;                             // CombatReads (the holographic vantage read)
 using RTAccess.Speech;                                    // Speaker
@@ -75,7 +77,17 @@ internal static class DeploymentMode
         {
             if (!Active) return;   // self-gate: the Space verb is only advertised during deployment anyway
             var tc = Game.Instance.TurnController;
-            if (tc.CanFinishDeploymentPhase()) Game.Instance.EndTurnBind();   // CombatEvents speaks "Battle begins" on prep exit
+            if (ReadReady(out int current, out int total, out bool ready) && ready)
+                Speaker.Speak(ReadyLine(current, total, true), interrupt: true);
+            else if (tc.CanFinishDeploymentPhase())
+            {
+                Game.Instance.EndTurnBind();
+                if (UINetUtility.InLobbyAndPlaying)
+                {
+                    Main.Log?.Log("Deployment: requested local readiness, last confirmed " + current + "/" + total);
+                    Speaker.Speak(Loc.T("deploy.ready_requested"), interrupt: true);
+                }
+            }
             else Speaker.Speak(GameText.Or(
                 () => Kingmaker.Blueprints.Root.Strings.UIStrings.Instance.TurnBasedTexts.CannotStartbattle,
                 "deploy.cannot_start"), interrupt: true);
@@ -98,6 +110,20 @@ internal static class DeploymentMode
 
     // ---- per-frame ----
     private static bool _wasActive;
+    private static (int count, int total, bool local) _lastReady;
+
+    private static bool ReadReady(out int count, out int total, out bool local)
+    {
+        count = total = 0;
+        local = false;
+        if (!UINetUtility.InLobbyAndPlaying ||
+            !Game.Instance.TurnController.GetStartBattleProgress(out count, out total, out var group)) return false;
+        local = group.Contains(NetworkingManager.LocalNetPlayer);
+        return true;
+    }
+
+    private static string ReadyLine(int count, int total, bool local) =>
+        Loc.T(local ? "deploy.ready_wait" : "deploy.ready_needed", new { count, total });
 
     /// <summary>Announce the deployment controls on entry (once, queued after the "Deployment phase" lifecycle cue
     /// that <see cref="CombatEvents"/> speaks) — mirrors <see cref="Targeting.Tick"/>. Automatic/event cue, so it
@@ -106,6 +132,7 @@ internal static class DeploymentMode
     public static void Tick()
     {
         bool active = Active;
+        if (!active) _lastReady = default;
         if (active && !_wasActive)
         {
             if (RTAccess.UI.Navigation.HasFocus) RTAccess.UI.Navigation.Blur();
@@ -113,6 +140,13 @@ internal static class DeploymentMode
             if (opening != null) Speaker.Speak(opening, interrupt: false);
         }
         _wasActive = active;
+        if (active && ReadReady(out int count, out int total, out bool local) &&
+            _lastReady != (count, total, local))
+        {
+            _lastReady = (count, total, local);
+            Main.Log?.Log($"Deployment readiness: {count}/{total}, local ready={local}");
+            if (count < total) Speaker.Speak(ReadyLine(count, total, local));
+        }
     }
 
     /// <summary>The controls line spoken as deployment opens: the reposition budget (the blue points the prep turn

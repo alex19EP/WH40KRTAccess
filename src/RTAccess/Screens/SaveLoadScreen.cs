@@ -219,7 +219,7 @@ namespace RTAccess.Screens
 
         // The save's stable identity — FolderName, the same field the game's own ReferenceSaveEquals
         // compares (globally unique per save on disk; slot VMs are deduped on it).
-        private static string SlotKey(SaveSlotVM s)
+        internal static string SlotKey(SaveSlotVM s)
         {
             var f = s.Reference?.FolderName;
             return string.IsNullOrEmpty(f) ? "vm" + s.GetHashCode() : f;

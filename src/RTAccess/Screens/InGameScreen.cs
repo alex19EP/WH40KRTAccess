@@ -518,17 +518,29 @@ namespace RTAccess.Screens
 
             // TryEndPlayerTurnManually plays Combat.EndTurn itself (TurnController), so no ActivateSound —
             // a generic ButtonClick would stack on top of the real end-turn sting.
-            Func<string> endTurnLabel = () => GameText.Or(() => UIStrings.Instance.HUDTexts.EndTurn, "turn.end");
-            b.AddItem(ControlId.Structural("hud:endturn"), new NodeVtable
+            bool preparing = game.TurnController.IsPreparationTurn;
+            var start = SurfaceHUD()?.CombatStartWindowVM?.Value;
+            Func<string> turnLabel = preparing
+                ? () => GameText.Or(() => UIStrings.Instance.TurnBasedTexts.StartBattle, "deploy.start_battle")
+                : () => GameText.Or(() => UIStrings.Instance.HUDTexts.EndTurn, "turn.end");
+            Func<bool> canAct = preparing
+                ? () => start?.CanStartCombat.Value == true
+                : () => game.TurnController.IsPlayerTurn && game.TurnController.CurrentUnit.IsMyNetRole() &&
+                        game.TurnController.CanEndTurn;
+            b.AddItem(ControlId.Structural(preparing ? "hud:startbattle" : "hud:endturn"), new NodeVtable
             {
                 ControlType = ControlTypes.Button,
                 Announcements = new List<NodeAnnouncement>
                 {
-                    GraphNodes.LabelPart(endTurnLabel),
-                    GraphNodes.DisabledPart(() => game.TurnController.CanEndTurn),
+                    GraphNodes.LabelPart(turnLabel),
+                    GraphNodes.DisabledPart(canAct),
                 },
-                SearchText = endTurnLabel,
-                OnActivate = () => { if (game.TurnController.CanEndTurn) game.TurnController.TryEndPlayerTurnManually(); },
+                SearchText = turnLabel,
+                OnActivate = () =>
+                {
+                    if (preparing) Exploration.DeploymentMode.StartBattle();
+                    else if (canAct()) game.TurnController.TryEndPlayerTurnManually();
+                },
                 ActivateSound = null,
             });
 

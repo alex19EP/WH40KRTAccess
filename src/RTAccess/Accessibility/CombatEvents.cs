@@ -6,6 +6,7 @@ using Kingmaker.Blueprints;              // BlueprintScriptableObject.GetCompone
 using Kingmaker.Controllers.Combat;      // GetCombatStateOptional extension
 using Kingmaker.EntitySystem.Entities;   // BaseUnitEntity, MechanicEntity
 using Kingmaker.Mechanics.Entities;      // AbstractUnitEntity
+using Kingmaker.UI.Common;
 using RTAccess.Speech;
 using UnityEngine;                       // Mathf
 
@@ -164,7 +165,7 @@ internal sealed class CombatEvents
     private static string TurnCue(Kingmaker.Controllers.TurnBased.TurnController tc, MechanicEntity cur)
     {
         string name = UnitNames.Of(cur as AbstractUnitEntity) ?? cur.Name;
-        if (tc.IsPlayerTurn)
+        if (tc.IsPlayerTurn && (!UINetUtility.InLobbyAndPlaying || cur.IsMyNetRole()))
         {
             var cs = (cur as BaseUnitEntity)?.GetCombatStateOptional();
             if (cur is StarshipEntity ship && cs != null)
